@@ -40,6 +40,9 @@ Expected:
 - One webhook per new incident.
 
 Presets like **Disk almost full** may fire too, because the agent measures the machine
-running Docker.
+running Docker. **Agent silent** fires once as an artefact of step 1: `last_seen` was stored
+in the old time zone, so the agent looks hours stale for one check.
+
+![Incident timeline after the scenario](incident-timeline.jpg)
 
 Reset: `docker compose down -v`.

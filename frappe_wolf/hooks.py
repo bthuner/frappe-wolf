@@ -7,8 +7,8 @@ app_license = "MIT"
 
 required_apps = ["frappe"]
 
-app_include_js = "wolf.bundle.js"
-app_include_css = "wolf.bundle.css"
+app_include_js = "/assets/frappe_wolf/js/wolf.js"
+app_include_css = "/assets/frappe_wolf/css/wolf.css"
 
 add_to_apps_screen = [
 	{

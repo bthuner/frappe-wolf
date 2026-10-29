@@ -111,6 +111,15 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 15, "group_by": "host",
 		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	{
+		"rule_name": "Scheduler stalled",
+		"description": "This site's scheduled jobs (and so Wolf's rules) stopped running. Recorded "
+		"by agent pushes while stalled, it fires once the scheduler runs again; the live alert "
+		"comes from the agent watchdog's fallback channel.",
+		"signal_type": "event", "event_type": "host_metric_alert", "event_category": "scheduler_stalled",
+		"operator": ">=", "threshold": 1, "window_minutes": 15, "group_by": "site",
+		"severity": "critical", "auto_resolve": 1, "cooldown_minutes": 60,
+	},
 ]  # fmt: skip
 
 

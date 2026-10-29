@@ -54,7 +54,7 @@ Presets installed on install/migrate (edit or disable freely, they are never ove
 502 spike after deployment · 5xx spike · Nightly cron failure (01:00–04:00) · Scheduler failure ·
 Worker crash · Worker queue backlog · SSH brute force · Repeated failed Frappe logins ·
 Admin login from new IP · Privileged role granted · Disk almost full · High CPU · High memory ·
-High load · Agent silent.
+High load · Agent silent · Scheduler stalled.
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 

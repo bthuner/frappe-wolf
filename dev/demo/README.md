@@ -46,6 +46,29 @@ in the old time zone, so the agent looks hours stale for one check.
 
 ![Incident timeline after the scenario](incident-timeline.jpg)
 
+## Setup wizard
+
+`create-site` marks setup as complete, so Desk opens directly. To go through Dodock's wizard
+instead (language, country, time zone, currency, first user), reset the flags and open
+<http://localhost:8099/app>:
+
+```bash
+docker compose exec backend bash -c "cd ~/frappe-bench && \
+  bench --site wolf.localhost execute frappe.db.set_single_value --args '[\"System Settings\", \"setup_complete\", 0]' && \
+  bench --site wolf.localhost execute frappe.db.set_value --args '[\"Installed Application\", {\"app_name\": \"frappe\"}, \"is_setup_complete\", 0]' && \
+  bench --site wolf.localhost execute frappe.db.set_default --args '[\"desktop:home_page\", \"setup-wizard\"]' && \
+  bench --site wolf.localhost clear-cache"
+```
+
+Two things to watch:
+
+- **Browser autofill.** Chrome may fill and submit the account step with your own name,
+  email and saved password. Turn autofill off for localhost, or check the fields before the
+  wizard moves on.
+- **Time zone.** The wizard replaces the time zone that `scenario.py` set. Rows recorded
+  under the night zone are then stamped hours in the future and skew rule windows until real
+  time catches up. Delete them, or reset the stack.
+
 ## Email and Raven channels
 
 ```bash

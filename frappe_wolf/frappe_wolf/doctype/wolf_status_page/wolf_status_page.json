@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "autoname": "field:slug",
+ "creation": "2026-10-30 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "slug",
+  "enabled",
+  "cb_1",
+  "site",
+  "bench",
+  "settings_section",
+  "description",
+  "cb_2",
+  "show_history_days",
+  "min_severity"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "length": 140,
+   "reqd": 1
+  },
+  {
+   "description": "Public address: /wolf-status/&lt;slug&gt;. Lowercase letters, digits and dashes. Rename the document to change it.",
+   "fieldname": "slug",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Slug",
+   "length": 64,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "description": "Off by default: nothing is public until you tick this.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Incidents of this site are shown.",
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site",
+   "reqd": 1
+  },
+  {
+   "description": "Optional: also show bench-wide incidents (no site) of this bench.",
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "label": "Bench"
+  },
+  {
+   "fieldname": "settings_section",
+   "fieldtype": "Section Break",
+   "label": "Page"
+  },
+  {
+   "description": "Short public text under the title.",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "7",
+   "description": "Resolved incidents of the last N days (0 to 90).",
+   "fieldname": "show_history_days",
+   "fieldtype": "Int",
+   "label": "Show History Days"
+  },
+  {
+   "default": "warning",
+   "description": "Incidents below this severity are not shown.",
+   "fieldname": "min_severity",
+   "fieldtype": "Select",
+   "label": "Minimum Severity",
+   "options": "info\nwarning\ncritical"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Status Page",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1,
+ "allow_rename": 1
+}

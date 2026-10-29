@@ -23,3 +23,8 @@
 .wolf-timeline-body { min-width: 0; overflow-wrap: anywhere; }
 .wolf-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--margin-md); }
 .wolf-chart-title { font-size: var(--text-sm); color: var(--text-muted); }
+.wolf-activity-icon { width: 10px; margin-right: 6px; flex: none; text-align: center; color: var(--text-muted); font-size: var(--text-xs); }
+.wolf-activity-comment { background: var(--subtle-fg, transparent); }
+.wolf-comment { margin-top: 2px; }
+.wolf-comment p:last-child { margin-bottom: 0; }
+.wolf-timeline-actions { display: flex; justify-content: flex-end; gap: var(--margin-sm); margin-bottom: var(--margin-sm); }

@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
@@ -15,6 +16,15 @@ class WolfIncident(Document):
 		super()._validate_links()
 
 	def validate(self):
+		if self.is_new():
+			# Incidents created by hand in Desk (no rule) start now.
+			self.started_at = self.started_at or now_datetime()
+			self.last_event_at = self.last_event_at or self.started_at
+		if self.merged_into:
+			if self.merged_into == self.name:
+				frappe.throw(_("An incident cannot be merged into itself."))
+			if self.status != "Resolved":
+				frappe.throw(_("A merged incident stays resolved: work on {0} instead.").format(self.merged_into))
 		if self.status == "Resolved" and not self.resolved_at:
 			self.resolved_at = now_datetime()
 		elif self.status != "Resolved":
@@ -25,6 +35,16 @@ class WolfIncident(Document):
 				self.acknowledged_by = frappe.session.user
 			if not self.acknowledged_at:
 				self.acknowledged_at = now_datetime()
+		if self.public_title:
+			self.public_title = self.public_title.strip()[:140]
+
+	def on_update(self):
+		before = self.get_doc_before_save()
+		previous = before.assigned_to if before else None
+		if previous != self.assigned_to:
+			from frappe_wolf.wolf.workflow import sync_assignment
+
+			sync_assignment(self, previous)
 
 	@frappe.whitelist()
 	def acknowledge(self):
@@ -37,4 +57,9 @@ class WolfIncident(Document):
 	def resolve(self):
 		self.status = "Resolved"
 		self.resolved_by = frappe.session.user
+		self.save()
+
+	@frappe.whitelist()
+	def assign_to_me(self):
+		self.assigned_to = frappe.session.user
 		self.save()

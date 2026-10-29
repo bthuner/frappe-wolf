@@ -6,6 +6,7 @@ from frappe.utils import add_to_date, cint, now_datetime
 from frappe_wolf import satellite
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
+from frappe_wolf.wolf.workflow import get_activity
 
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
 READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
@@ -129,4 +130,11 @@ def get_incident_timeline(incident):
 		r.payload = parse_payload(r)
 		r.linked = r.incident == doc.name
 		r.pop("incident", None)
-	return {"incident": doc.name, "started_at": doc.started_at, "resolved_at": doc.resolved_at, "events": rows}
+	return {
+		"incident": doc.name,
+		"started_at": doc.started_at,
+		"resolved_at": doc.resolved_at,
+		"events": rows,
+		# comments, assignments and status changes, interleaved with events by render_timeline
+		"activity": get_activity(doc),
+	}

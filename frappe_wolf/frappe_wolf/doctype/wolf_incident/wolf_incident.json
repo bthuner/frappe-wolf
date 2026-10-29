@@ -37,6 +37,8 @@
   "timeline_section",
   "summary",
   "timeline_html",
+  "deliveries_section",
+  "deliveries_html",
   "notes_section",
   "notes"
  ],
@@ -240,6 +242,16 @@
    "label": "Timeline"
   },
   {
+   "fieldname": "deliveries_section",
+   "fieldtype": "Section Break",
+   "label": "Deliveries"
+  },
+  {
+   "fieldname": "deliveries_html",
+   "fieldtype": "HTML",
+   "label": "Deliveries"
+  },
+  {
    "fieldname": "notes_section",
    "fieldtype": "Section Break",
    "label": "Notes"
@@ -251,8 +263,13 @@
   }
  ],
  "index_web_pages_for_search": 0,
- "links": [],
- "modified": "2026-10-29 18:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Wolf Delivery",
+   "link_fieldname": "incident"
+  }
+ ],
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Incident",

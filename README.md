@@ -57,8 +57,8 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 | Cooldown | re-fire into the just-resolved incident instead of opening a new one |
 | Fire / resolve after evaluations | consecutive breached (or clear) one-minute evaluations before an incident opens (or auto-resolves). Default 1 |
 | Separate resolve threshold | hysteresis: e.g. fire above 90, resolve only once at or below 80 |
-| Channels | Email, Webhook (Slack/Mattermost-compatible JSON), Raven channel. Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
-| Notify on resolve | also tell the channels when the incident auto-resolves (default on) |
+| Channels | Email, Webhook, Raven, Slack, Mattermost, Matrix, ntfy, Gotify, SMS, PagerDuty (see [Channels](#channels)). Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
+| Notify on resolve | also tell the channels when the incident resolves, automatically or by hand (default on). PagerDuty channels always hear it |
 | Escalate after minutes | if still Open (not acknowledged) this long after the first alert, notify the escalation channels once |
 
 Alerts for unresolved incidents carry signed **Acknowledge / Resolve** links (valid 24 h, see Wolf
@@ -78,6 +78,72 @@ Admin login from new IP · Privileged role granted · Disk almost full · High C
 High load · Agent silent · Scheduler stalled.
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
+
+## Channels
+
+Each row of a rule's **Channels** (or **Escalation Channels**) table is one destination. Secrets
+(tokens, keys, webhook URLs) are Password fields: stored encrypted, never logged, and scrubbed from
+every recorded error. **Send test notification** on the rule form sends a TEST to every enabled
+row and shows what each one answered.
+
+| Type | Sends | Settings |
+|---|---|---|
+| Email | one email per recipient, with signed Acknowledge / Resolve links | Recipients |
+| Webhook | generic JSON `{text, incident}` ([protocol](docs/protocol.md#5-incident-action-links-alerts--app)) | Webhook URL |
+| Raven | a message in a Raven channel | Raven Channel |
+| Slack | Block Kit message with a severity colour bar and Open / Acknowledge / Resolve buttons | Incoming Webhook URL* |
+| Mattermost | message attachment with colour, fields and Acknowledge / Resolve links | Incoming Webhook URL* |
+| Matrix | `m.room.message` with an HTML body (`PUT /_matrix/client/v3/rooms/{room}/send/…`) | Homeserver URL, Room ID, Access Token* |
+| ntfy | push with Title, Priority, Tags, Click and action buttons | Server URL (default ntfy.sh), Topic, Access Token* (optional) |
+| Gotify | push with priority mapped from severity and a click URL | Server URL, Application Token* |
+| SMS | short text (one or two SMS) through any HTTP gateway | Phone Numbers, Gateway URL template, Method, Body, Auth Header, Secret*, Max Length |
+| PagerDuty | Events API v2: trigger, acknowledge, resolve, `dedup_key` = incident name | Routing Key*, Events API URL |
+
+\* Password field: stored encrypted, shown as asterisks.
+
+**Which channel hears what.** Firing and re-opened incidents go to the Channels, escalations to the
+Escalation Channels. When someone acknowledges or resolves an incident (Desk or a signed link),
+**PagerDuty** channels always get the matching `acknowledge` / `resolve` event so the alert closes on
+call too; the other channels hear a resolution only when the rule has *Notify on resolve*. A test from
+the rule form triggers then resolves on PagerDuty, so it never leaves an alert open.
+
+**Delivery status.** Every attempt is recorded as a **Wolf Delivery** (channel, target without
+secrets, kind, PagerDuty action, ok or error, HTTP status) and listed under *Deliveries* on the
+incident. Deliveries follow the event retention.
+
+Setup notes:
+
+- **Slack**: create an app → *Incoming Webhooks* → *Add New Webhook to Workspace*, paste the
+  `https://hooks.slack.com/services/…` URL. Buttons open the incident or the signed action page
+  (no Slack interactivity endpoint is needed; Slack may show a warning icon on link buttons of
+  apps without one).
+- **Mattermost**: *Integrations → Incoming Webhooks → Add*, paste the `https://…/hooks/…` URL.
+- **Matrix**: create a bot account, invite it to the room and join, get its access token
+  (Element: *Settings → Help & About → Access Token*, or `POST /_matrix/client/v3/login`). The Room
+  ID is the internal `!…:server` one (*Room settings → Advanced*), not an alias.
+- **ntfy**: any topic on ntfy.sh or your own server. On a public server pick an unguessable topic or
+  protect it and paste an access token (`tk_…`). Priority: critical 5, warning 4, info 3, resolved 2;
+  escalations one step higher.
+- **Gotify**: *Apps → Create application*, paste its token. Priority: critical 8, warning 5, info 3,
+  resolved 2; escalations two steps higher.
+- **SMS**: provider agnostic. The Gateway URL and the optional Body Template take `{to}`, `{text}` and
+  `{secret}` placeholders (URL-encoded in the URL and form bodies, JSON-escaped in JSON bodies); the
+  Auth Header is a header line such as `Authorization: Bearer {secret}`. Put API keys in *Secret*,
+  never in the URL. One request per phone number. The text (kind, severity, title, scope and the
+  incident URL when it fits) is folded to the GSM-7 alphabet and cut on a word boundary to 160
+  characters (one SMS) or 306 (two); text that needs Unicode fits 70 / 134. Example (a gateway that
+  takes JSON):
+
+  ```
+  Gateway URL:   https://sms.example.com/api/send
+  Method / Body: POST, json, {"to": "{to}", "message": "{text}"}
+  Auth Header:   Authorization: Bearer {secret}
+  ```
+
+- **PagerDuty**: add an *Events API v2* integration to a service and paste its integration key as
+  the Routing Key. Change the Events API URL for the EU region
+  (`https://events.eu.pagerduty.com/v2/enqueue`) or for an Events-v2 compatible receiver (Grafana
+  OnCall, Opsgenie and others accept the same body). PagerDuty channels are never digested.
 
 ## Signals captured on the Wolf site itself
 

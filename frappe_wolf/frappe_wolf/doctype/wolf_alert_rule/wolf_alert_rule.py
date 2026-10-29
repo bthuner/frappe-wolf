@@ -32,10 +32,31 @@ class WolfAlertRule(Document):
 				frappe.throw(_(error))
 		if cint(self.escalate_after_minutes) < 0:
 			frappe.throw(_("Escalate After Minutes cannot be negative"))
+		self.validate_channels()
 		# The evaluator owns the hysteresis counters: a form opened minutes ago must
 		# not write back stale ones.
 		if not self.is_new():
 			self.evaluation_state = frappe.db.get_value(self.doctype, self.name, "evaluation_state")
+
+	def validate_channels(self):
+		from frappe_wolf.wolf import channels as wolf_channels
+
+		for row in list(self.get("channels") or []) + list(self.get("escalation_channels") or []):
+			if row.channel_type not in wolf_channels.NATIVE:
+				continue
+			# Password fields read as asterisks once saved: present is all that matters here.
+			cfg = {f: row.get(f) for f in wolf_channels.FIELDS[row.channel_type]}
+			missing = wolf_channels.missing(row.channel_type, cfg)
+			if missing and row.enabled:
+				frappe.throw(
+					_("Row {0} ({1}): set {2}").format(row.idx, row.channel_type, ", ".join(_(m) for m in missing))
+				)
+			bad = wolf_channels.invalid_urls(cfg)
+			if bad:
+				labels = ", ".join(_(row.meta.get_label(f)) for f in bad)
+				frappe.throw(_("Row {0} ({1}): {2} must start with http:// or https://").format(
+					row.idx, row.channel_type, labels
+				))
 
 	@frappe.whitelist()
 	def preview(self):
@@ -75,5 +96,6 @@ class WolfAlertRule(Document):
 				"summary": "This is a test sent from the alert rule form.",
 			}
 		).insert()
-		notify.send(incident.name, "test", channels=self.channels)
-		return incident.name
+		rows = list(self.get("channels") or []) + list(self.get("escalation_channels") or [])
+		results = notify.send(incident.name, "test", channels=rows)
+		return {"incident": incident.name, "results": results}

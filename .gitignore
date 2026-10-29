@@ -5,3 +5,4 @@ build/
 dist/
 .venv/
 node_modules/
+.claude/

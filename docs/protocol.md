@@ -66,9 +66,19 @@ X-Wolf-Agent-Secret: <secret>
 ```
 
 Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "rejected": [...],
-"push_interval": 30, "health": {...}, "clock_skew_seconds": 2, "clamped": 0}}`. `health` is
-Wolf's own heartbeat (§4); it is `null` if the site could not compute it, and absent on older
-servers.
+"push_interval": 30, "health": {...}, "clock_skew_seconds": 2, "clamped": 0, "queued": true}}`.
+`health` is Wolf's own heartbeat (§4); it is `null` if the site could not compute it, and absent
+on older servers.
+
+**Ingest mode.** With **Wolf Settings → Ingest Mode** `async` (the default), the app validates and
+normalizes the batch during the request, queues the inserts for a background worker and answers
+with `"queued": true`. `metrics` / `events` then count the items that passed validation and were
+queued; the worker inserts them and attaches the events to open incidents a few seconds later. A
+failure in the worker is not reported back to the agent (it is in the site's Error Log). If the
+queue is unreachable, or with `sync` mode, the batch is stored during the request and `queued` is
+`false`; storage errors then fail the request (HTTP 5xx) and the agent retries. The agent's last
+seen time and clock skew are recorded during the request in both modes, so heartbeats do not wait
+for the queue. `queued` is absent on older servers; agents must not rely on it.
 
 **Clock skew.** `sent_at` is stamped when the request is sent (also for replayed spool batches).
 The server records `sent_at - server time` as the agent's `clock_skew_seconds` (positive = agent

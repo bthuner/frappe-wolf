@@ -48,7 +48,7 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 
 | Field | Meaning |
 |---|---|
-| Signal | `metric` (aggregate Wolf Metric Samples) or `event` (count Wolf Events) |
+| Signal | `metric` (aggregate metric samples, or their rollups for windows over 3 h, see [Metric storage](#metric-storage)) or `event` (count Wolf Events) |
 | Aggregation | `avg`, `min`, `max`, `sum`, `count`, `last`. Use `min` for "stayed above for Z minutes" and `sum` for counters such as `http_5xx` |
 | Window | look-back in minutes |
 | Group by | `host`, `bench`, `site`, `host_label` (for example per disk mount) or `none`: one incident per group |
@@ -78,6 +78,49 @@ Admin login from new IP · Privileged role granted · Disk almost full · High C
 High load · Agent silent · Scheduler stalled.
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
+
+## Metric storage
+
+At 50 hosts × 15 metrics every 30 s, raw samples are about 2 M rows a day, so Wolf keeps three
+resolutions, each with its own retention (**Wolf Settings → Retention**):
+
+| Resolution | DocType | Default retention | Read by |
+|---|---|---|---|
+| raw samples | Wolf Metric Sample | 48 hours | rule windows up to 3 h, the 1 h chart |
+| 1-minute rollups | Wolf Metric Rollup (`resolution` 60) | 30 days | windows up to 2 days (6 h and 24 h charts) |
+| 1-hour rollups | Wolf Metric Rollup (`resolution` 3600) | 365 days | longer windows (7 d chart) |
+
+- A rollup row stores count, sum, min, max and the last value (with its time) of one series
+  (metric, host, bench, site, labels) in one bucket, so `avg`, `min`, `max`, `sum`, `count` and
+  `last` over whole buckets equal the raw answer. A read takes the coarsest resolution allowed
+  for its window up to the last rolled bucket, then finer rollups, then the raw samples not
+  rolled up yet, so the newest minutes are always there. A long window loses at most one bucket
+  at its start (under a minute for 1-minute reads, under an hour for 1-hour reads).
+- The `rollup_metrics` job (every minute) rolls closed minutes (2 minutes after they end) and
+  closed hours. Its progress is in **Wolf Rollup State**. It recomputes whole buckets, so
+  running it again never double counts. Samples that arrive late (an agent replaying its spool)
+  move the progress back and their buckets are rolled again, up to the raw retention.
+- `purge_metrics` (hourly) applies the retention and never deletes raw samples or 1-minute
+  rollups that are not rolled up yet. Event retention (`event_retention_days`) is unchanged.
+- **Ingest mode** (Wolf Settings → Agents): `async` (default) validates a push, queues the inserts
+  on the `short` queue and answers at once; a worker inserts the batch and attaches its events
+  to open incidents. If the queue is unreachable the push is stored inline. `sync` stores during
+  the request, as before. The agent's last seen time, clock skew and Wolf's health are updated
+  during the request in both modes.
+
+[`ci/load_test.py`](ci/load_test.py) fills a throwaway site with N hosts × M metrics × D days
+and times push and the overview. It is not part of the normal CI run; run the CI workflow by hand
+with `load_test` checked to get numbers on MariaDB and Postgres. Measured results are in the pull
+request that added it (#10).
+
+**Optional time-series backend (design, not built).** The read path goes through two functions,
+`rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through
+`events.insert_metrics()`. A ClickHouse or TimescaleDB backend would implement those three: raw
+samples in a `MergeTree` table (ClickHouse) or a hypertable (TimescaleDB), the minute and hour
+rollups as materialized views (`AggregatingMergeTree` with `sumState/minState/maxState/argMaxState`,
+or continuous aggregates with `first/last`), and retention as TTL or `add_retention_policy`. The
+watermark logic and the purge job would then be the database's job. Until a site needs more than
+a few hundred hosts, the Frappe tables above are enough and keep Wolf a plain Frappe app.
 
 ## Signals captured on the Wolf site itself
 

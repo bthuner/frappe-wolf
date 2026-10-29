@@ -21,6 +21,7 @@ class FakeWolf(ThreadingHTTPServer):
 		self.status = 200
 		self.push_interval = 30
 		self.health = None
+		self.clock_skew = None
 		threading.Thread(target=self.serve_forever, daemon=True).start()
 
 	@property
@@ -45,6 +46,7 @@ class FakeWolfHandler(BaseHTTPRequestHandler):
 					"events": len(body["events"]),
 					"push_interval": self.server.push_interval,
 					"health": self.server.health,
+					"clock_skew_seconds": self.server.clock_skew,
 				}
 			}
 		elif self.path.endswith("ingest.status"):
@@ -151,6 +153,30 @@ class TestShipper(unittest.TestCase):
 		self.assertEqual(len(self.shipper.spool), 0)
 		replayed = [r["body"]["metrics"][0]["n"] for r in self.server.requests if r["body"]["metrics"]]
 		self.assertEqual(replayed[-3:], [1, 2, 3])
+
+	def test_spooled_batch_gets_fresh_sent_at(self):
+		from unittest import mock
+
+		self.server.status = 502
+		with mock.patch("wolf_agent.shipper.utc_iso", return_value="2026-10-29T02:00:00Z"):
+			self.shipper.send([{"n": 1}], [])
+		self.server.status = 200
+		self.clock.t += 3600
+		with mock.patch("wolf_agent.shipper.utc_iso", return_value="2026-10-29T03:00:00Z"):
+			self.shipper.send([], [])
+		replay = [r for r in self.server.requests if r["body"]["metrics"]][-1]
+		self.assertEqual(replay["body"]["sent_at"], "2026-10-29T03:00:00Z")
+
+	def test_clock_skew_warns_once_then_recovers(self):
+		self.server.clock_skew = 600
+		with self.assertLogs("wolf_agent.shipper", level="INFO") as logs:
+			self.shipper.send([{"n": 1}], [])
+			self.shipper.send([{"n": 2}], [])
+			self.server.clock_skew = 2
+			self.shipper.send([{"n": 3}], [])
+		self.assertEqual(sum("+600s off" in m for m in logs.output), 1)
+		self.assertTrue(any("back to +2s" in m for m in logs.output))
+		self.assertFalse(self.shipper.skew_warned)
 
 	def test_backoff_grows_and_caps(self):
 		self.server.status = 503

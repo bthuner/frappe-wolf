@@ -2,3 +2,4 @@
 
 [post_model_sync]
 frappe_wolf.patches.default_action_link_hours
+frappe_wolf.patches.default_max_clock_skew

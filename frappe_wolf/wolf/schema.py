@@ -40,6 +40,26 @@ def parse_timestamp(value, tz_name, default=None):
 	return dt.astimezone(ZoneInfo(tz_name)).replace(tzinfo=None)
 
 
+def clamp_future(dt, now, max_future_seconds):
+	"""Timestamps from the future (fast agent clock, time-zone change) become `now`.
+
+	Returns (timestamp, clamped). They would otherwise sit inside every rule window.
+	"""
+	if max_future_seconds and dt and (dt - now).total_seconds() > max_future_seconds:
+		return now, True
+	return dt, False
+
+
+def clock_skew_seconds(sent_at, tz_name, now):
+	"""Agent clock minus server clock, from the push's `sent_at`; None if missing or invalid."""
+	if not sent_at:
+		return None
+	try:
+		return int((parse_timestamp(sent_at, tz_name) - now).total_seconds())
+	except PayloadError:
+		return None
+
+
 def _text(value, length=140):
 	if value is None:
 		return None

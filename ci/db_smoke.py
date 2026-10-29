@@ -103,6 +103,19 @@ def main():
 		assert any(r.event_type == "deployment" for r in rows), "deployment missing from timeline"
 		return f"{inc}: {len(rows)} events, deployment linked={bool(frappe.db.get_value('Wolf Incident', inc, 'deployment_event'))}"
 
+	def skew():
+		future = schema.normalize_metric({"metric_name": "smoke_skew", "value": 99, "host": HOST}, tz,
+		                                 now + timedelta(hours=11))
+		events.insert_metrics([future])
+		doc = rule("smoke skew", signal_type="metric", metric_name="smoke_skew", aggregation="max",
+		           operator=">", threshold=0, window_minutes=5, group_by="host", filter_host=HOST)
+		res = rules.evaluate(doc)
+		assert not (res["fired"] or res["updated"]), f"future-dated sample fired a rule: {res}"
+		clamped, was = schema.clamp_future(future["timestamp"], now, 300)
+		assert was and clamped == now
+		frappe.db.set_value("Wolf Alert Rule", "smoke skew", "enabled", 0)
+		return "future samples ignored by rules, clamped on ingest"
+
 	def overview():
 		data = ui.get_overview(range="1h", host=HOST)
 		series = ui.get_metric_series(HOST, metrics=json.dumps(["disk_used_percent", "http_502"]), range="1h")["series"]
@@ -123,7 +136,7 @@ def main():
 		assert res["resolved"], res
 		return f"resolved {res['resolved']}"
 
-	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline),
+	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("purge", purge), ("auto-resolve", resolve)]:
 		check(name, fn)
 

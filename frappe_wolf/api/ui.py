@@ -98,7 +98,12 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 	metrics = frappe.parse_json(metrics) if metrics else ["cpu_usage", "memory_used_percent", "disk_used_percent", "load_per_core"]
 	minutes = RANGES.get(range, 360)
 	bucket = max(60, minutes * 60 // 120)
-	params = {"host": host, "metrics": tuple(metrics), "since": _since(range)}
+	params = {
+		"host": host,
+		"metrics": tuple(metrics),
+		"since": _since(range),
+		"until": add_to_date(now_datetime(), minutes=1),
+	}
 	site_clause = ""
 	if site:
 		site_clause = " and site = %(site)s"
@@ -106,7 +111,8 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 	rows = frappe.db.sql(
 		f"""select metric_name, label_key, `timestamp`, `value`
 		from `tabWolf Metric Sample`
-		where host = %(host)s and metric_name in %(metrics)s and `timestamp` >= %(since)s {site_clause}""",
+		where host = %(host)s and metric_name in %(metrics)s
+			and `timestamp` between %(since)s and %(until)s {site_clause}""",
 		params,
 		as_dict=True,
 	)

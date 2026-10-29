@@ -12,6 +12,7 @@ from . import __version__
 from .util import utc_iso
 
 log = logging.getLogger(__name__)
+SKEW_WARN_SECONDS = 60
 
 PUSH_METHOD = "/api/method/frappe_wolf.api.ingest.push"
 DEPLOYMENT_METHOD = "/api/method/frappe_wolf.api.ingest.deployment"
@@ -138,6 +139,7 @@ class Shipper:
 		self.hostname = cfg["hostname"]
 		self.verify_tls = cfg.get("verify_tls", True)
 		self.push_interval = int(cfg.get("push_interval") or 30)
+		self.skew_warned = False
 		self.spool = Spool(os.path.join(spool_dir or cfg["spool_dir"], "outbox"))
 		self.clock = clock
 		self.failures = 0
@@ -154,13 +156,27 @@ class Shipper:
 		}
 
 	def _post(self, body):
+		# stamped at send time, so spooled batches don't look like a slow clock
+		body = dict(body, sent_at=utc_iso())
 		resp = post_json(self.url + PUSH_METHOD, body, self.headers, self.verify_tls)
+		self._check_skew(resp.get("clock_skew_seconds") if isinstance(resp, dict) else None)
 		interval = resp.get("push_interval")
 		if isinstance(interval, (int, float)) and interval >= 5:
 			self.push_interval = int(interval)
 		if isinstance(resp, dict) and isinstance(resp.get("health"), dict):
 			self.health = resp["health"]
 		return resp
+
+	def _check_skew(self, skew):
+		"""Warn once when the site reports our clock off by more than a minute, and on recovery."""
+		if not isinstance(skew, (int, float)):
+			return
+		off = abs(skew) > SKEW_WARN_SECONDS
+		if off and not self.skew_warned:
+			log.warning("clock is %+ds off the Wolf site; fix NTP (future samples are clamped)", skew)
+		elif not off and self.skew_warned:
+			log.info("clock skew back to %+ds", skew)
+		self.skew_warned = off
 
 	def _spool(self, bodies):
 		for body in bodies:

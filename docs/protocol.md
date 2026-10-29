@@ -66,8 +66,16 @@ X-Wolf-Agent-Secret: <secret>
 ```
 
 Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "rejected": [...],
-"push_interval": 30, "health": {...}}}`. `health` is Wolf's own heartbeat (§4); it is `null`
-if the site could not compute it, and absent on older servers.
+"push_interval": 30, "health": {...}, "clock_skew_seconds": 2, "clamped": 0}}`. `health` is
+Wolf's own heartbeat (§4); it is `null` if the site could not compute it, and absent on older
+servers.
+
+**Clock skew.** `sent_at` is stamped when the request is sent (also for replayed spool batches).
+The server records `sent_at - server time` as the agent's `clock_skew_seconds` (positive = agent
+ahead, shown on Wolf Agent) and returns it; the agent logs a warning above 60 s. Metric and event
+timestamps more than **Wolf Settings → Max Clock Skew** (default 300 s, 0 = off) in the future
+are clamped to the server time and counted in `clamped`. Rule windows and charts also ignore rows
+stamped more than a minute in the future.
 HTTP 401/403 → bad credentials (agent stops and logs). HTTP 5xx or network error → agent
 keeps the batch in its on-disk spool and retries with backoff. Max 5000 metrics + 1000 events
 per request; the agent splits larger batches.

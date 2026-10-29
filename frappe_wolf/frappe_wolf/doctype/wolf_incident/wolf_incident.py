@@ -12,16 +12,22 @@ class WolfIncident(Document):
 			self.resolved_at = now_datetime()
 		elif self.status != "Resolved":
 			self.resolved_at = None
-		if self.status == "Acknowledged" and not self.acknowledged_by:
-			self.acknowledged_by = frappe.session.user
+			self.resolved_by = None
+		if self.status == "Acknowledged":
+			if not self.acknowledged_by:
+				self.acknowledged_by = frappe.session.user
+			if not self.acknowledged_at:
+				self.acknowledged_at = now_datetime()
 
 	@frappe.whitelist()
 	def acknowledge(self):
 		self.status = "Acknowledged"
 		self.acknowledged_by = frappe.session.user
+		self.acknowledged_at = now_datetime()
 		self.save()
 
 	@frappe.whitelist()
 	def resolve(self):
 		self.status = "Resolved"
+		self.resolved_by = frappe.session.user
 		self.save()

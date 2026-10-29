@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "autoname": "WSIL-.#####",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "reason",
+  "starts_at",
+  "ends_at",
+  "cb_1",
+  "alert_rule",
+  "source",
+  "deployment_event",
+  "scope_section",
+  "host",
+  "cb_2",
+  "bench",
+  "cb_3",
+  "site"
+ ],
+ "fields": [
+  {
+   "fieldname": "reason",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reason",
+   "length": 255
+  },
+  {
+   "default": "Now",
+   "fieldname": "starts_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Starts At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "ends_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Ends At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Only silence this rule. Leave empty for every rule.",
+   "fieldname": "alert_rule",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Alert Rule",
+   "options": "Wolf Alert Rule"
+  },
+  {
+   "default": "manual",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Source",
+   "options": "manual\ndeployment\napi"
+  },
+  {
+   "fieldname": "deployment_event",
+   "fieldtype": "Link",
+   "label": "Deployment Event",
+   "options": "Wolf Event",
+   "read_only": 1
+  },
+  {
+   "description": "Every field set here must match the incident. Leave all empty to silence everything.",
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Scope"
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Host"
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Bench"
+  },
+  {
+   "fieldname": "cb_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Site"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Silence",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "search_fields": "reason,site,bench,host",
+ "sort_field": "starts_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "reason",
+ "track_changes": 1
+}

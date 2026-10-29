@@ -35,8 +35,9 @@ Desk: <http://localhost:8099/app/wolf-overview>, login `Administrator` / `admin`
 Expected:
 
 - **502 spike after deployment**: critical, with the deployment linked.
-- **Nightly cron failure (01:00-04:00)**: critical. The failure arrives twice: from the site's
-  own Scheduled Job Log and from the agent tailing `scheduler.log`.
+- **Nightly cron failure (01:00-04:00)**: critical. It is reported by the site itself, through
+  Wolf's `Scheduled Job Type` override. The agent's `scheduler.log` parser stays quiet here:
+  Frappe logs "Scheduled Job Failed" at INFO, below the default logger level.
 - One webhook per new incident.
 
 Presets like **Disk almost full** may fire too, because the agent measures the machine

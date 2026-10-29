@@ -18,8 +18,8 @@ jobs:
     name: Lint (ruff + shellcheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: ruff
@@ -33,22 +33,23 @@ jobs:
     name: App unit tests (Python 3.12)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m unittest discover -s tests -t . -v
 
   agent-tests:
     name: Agent unit tests (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Python 3.9 builds exist for Ubuntu 24.04 but not for 26.04 (the new ubuntu-latest).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         python: ["3.9", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s agent/tests -v
@@ -68,7 +69,7 @@ jobs:
     env:
       BENCH_IMAGE: registry.gitlab.com/dokos/dokos:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Pull images
         run: |
           docker pull --quiet "$BENCH_IMAGE" & bench_pull=$!

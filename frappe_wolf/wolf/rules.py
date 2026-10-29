@@ -43,7 +43,7 @@ def evaluate(rule, now=None):
 			breached[conditions.group_key(rule.group_by, row)] = row
 
 	for key, row in breached.items():
-		scope = {f: row.get(f) or row.get(f"{f}_hint") for f in SCOPE_FIELDS}
+		scope = conditions.incident_scope(rule.group_by, row)
 		scope["label_key"] = row.get("label_key")
 		if rule.require_recent_deployment and not incidents.latest_deployment(
 			scope["host"], scope["bench"], scope["site"], minutes=cint(rule.deployment_window_minutes) or 30

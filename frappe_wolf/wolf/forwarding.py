@@ -71,7 +71,6 @@ def register_body(token, scope, version, os_name=None, bench_path=None):
 		"registration_token": token,
 		"kind": "satellite",
 		"hostname": scope["site"],
-		"host": scope.get("host"),
 		"agent_version": version,
 		"os": os_name,
 		"benches": [{"name": scope.get("bench"), "path": bench_path, "sites": [scope["site"]], "host": scope.get("host")}],

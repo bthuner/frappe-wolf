@@ -76,7 +76,7 @@ class TestPayloadShaping(unittest.TestCase):
 		body = forwarding.register_body("tok", SCOPE, "0.1.0", "Linux", "/home/frappe/frappe-bench")
 		self.assertEqual(body["kind"], "satellite")
 		self.assertEqual(body["hostname"], "b.example.com")
-		self.assertEqual(body["host"], "bench-01")
+		self.assertEqual(body["benches"][0]["host"], "bench-01")
 		self.assertEqual(body["registration_token"], "tok")
 		self.assertEqual(body["benches"][0]["sites"], ["b.example.com"])
 		self.assertEqual(body["benches"][0]["name"], "frappe-bench")

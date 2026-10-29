@@ -1,0 +1,134 @@
+# Frappe Wolf demo stack: one Dokos bench, one site with frappe_wolf, nginx, the Wolf agent
+# and a webhook sink. See dev/demo/README.md.
+name: wolfdemo
+
+x-bench: &bench
+  image: wolf-demo:local
+  hostname: demo-host
+  restart: on-failure
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - logs:/home/frappe/frappe-bench/logs
+  depends_on:
+    create-site:
+      condition: service_completed_successfully
+
+services:
+  db:
+    image: mariadb:10.6
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --skip-character-set-client-handshake]
+    environment:
+      MARIADB_ROOT_PASSWORD: admin
+    volumes:
+      - db-data:/var/lib/mysql
+
+  redis-cache:
+    image: redis:6.2-alpine
+  redis-queue:
+    image: redis:6.2-alpine
+
+  create-site:
+    image: wolf-demo:local
+    build:
+      context: ../..
+      dockerfile: dev/demo/Dockerfile
+      args:
+        BASE: ${WOLF_DEMO_BASE:-registry.gitlab.com/dokos/dokos:latest}
+    hostname: demo-host
+    restart: "no"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+    entrypoint: [bash, -c]
+    command:
+      - |
+        set -e
+        ls -1 apps > sites/apps.txt
+        [ -e sites/assets ] || ln -s /home/frappe/frappe-bench/assets sites/assets
+        bench set-config -g db_host db
+        bench set-config -gp db_port 3306
+        bench set-config -g redis_cache redis://redis-cache:6379
+        bench set-config -g redis_queue redis://redis-queue:6379
+        bench set-config -g redis_socketio redis://redis-queue:6379
+        bench set-config -gp socketio_port 9000
+        bench set-config -gp server_script_enabled 1
+        if [ ! -d sites/wolf.localhost ]; then
+          bench new-site wolf.localhost --mariadb-user-host-login-scope='%' \
+            --admin-password=admin --db-root-username=root --db-root-password=admin \
+            --install-app frappe_wolf --set-default
+          bench --site wolf.localhost set-config enable_frappe_logger 1
+        else
+          bench --site wolf.localhost migrate
+        fi
+        bench --site wolf.localhost enable-scheduler
+        # Hand the registration token to the demo agent (it never runs bench itself).
+        bench --site wolf.localhost execute frappe.utils.password.get_decrypted_password \
+          --args '["Wolf Settings", "Wolf Settings", "registration_token"]' | tail -1 | tr -d '"' > sites/.wolf-demo-token
+
+  backend:
+    <<: *bench
+  scheduler:
+    <<: *bench
+    command: [bench, schedule]
+  queue:
+    <<: *bench
+    command: [bench, worker, --queue, "short,default,long"]
+  websocket:
+    <<: *bench
+    command: [node, /home/frappe/frappe-bench/apps/frappe/socketio.js]
+
+  frontend:
+    image: wolf-demo:local
+    hostname: demo-host
+    restart: on-failure
+    user: root
+    entrypoint: [nginx, -c, /etc/wolf/nginx.conf, -g, "daemon off;"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites:ro
+      - nginx-logs:/var/log/wolf-nginx
+      - ./nginx.conf:/etc/wolf/nginx.conf:ro
+    depends_on: [backend, websocket]
+    ports:
+      - "8099:8080"
+
+  agent:
+    image: wolf-demo:local
+    hostname: demo-host
+    restart: on-failure
+    user: frappe
+    environment:
+      WOLF_AGENT_CONFIG: /home/frappe/wolf-agent/config.json
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs:ro
+      - nginx-logs:/var/log/wolf-nginx:ro
+      - agent-state:/home/frappe/wolf-agent
+      - ./agent-init.sh:/etc/wolf/agent-init.sh:ro
+    entrypoint: [bash, /etc/wolf/agent-init.sh]
+    depends_on: [frontend]
+
+  catcher:
+    image: wolf-demo:local
+    restart: on-failure
+    command: [python3, /etc/wolf/catcher.py]
+    volumes:
+      - ./catcher.py:/etc/wolf/catcher.py:ro
+
+volumes:
+  db-data:
+  sites:
+  logs:
+  nginx-logs:
+  agent-state:

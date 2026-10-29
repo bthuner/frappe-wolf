@@ -46,4 +46,22 @@ in the old time zone, so the agent looks hours stale for one check.
 
 ![Incident timeline after the scenario](incident-timeline.jpg)
 
+## Email and Raven channels
+
+```bash
+WOLF_DEMO_RAVEN=1 docker compose up -d --build     # adds Raven (backend only) to the image
+docker compose exec backend bench --site wolf.localhost install-app raven
+python3 channels.py
+```
+
+`channels.py` sets up the following on the **Scheduler failure** rule, then makes a job fail:
+
+- an outgoing Email Account pointed at Mailpit;
+- a Raven workspace and a `wolf-alerts` channel;
+- Email, Raven and Webhook channels on the rule.
+
+Mail shows up at <http://localhost:8025> within one email-queue flush, a few minutes at most.
+Raven is installed without `blurhash-python`, which has no Python 3.14 wheel; that only
+affects image previews.
+
 Reset: `docker compose down -v`.

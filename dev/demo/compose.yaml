@@ -39,6 +39,7 @@ services:
       dockerfile: dev/demo/Dockerfile
       args:
         BASE: ${WOLF_DEMO_BASE:-registry.gitlab.com/dokos/dokos:latest}
+        WITH_RAVEN: ${WOLF_DEMO_RAVEN:-0}
     hostname: demo-host
     restart: "no"
     volumes:
@@ -123,6 +124,12 @@ services:
       - ./agent-init.sh:/etc/wolf/agent-init.sh:ro
     entrypoint: [bash, /etc/wolf/agent-init.sh]
     depends_on: [frontend]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: on-failure
+    ports:
+      - "8025:8025"
 
   catcher:
     image: wolf-demo:local

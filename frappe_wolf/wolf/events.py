@@ -114,7 +114,7 @@ def scope_clause(host=None, bench=None, site=None, prefix=""):
 		params["scope_bench"] = bench
 	if host:
 		clauses.append(
-			f"({prefix}`host` = %(scope_host)s and ifnull({prefix}`bench`, '') = '' and ifnull({prefix}`site`, '') = '')"
+			f"({prefix}`host` = %(scope_host)s and coalesce({prefix}`bench`, '') = '' and coalesce({prefix}`site`, '') = '')"
 		)
 		params["scope_host"] = host
 	if not clauses:

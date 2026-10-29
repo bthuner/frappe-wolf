@@ -4,6 +4,7 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
+from frappe_wolf.wolf.series import bucket_series
 
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
 READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
@@ -79,7 +80,7 @@ def _known_scopes():
 	for field in ("site", "bench", "host"):
 		out[field] = frappe.db.sql_list(
 			f"""select distinct `{field}` from `tabWolf Event`
-			where `timestamp` >= %(since)s and ifnull(`{field}`, '') != '' order by `{field}` limit 200""",
+			where `timestamp` >= %(since)s and coalesce(`{field}`, '') != '' order by `{field}` limit 200""",
 			{"since": since},
 		)
 	out["host"] = sorted(set(out["host"]) | set(frappe.get_all("Wolf Agent", pluck="hostname")))
@@ -93,27 +94,19 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 	metrics = frappe.parse_json(metrics) if metrics else ["cpu_usage", "memory_used_percent", "disk_used_percent", "load_per_core"]
 	minutes = RANGES.get(range, 360)
 	bucket = max(60, minutes * 60 // 120)
-	params = {"host": host, "metrics": tuple(metrics), "since": _since(range), "bucket": bucket}
+	params = {"host": host, "metrics": tuple(metrics), "since": _since(range)}
 	site_clause = ""
 	if site:
 		site_clause = " and site = %(site)s"
 		params["site"] = site
 	rows = frappe.db.sql(
-		f"""select metric_name, ifnull(label_key, '') as label_key,
-			from_unixtime(floor(unix_timestamp(`timestamp`) / %(bucket)s) * %(bucket)s) as bucket,
-			avg(`value`) as avg_value, max(`value`) as max_value, sum(`value`) as sum_value
+		f"""select metric_name, label_key, `timestamp`, `value`
 		from `tabWolf Metric Sample`
-		where host = %(host)s and metric_name in %(metrics)s and `timestamp` >= %(since)s {site_clause}
-		group by metric_name, label_key, bucket
-		order by bucket asc""",
+		where host = %(host)s and metric_name in %(metrics)s and `timestamp` >= %(since)s {site_clause}""",
 		params,
 		as_dict=True,
 	)
-	series = {}
-	for r in rows:
-		key = r.metric_name + (f" [{r.label_key}]" if r.label_key else "")
-		counter = r.metric_name.startswith("http_")
-		series.setdefault(key, []).append([str(r.bucket), round(float(r.sum_value if counter else r.avg_value), 2)])
+	series = bucket_series(rows, bucket)
 	return {"bucket_seconds": bucket, "series": series}
 
 

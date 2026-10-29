@@ -22,8 +22,11 @@ add_to_apps_screen = [
 after_install = "frappe_wolf.install.after_install"
 after_migrate = "frappe_wolf.install.after_migrate"
 
+override_doctype_class = {
+	"Scheduled Job Type": "frappe_wolf.overrides.scheduled_job_type.WolfScheduledJobType",
+}
+
 doc_events = {
-	"Scheduled Job Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_scheduled_job_log"},
 	"Error Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_error_log"},
 	"Activity Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_activity_log"},
 	"User": {"on_update": "frappe_wolf.wolf.local_signals.on_user_update"},

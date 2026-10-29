@@ -25,11 +25,8 @@ Set `WOLF_BENCHES="/home/frappe/frappe-bench /srv/other-bench"` to skip auto-dis
 |---------|--------------|
 | `wolf-agent register --url URL --token TOKEN [--bench PATH]...` | register the host, discover benches, write the config |
 | `wolf-agent run` | the daemon loop (what systemd runs) |
-| `wolf-agent check [--from-start]` | collect once and print the JSON payload, nothing is sent |
 | `wolf-agent discover [--bench PATH] [--platform auto\|press\|generic]` | show what bench discovery finds |
-| `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT]` | put a deployment marker on the Wolf timeline |
-| `wolf-agent check [--from-start] [--status]` | collect once and print the JSON payload, nothing is sent; the watchdog state goes to stderr (`--status` also asks the site for its health) |
-| `wolf-agent discover [--bench PATH]` | show what bench discovery finds |
+| `wolf-agent check [--from-start] [--status] [--platform …]` | collect once and print the JSON payload, nothing is sent; the watchdog state goes to stderr (`--status` also asks the site for its health) |
 | `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT] [--silence 15m]` | put a deployment marker on the Wolf timeline; `--silence` also opens a maintenance window that mutes notifications for that bench/site |
 | `wolf-agent test-fallback` | send a test message through the watchdog fallback channel(s) |
 
@@ -45,6 +42,19 @@ and it reads queue lengths on each bench's `rq_port`. It also turns the Press ag
 deploy/update/migrate jobs (`jobs.sqlite3`, read-only) into `deployment` events, plus an
 `error` event when one fails. Details, source references and limitations are in
 [`../docs/press.md`](../docs/press.md).
+
+## Pilot benches
+
+Benches created by [Frappe Pilot](https://github.com/frappe/pilot) (`~/pilot/benches/*`,
+`bench.toml` with `[bench] name` and `python`) are read with Pilot's real schema.
+Wolf tails Pilot's process logs (`web`, `schedule`, `worker_*` and their stderr files) and
+`logs/nginx-access.log` (in the `pilot_access` format), and it reads queues on
+`[redis] queue_port`. It turns Pilot tasks (update, migrate, switch-branch, app install,
+build, restart, restore) into `deployment` events, plus `error` events for failed tasks.
+Tasks are read from the bench's Admin API (`GET /api/v1/tasks`), or from `<bench>/tasks/`
+when the agent runs as the bench user. The API token is `pilot.token`, or one Wolf mints
+from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
+[`../docs/pilot.md`](../docs/pilot.md).
 
 ## What is collected
 
@@ -86,6 +96,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "platform": null,
   "press": {"agent_dir": "/home/frappe/agent", "nginx_access_log": "/var/log/nginx/access.log",
             "rediscover_interval": 60, "deployments": true},
+  "pilot": {"deployments": true, "api_url": null, "token": null, "jwt_secret": null},
   "benches": [
     {"name": "frappe-bench", "path": "/home/frappe/frappe-bench", "sites": ["a.example.com"],
      "logs_dir": "/home/frappe/frappe-bench/logs", "nginx_access_log": "/var/log/nginx/access.log",

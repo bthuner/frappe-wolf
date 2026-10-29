@@ -121,6 +121,118 @@ def main():
 		series = ui.get_metric_series(HOST, metrics=json.dumps(["disk_used_percent", "http_502"]), range="1h")["series"]
 		return f"{len(data['open_incidents'])} open, {len(data['events'])} events, series={sorted(series)}"
 
+	def scoped_user():
+		"""A Wolf User restricted to one site sees only that site, in lists, forms and Wolf APIs."""
+		from frappe_wolf.wolf import access
+
+		user = "smoke-scoped@example.com"
+		if not frappe.db.exists("User", user):
+			frappe.get_doc({"doctype": "User", "email": user, "first_name": "Smoke", "send_welcome_email": 0,
+			                "roles": [{"role": "Wolf User"}]}).insert(ignore_permissions=True)
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site",
+		                "value": "smoke.localhost"}).insert()
+		other = events.insert_event(schema.normalize_event(
+			{"type": "error", "host": HOST, "bench": "b1", "site": "other.localhost", "severity": "warning",
+			 "title": "smoke other site"}, tz, now))
+		inc = frappe.db.get_value("Wolf Incident", {"alert_rule": "smoke 502"}, "name", order_by="creation desc")
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			sites = set(frappe.get_list("Wolf Event", filters={"host": HOST}, pluck="site", limit_page_length=0))
+			assert sites == {"smoke.localhost"}, f"list leaked {sites}"
+			assert set(frappe.get_list("Wolf Incident", pluck="site", limit_page_length=0)) <= {"smoke.localhost"}
+			assert not frappe.has_permission("Wolf Event", "read", doc=other, user=user), "form leaked"
+			data = ui.get_overview(range="1h")
+			assert {e.site for e in data["events"]} == {"smoke.localhost"}, "overview events leaked"
+			assert all(i.site == "smoke.localhost" for i in data["open_incidents"] + data["incidents"])
+			assert data["scopes"]["site"] == ["smoke.localhost"], data["scopes"]
+			assert not data["agents"] or all(a.hostname == "smoke.localhost" for a in data["agents"])
+			series = ui.get_metric_series(HOST, metrics=json.dumps(["disk_used_percent", "http_502"]), range="1h")
+			names = {key.split(" [")[0] for key in series["series"]}
+			assert names == {"http_502"}, f"metric series leaked {sorted(names)}"  # disk_used_percent has no site
+			rows = ui.get_incident_timeline(inc)["events"]
+			assert rows and all(r.site == "smoke.localhost" for r in rows), "timeline leaked"
+		finally:
+			frappe.set_user("Administrator")
+		assert frappe.has_permission("Wolf Event", "read", doc=other), "manager restricted"
+		admin_sites = set(frappe.get_list("Wolf Event", filters={"host": HOST}, pluck="site", limit_page_length=0))
+		assert "other.localhost" in admin_sites
+		frappe.db.delete("Wolf Event", {"name": other})
+		return f"site-scoped user sees {sorted(sites)}, {len(rows)} timeline rows; Administrator sees {len(admin_sites)} sites"
+
+	def agent_secrets():
+		"""Register, authenticate, migrate a legacy Password secret and hit the push rate limit."""
+		from frappe.utils.password import get_decrypted_password, set_encrypted_password
+		from werkzeug.test import EnvironBuilder
+
+		from frappe_wolf.api import agent as agent_api
+		from frappe_wolf.api import ingest
+		from frappe_wolf.patches import hash_agent_secrets
+
+		def request(agent_id=None, secret=None, body=None):
+			headers = {"X-Wolf-Agent-Id": agent_id, "X-Wolf-Agent-Secret": secret} if agent_id else {}
+			frappe.local.request = EnvironBuilder(method="POST", json=body or {}, headers=headers).get_request()
+			frappe.local.request_ip = "127.0.0.1"
+
+		def legacy_rows():
+			return frappe.db.sql("select count(*) from `__Auth` where doctype = 'Wolf Agent' and fieldname = 'agent_secret'")[0][0]
+
+		saved_request = getattr(frappe.local, "request", None)
+		settings = frappe.get_single("Wolf Settings")
+		saved_limit = settings.max_pushes_per_minute
+		try:
+			token = get_decrypted_password("Wolf Settings", "Wolf Settings", "registration_token")
+			request(body={"registration_token": token, "hostname": "smoke-agent", "agent_version": "smoke"})
+			creds = agent_api.register()
+			agent_id, secret = creds["agent_id"], creds["agent_secret"]
+			stored = frappe.db.get_value("Wolf Agent", agent_id, "secret_hash")
+			assert stored.startswith("hmac-sha256$") and secret not in stored, stored
+			assert legacy_rows() == 0, "secret still stored reversibly"
+			request(agent_id, secret)
+			assert agent_api.authenticate_agent() == agent_id
+			request(agent_id, secret[:-1] + ("0" if secret[-1] != "0" else "1"))
+			try:
+				agent_api.authenticate_agent()
+				raise AssertionError("wrong secret accepted")
+			except frappe.AuthenticationError:
+				frappe.clear_messages()
+
+			# an agent registered before hashing: Password value only, the patch hashes it
+			frappe.db.set_value("Wolf Agent", agent_id, "secret_hash", None)
+			set_encrypted_password("Wolf Agent", agent_id, "legacy-secret-0123456789", "agent_secret")
+			assert legacy_rows() == 1
+			hash_agent_secrets.execute()
+			assert legacy_rows() == 0, "patch left the Password value"
+			request(agent_id, "legacy-secret-0123456789")
+			assert agent_api.authenticate_agent() == agent_id, "legacy secret stopped working"
+
+			# lazy migration on first use (code updated, migrate not run yet)
+			frappe.db.set_value("Wolf Agent", agent_id, "secret_hash", None)
+			set_encrypted_password("Wolf Agent", agent_id, "legacy-secret-lazy", "agent_secret")
+			request(agent_id, "legacy-secret-lazy")
+			assert agent_api.authenticate_agent() == agent_id
+			assert legacy_rows() == 0 and frappe.db.get_value("Wolf Agent", agent_id, "secret_hash")
+
+			settings.max_pushes_per_minute = 1
+			settings.save()
+			limited = 0
+			for _ in range(3):  # 3 pushes: two land in one minute window even across a boundary
+				request(agent_id, "legacy-secret-lazy", body={"metrics": [], "events": [], "hostname": "smoke-agent"})
+				try:
+					ingest.push()
+				except frappe.TooManyRequestsError:
+					frappe.clear_messages()
+					limited += 1
+			assert limited, "push rate limit never triggered"
+		finally:
+			frappe.local.request = saved_request
+			settings.reload()
+			settings.max_pushes_per_minute = saved_limit
+			settings.save()
+		frappe.delete_doc("Wolf Agent", agent_id, ignore_permissions=True, force=True)
+		return f"hashed secret auth ok, legacy secret migrated, {limited} of 3 pushes rate limited"
+
 	def purge():
 		old = events.insert_event(schema.normalize_event(
 			{"type": "error", "host": HOST, "severity": "warning", "title": "smoke old unlinked"},
@@ -137,7 +249,8 @@ def main():
 		return f"resolved {res['resolved']}"
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
-	                 ("overview+charts", overview), ("purge", purge), ("auto-resolve", resolve)]:
+	                 ("overview+charts", overview), ("scoped user", scoped_user), ("agent secrets", agent_secrets),
+	                 ("purge", purge), ("auto-resolve", resolve)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

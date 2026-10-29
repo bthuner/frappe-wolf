@@ -26,6 +26,19 @@ override_doctype_class = {
 	"Scheduled Job Type": "frappe_wolf.overrides.scheduled_job_type.WolfScheduledJobType",
 }
 
+# Wolf User Scope: restricted Wolf Users only see their sites/benches/hosts (wolf/access.py)
+permission_query_conditions = {
+	"Wolf Event": "frappe_wolf.wolf.access.event_query",
+	"Wolf Metric Sample": "frappe_wolf.wolf.access.metric_query",
+	"Wolf Incident": "frappe_wolf.wolf.access.incident_query",
+	"Wolf Silence": "frappe_wolf.wolf.access.silence_query",
+	"Wolf Agent": "frappe_wolf.wolf.access.agent_query",
+}
+has_permission = {
+	doctype: "frappe_wolf.wolf.access.has_permission"
+	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Incident", "Wolf Silence", "Wolf Agent")
+}
+
 doc_events = {
 	"Error Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_error_log"},
 	"Activity Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_activity_log"},

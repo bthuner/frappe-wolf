@@ -3,12 +3,18 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import now_datetime
+
+from frappe_wolf.wolf import agent_secrets
 
 
 class WolfAgent(Document):
 	@frappe.whitelist()
 	def rotate_secret(self):
-		"""Invalidate the current secret. The agent must re-register."""
+		"""Replace the secret: the old one stops working now. The new one is returned once and
+		only its hash is kept, so put it in the agent's config (or re-register the agent)."""
 		frappe.only_for(("System Manager", "Wolf Manager"))
-		self.agent_secret = frappe.generate_hash(length=40)
-		self.save()
+		secret = agent_secrets.new_secret()
+		# db_set: secret_hash is a permlevel 1 field nobody has write access to
+		self.db_set({"secret_hash": agent_secrets.hash_secret(secret), "secret_issued_at": now_datetime()})
+		return {"agent_id": self.name, "agent_secret": secret}

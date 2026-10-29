@@ -27,20 +27,35 @@ def _safe(fn):
 	return wrapper
 
 
-@_safe
-def on_scheduled_job_log(doc):
-	if doc.status != "Failed" or not cint(_settings().capture_scheduler_failures):
+def on_scheduled_job_failed(job):
+	"""Called from WolfScheduledJobType.log_status while the exception is being handled."""
+	if frappe.flags.in_install or frappe.flags.in_migrate:
 		return
-	job = doc.scheduled_job_type
-	events.emit(
-		"cron_failure",
-		f"Scheduled job failed: {job}",
-		severity="critical",
-		category="scheduled_job",
-		source="scheduler",
-		payload={"job": job, "log": doc.name, "details": (doc.details or "")[-4000:]},
-		dedupe_minutes=1,
-	)
+	try:
+		if not cint(_settings().capture_scheduler_failures):
+			return
+		label = job.server_script or job.method
+		events.emit(
+			"cron_failure",
+			f"Scheduled job failed: {label}",
+			severity="critical",
+			category="scheduled_job",
+			source="scheduler",
+			payload={
+				"job": job.name,
+				"method": job.method,
+				"server_script": job.server_script,
+				"frequency": job.frequency,
+				"cron_format": job.cron_format,
+				"log": job.scheduler_log.name if getattr(job, "scheduler_log", None) else None,
+				"traceback": frappe.get_traceback()[-4000:],
+			},
+			dedupe_minutes=1,
+		)
+		# log_status runs after the job's rollback; persist our event explicitly.
+		frappe.db.commit()
+	except Exception:
+		frappe.logger("frappe_wolf").exception("could not record scheduled job failure")
 
 
 @_safe

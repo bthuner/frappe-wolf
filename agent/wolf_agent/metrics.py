@@ -82,6 +82,9 @@ def real_mounts(proc="/proc"):
 			continue
 		if any(mount == p or mount.startswith(p + "/") for p in SKIP_MOUNT_PREFIXES):
 			continue
+		# Bind-mounted files (Docker's /etc/resolv.conf, /etc/hosts) are not disks.
+		if os.path.exists(mount) and not os.path.isdir(mount):
+			continue
 		if device in seen:
 			continue
 		seen.add(device)

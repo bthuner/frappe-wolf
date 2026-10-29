@@ -303,7 +303,7 @@ AUTH_LINES = [
 
 class TestAuth(unittest.TestCase):
 	def test_parse_lines(self):
-		parsed = [auth.parse_line(l) for l in AUTH_LINES]
+		parsed = [auth.parse_line(line) for line in AUTH_LINES]
 		self.assertEqual(parsed[0]["kind"], "ssh_failed_login")
 		self.assertIsNone(parsed[1])  # counted through the "Invalid user" line
 		self.assertEqual(parsed[2]["user"], "root")

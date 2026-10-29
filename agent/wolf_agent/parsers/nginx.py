@@ -13,6 +13,11 @@ _LINE_RE = re.compile(
 	r'"(?P<request>[^"]*)" (?P<status>\d{3}) (?P<bytes>\S+)'
 	r'(?: "(?P<referer>[^"]*)" "(?P<agent>[^"]*)")?(?P<rest>.*)$'
 )
+# Frappe Pilot's `pilot_access` format (pilot/managers/nginx/templates/server.conf.template):
+# '$pilot_client_addr [$time_local] "$request_method $uri" $status "$host" $request_time'
+_PILOT_RE = re.compile(
+	r'^(?P<addr>\S+) \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d{3}) "(?P<host>[^"]*)"(?P<rest>.*)$'
+)
 _QUOTED_RE = re.compile(r'"([^"]*)"')
 CRITICAL_STATUSES = {502, 503, 504}
 MAX_SAMPLES = 3
@@ -22,7 +27,9 @@ def parse_line(line):
 	"""Parse one access log line into a dict, or None if it isn't one."""
 	m = _LINE_RE.match(line.strip())
 	if not m:
-		return None
+		m = _PILOT_RE.match(line.strip())
+		if not m:
+			return None
 	parts = m.group("request").split()
 	if len(parts) >= 2:
 		method, target = parts[0], parts[1]
@@ -32,7 +39,7 @@ def parse_line(line):
 		ts = utc_iso(datetime.strptime(m.group("time"), "%d/%b/%Y:%H:%M:%S %z"))
 	except ValueError:
 		ts = None
-	vhost = m.group("vhost")
+	vhost = m.groupdict().get("vhost") or m.groupdict().get("host")
 	if vhost:
 		vhost = vhost.split(":", 1)[0]
 	return {
@@ -50,13 +57,17 @@ class NginxParser:
 	"""Counts requests per site and aggregates 5xx responses per (site, status, route).
 
 	`site_benches` maps known site names to their bench; the site of a line is
-	taken from `$host` when logged, else from a per-site log file name, else
+	taken from `$host` when logged (custom domains resolved through
+	`site_aliases`, domain → site), else from a per-site log file name, else
 	`default_site` (a bench serving a single site).
 	"""
 
-	def __init__(self, host, site_benches=None, default_site=None, default_bench=None, log_file=None, **_):
+	def __init__(
+		self, host, site_benches=None, default_site=None, default_bench=None, log_file=None, site_aliases=None, **_
+	):
 		self.host = host
 		self.site_benches = dict(site_benches or {})
+		self.site_aliases = dict(site_aliases or {})
 		self.default_site = default_site
 		self.default_bench = default_bench
 		self.log_file = log_file
@@ -81,6 +92,9 @@ class NginxParser:
 		for c in candidates:
 			if c and c in self.site_benches:
 				return c
+		for c in candidates:
+			if c and self.site_aliases.get(c) in self.site_benches:
+				return self.site_aliases[c]
 		if self.file_site:
 			return self.file_site
 		if self.default_site:

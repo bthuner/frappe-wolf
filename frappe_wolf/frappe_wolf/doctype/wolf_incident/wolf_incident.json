@@ -14,7 +14,9 @@
   "started_at",
   "last_event_at",
   "acknowledged_by",
+  "acknowledged_at",
   "resolved_at",
+  "resolved_by",
   "event_count",
   "scope_section",
   "host",
@@ -26,6 +28,12 @@
   "deployment_event",
   "cb_4",
   "deployment_at",
+  "notification_section",
+  "silenced",
+  "silence",
+  "cb_5",
+  "notified_at",
+  "escalated_at",
   "timeline_section",
   "summary",
   "timeline_html",
@@ -91,16 +99,28 @@
    "label": "Last Event At"
   },
   {
+   "description": "User, email address the alert link was sent to, or \"link\".",
    "fieldname": "acknowledged_by",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Acknowledged By",
-   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "acknowledged_at",
+   "fieldtype": "Datetime",
+   "label": "Acknowledged At",
    "read_only": 1
   },
   {
    "fieldname": "resolved_at",
    "fieldtype": "Datetime",
    "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_by",
+   "fieldtype": "Data",
+   "label": "Resolved By",
    "read_only": 1
   },
   {
@@ -165,6 +185,45 @@
    "read_only": 1
   },
   {
+   "collapsible": 1,
+   "collapsible_depends_on": "silenced",
+   "fieldname": "notification_section",
+   "fieldtype": "Section Break",
+   "label": "Notifications"
+  },
+  {
+   "default": "0",
+   "description": "Notifications are held back by an active maintenance window.",
+   "fieldname": "silenced",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Silenced",
+   "read_only": 1
+  },
+  {
+   "fieldname": "silence",
+   "fieldtype": "Link",
+   "label": "Silence",
+   "options": "Wolf Silence",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "notified_at",
+   "fieldtype": "Datetime",
+   "label": "Notified At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "escalated_at",
+   "fieldtype": "Datetime",
+   "label": "Escalated At",
+   "read_only": 1
+  },
+  {
    "fieldname": "timeline_section",
    "fieldtype": "Section Break",
    "label": "Timeline"
@@ -193,7 +252,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Incident",

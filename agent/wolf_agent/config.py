@@ -21,7 +21,40 @@ DEFAULTS = {
 	# null = auto-detect, a path, "journal", or false to disable
 	"auth_log": None,
 	"collect_host_metrics": True,
+	# null = auto-detect (Press agent config.json present → "press"), "press" or "generic"
+	"platform": None,
+	# Press servers only (docs/press.md)
+	"press": {
+		"agent_dir": "/home/frappe/agent",
+		"nginx_access_log": "/var/log/nginx/access.log",
+		"rediscover_interval": 60,
+		"deployments": True,
+	},
+	# Frappe Pilot benches only (docs/pilot.md). Admin API token: `token`, or one is
+	# minted from `jwt_secret` / the bench.toml [admin] jwt_secret when readable.
+	"pilot": {
+		"deployments": True,
+		"api_url": None,
+		"token": None,
+		"jwt_secret": None,
+	},
+	# alerts when the Wolf site itself stops working, sent without going through it
+	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
+	"watchdog": {"enabled": True, "stale_minutes": 5, "webhook_url": None, "smtp": None},
 }
+
+
+def pilot_settings(cfg):
+	merged = dict(DEFAULTS["pilot"])
+	merged.update(cfg.get("pilot") or {})
+	return merged
+
+
+def press_settings(cfg):
+	"""`press` section merged over the defaults (a partial section in the file is fine)."""
+	merged = dict(DEFAULTS["press"])
+	merged.update(cfg.get("press") or {})
+	return merged
 
 
 def config_path(cli_value=None):

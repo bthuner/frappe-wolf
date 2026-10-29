@@ -2,8 +2,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime
 
+from frappe_wolf import satellite
 from frappe_wolf.api.agent import _request_json, authenticate_agent, push_interval
-from frappe_wolf.wolf import events, schema
+from frappe_wolf.wolf import events, health, schema, silences
 from frappe_wolf.wolf.incidents import attach_to_open_incident
 
 
@@ -24,6 +25,7 @@ def push():
 		frappe.throw(_("Batch too large, split it"), frappe.ValidationError)
 
 	tz, now = events.system_tz(), now_datetime()
+	correlate = not satellite.is_satellite()  # a satellite opens no incidents
 	hostname = (data.get("hostname") or "").strip()[:140] or None
 	rejected = []
 
@@ -43,7 +45,8 @@ def push():
 			rejected.append(str(e))
 			continue
 		name = events.insert_event(event, agent=agent)
-		attach_to_open_incident(name, event)
+		if correlate:
+			attach_to_open_incident(name, event)
 		accepted_events += 1
 
 	frappe.db.set_value(
@@ -59,12 +62,25 @@ def push():
 	)
 	frappe.db.commit()
 
+	# after the commit: a health failure must not cost the telemetry
+	wolf_health = health.safe_health()
+	health.report_stall(wolf_health)
+	frappe.db.commit()
+
 	return {
 		"metrics": accepted_metrics,
 		"events": accepted_events,
 		"rejected": rejected[:20],
 		"push_interval": push_interval(),
+		"health": wolf_health,
 	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+def status():
+	"""Wolf's own health for an agent, without sending telemetry (docs/protocol.md §4)."""
+	agent = authenticate_agent()
+	return {"agent": agent, "push_interval": push_interval(), "health": health.safe_health()}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -91,5 +107,19 @@ def deployment():
 	except schema.PayloadError as e:
 		frappe.throw(str(e))
 	name = events.insert_event(event, agent=agent)
+	result = {"event": name}
+
+	# Optional maintenance window (protocol v1 addition, ignored by older apps).
+	if cint(data.get("silence_minutes")) > 0:
+		result["silence"] = silences.create(
+			data["silence_minutes"],
+			host=event["host"],
+			bench=event.get("bench"),
+			site=event.get("site"),
+			reason=event["title"],
+			source="deployment",
+			deployment_event=name,
+		)
+		result["silence_until"] = str(frappe.db.get_value("Wolf Silence", result["silence"], "ends_at"))
 	frappe.db.commit()
-	return {"event": name}
+	return result

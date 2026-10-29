@@ -64,6 +64,10 @@ class WolfOverview {
 				args: this.state,
 			});
 			this.data = message;
+			if (message.wolf && message.wolf.mode === "satellite") {
+				this.render_satellite(message.wolf);
+				return;
+			}
 			this.update_scope_options(message.scopes);
 			this.render();
 			this.render_metrics();
@@ -127,6 +131,37 @@ class WolfOverview {
 		`);
 	}
 
+	render_satellite(w) {
+		const central = w.central_url
+			? `<a href="${esc(w.central_url)}/app/wolf-overview" target="_blank">${esc(w.central_url)}</a>`
+			: `<em>${__("no central site yet")}</em>`;
+		const ok = w.last_forward_status === "ok";
+		const rows = [
+			[__("Satellite ID"), esc(w.satellite_id || "-")],
+			[__("Pending events"), esc(w.pending)],
+			[__("Last forward"), w.last_forward_at ? frappe.datetime.comment_when(w.last_forward_at) : "-"],
+			[
+				__("Status"),
+				`<span class="indicator-pill ${ok ? "green" : "orange"}">${esc(w.last_forward_status || __("never forwarded"))}</span>`,
+			],
+		];
+		if (w.forward_retry_at) rows.push([__("Next retry"), frappe.datetime.comment_when(w.forward_retry_at)]);
+		if (w.last_forward_error) rows.push([__("Last error"), `<code>${esc(w.last_forward_error)}</code>`]);
+		this.$body.html(`
+			<section class="wolf-card wolf-satellite">
+				<h4>${__("This site is a satellite of {0}", [central])}</h4>
+				<p class="text-muted">${__(
+					"Scheduler failures, errors, logins, privileged role grants and migrations on this site are forwarded to the central Wolf site. Incidents, rules and the timeline live there."
+				)}</p>
+				<table class="table table-sm">
+					${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`).join("")}
+				</table>
+				<a href="/app/wolf-settings">${__("Wolf Settings")}</a>
+				· <a href="/app/wolf-outbox">${__("Outbox")}</a>
+			</section>
+		`);
+	}
+
 	render_incidents(rows) {
 		if (!rows.length) return `<p class="text-muted">${__("Nothing open. The pack is quiet.")}</p>`;
 		return `<ul class="wolf-list">${rows
@@ -154,7 +189,11 @@ class WolfOverview {
 				(a) => `
 			<li>
 				<span class="indicator-pill ${a.online ? "green" : "red"}">${a.online ? __("online") : __("silent")}</span>
-				<a href="#" class="wolf-host" data-host="${esc(a.hostname)}">${esc(a.hostname)}</a>
+				${
+					a.kind === "satellite"
+						? `<a href="/app/wolf-agent/${encodeURIComponent(a.name)}">${esc(a.hostname)}</a> <span class="badge">${__("satellite")}</span>`
+						: `<a href="#" class="wolf-host" data-host="${esc(a.hostname)}">${esc(a.hostname)}</a>`
+				}
 				<span class="text-muted small">${a.last_seen ? frappe.datetime.comment_when(a.last_seen) : ""}</span>
 			</li>`
 			)
@@ -167,7 +206,8 @@ class WolfOverview {
 			e.preventDefault();
 			this.fields.host.set_value($(e.currentTarget).data("host"));
 		});
-		const host = this.state.host || (this.data.agents[0] && this.data.agents[0].hostname);
+		const first = this.data.agents.find((a) => a.kind !== "satellite");
+		const host = this.state.host || (first && first.hostname);
 		if (!host) {
 			$wrap.html(`<p class="text-muted">${__("No host metrics yet.")}</p>`);
 			return;

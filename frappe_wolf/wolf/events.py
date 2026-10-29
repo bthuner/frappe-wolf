@@ -78,7 +78,12 @@ def insert_event(data, agent=None, dedupe_minutes=None):
 
 
 def emit(event_type, title, severity="warning", category=None, source="frappe", payload=None, dedupe_minutes=None, **scope):
-	"""Record an event raised by the Wolf app itself (local signals, rule engine)."""
+	"""Record an event raised by the Wolf app itself (local signals, rule engine).
+
+	On a satellite site the event goes to the outbox for the central site instead, and the
+	return value is a Wolf Outbox name.
+	"""
+	from frappe_wolf import satellite
 	timestamp = scope.pop("timestamp", None)
 	raw = {
 		**local_scope(),
@@ -93,6 +98,8 @@ def emit(event_type, title, severity="warning", category=None, source="frappe", 
 	now = now_datetime()
 	data = schema.normalize_event(raw, system_tz(), now)
 	data["timestamp"] = data["last_seen"] = timestamp or now
+	if satellite.is_satellite():
+		return satellite.enqueue(data, dedupe_minutes=dedupe_minutes)
 	return insert_event(data, dedupe_minutes=dedupe_minutes)
 
 

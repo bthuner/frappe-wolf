@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "incident",
+  "kind",
+  "severity",
+  "title",
+  "alert_rule",
+  "cb_1",
+  "channel_type",
+  "destination",
+  "queued_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "incident",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Incident",
+   "options": "Wolf Incident"
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kind"
+  },
+  {
+   "fieldname": "severity",
+   "fieldtype": "Data",
+   "label": "Severity"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "length": 255
+  },
+  {
+   "fieldname": "alert_rule",
+   "fieldtype": "Link",
+   "label": "Alert Rule",
+   "options": "Wolf Alert Rule"
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "channel_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Channel Type"
+  },
+  {
+   "fieldname": "destination",
+   "fieldtype": "Small Text",
+   "label": "Destination"
+  },
+  {
+   "fieldname": "queued_at",
+   "fieldtype": "Datetime",
+   "label": "Queued At",
+   "search_index": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Digest Item",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager"
+  }
+ ],
+ "sort_field": "queued_at",
+ "sort_order": "ASC",
+ "states": []
+}

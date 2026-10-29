@@ -92,9 +92,14 @@ services:
   scheduler:
     <<: *bench
     command: [bench, schedule]
+  # Two workers, like a real bench: long jobs (search index rebuilds after a migrate) must not
+  # hold up the per-minute scheduled jobs, Wolf's rule evaluation included.
   queue:
     <<: *bench
-    command: [bench, worker, --queue, "short,default,long"]
+    command: [bench, worker, --queue, "short,default"]
+  queue-long:
+    <<: *bench
+    command: [bench, worker, --queue, "long"]
   websocket:
     <<: *bench
     command: [node, /home/frappe/frappe-bench/apps/frappe/socketio.js]

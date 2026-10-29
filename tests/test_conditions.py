@@ -60,6 +60,15 @@ class TestGroups(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			c.group_columns("planet")
 
+	def test_incident_scope_hints_only_upward(self):
+		row = {"site": "a.example.com", "host_hint": "h1", "bench_hint": "main", "site_hint": "a.example.com"}
+		self.assertEqual(c.incident_scope("site", row), {"host": "h1", "bench": "main", "site": "a.example.com"})
+		bench_row = {"host": "h1", "bench": "main", "site_hint": "a.example.com"}
+		self.assertEqual(c.incident_scope("bench", bench_row), {"host": "h1", "bench": "main", "site": None})
+		host_row = {"host": "h1", "bench_hint": "main", "site_hint": "a.example.com"}
+		self.assertEqual(c.incident_scope("host", host_row), {"host": "h1", "bench": None, "site": None})
+		self.assertEqual(c.incident_scope("none", {"host_hint": "h1"}), {"host": None, "bench": None, "site": None})
+
 	def test_severities(self):
 		self.assertEqual(c.severities_at_least("warning"), ["warning", "critical"])
 		self.assertEqual(c.severities_at_least(None), ["info", "warning", "critical"])

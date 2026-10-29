@@ -67,6 +67,21 @@ def group_columns(group_by):
 		raise ValueError(f"unknown group_by {group_by!r}") from None
 
 
+# Scope fields an incident may borrow from the group's samples ("hints"). A site implies its
+# bench and host; a bench or host group spans many sites, so it must not pick one of them.
+HINTABLE = {"site": ("host", "bench")}
+
+
+def incident_scope(group_by, row):
+	"""host/bench/site for the incident of one breached group."""
+	cols = group_columns(group_by)
+	hints = HINTABLE.get(group_by or "none", ())
+	return {
+		f: row.get(f) if f in cols else (row.get(f"{f}_hint") if f in hints else None)
+		for f in ("host", "bench", "site")
+	}
+
+
 def group_key(group_by, row):
 	cols = group_columns(group_by)
 	if not cols:

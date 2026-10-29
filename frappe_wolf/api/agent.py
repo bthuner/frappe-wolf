@@ -7,7 +7,9 @@ from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, now_datetime
 from frappe.utils.password import get_decrypted_password
 
-from frappe_wolf import __version__
+from frappe_wolf import __version__, satellite
+
+KINDS = ("agent", "satellite")
 
 
 def _request_json():
@@ -18,8 +20,10 @@ def _request_json():
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=60 * 60)
 def register():
-	"""Register (or re-register) a host agent. Returns credentials once."""
+	"""Register (or re-register) a host agent or a satellite site. Returns credentials once."""
 	data = _request_json()
+	if satellite.is_satellite():
+		frappe.throw(_("This Wolf site is a satellite: register with its central site instead"), frappe.PermissionError)
 	expected = get_decrypted_password("Wolf Settings", "Wolf Settings", "registration_token", raise_exception=False)
 	token = str(data.get("registration_token") or "")
 	if not expected or not hmac.compare_digest(expected, token):
@@ -28,13 +32,19 @@ def register():
 	hostname = (data.get("hostname") or "").strip()[:140]
 	if not hostname:
 		frappe.throw(_("hostname is required"))
+	kind = data.get("kind") or "agent"
+	if kind not in KINDS:
+		frappe.throw(_("kind must be agent or satellite"))
 
 	secret = frappe.generate_hash(length=40)
 	name = frappe.db.get_value("Wolf Agent", {"hostname": hostname})
+	if name and (frappe.db.get_value("Wolf Agent", name, "kind") or "agent") != kind:
+		frappe.throw(_("{0} is already registered as another kind of Wolf Agent").format(hostname))
 	doc = frappe.get_doc("Wolf Agent", name) if name else frappe.new_doc("Wolf Agent")
 	doc.update(
 		{
 			"hostname": hostname,
+			"kind": kind,
 			"status": "Active",
 			"agent_secret": secret,
 			"agent_version": str(data.get("agent_version") or "")[:140],

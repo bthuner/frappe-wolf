@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 PUSH_METHOD = "/api/method/frappe_wolf.api.ingest.push"
 DEPLOYMENT_METHOD = "/api/method/frappe_wolf.api.ingest.deployment"
+STATUS_METHOD = "/api/method/frappe_wolf.api.ingest.status"
 REGISTER_METHOD = "/api/method/frappe_wolf.api.agent.register"
 MAX_METRICS = 5000
 MAX_EVENTS = 1000
@@ -141,6 +142,7 @@ class Shipper:
 		self.clock = clock
 		self.failures = 0
 		self.retry_at = 0.0
+		self.health = None  # Wolf's own health from the last successful push (protocol §4)
 
 	def _body(self, metrics, events):
 		return {
@@ -156,6 +158,8 @@ class Shipper:
 		interval = resp.get("push_interval")
 		if isinstance(interval, (int, float)) and interval >= 5:
 			self.push_interval = int(interval)
+		if isinstance(resp, dict) and isinstance(resp.get("health"), dict):
+			self.health = resp["health"]
 		return resp
 
 	def _spool(self, bodies):
@@ -171,6 +175,7 @@ class Shipper:
 
 	def send(self, metrics, events):
 		"""Ship a cycle's telemetry. Raises AuthError on rejected credentials."""
+		self.health = None
 		# an empty body still goes out: it is the agent's heartbeat (last seen)
 		bodies = [self._body(m, e) for m, e in split_batches(metrics, events)] or [self._body([], [])]
 		if self.clock() < self.retry_at:
@@ -202,9 +207,15 @@ class Shipper:
 		self.retry_at = 0.0
 		return True
 
-	def mark_deployment(self, bench, site=None, note=None, source="manual"):
+	def mark_deployment(self, bench, site=None, note=None, source="manual", silence_minutes=None):
 		body = {"bench": bench, "site": site, "note": note, "source": source, "timestamp": utc_iso()}
+		if silence_minutes:
+			body["silence_minutes"] = int(silence_minutes)
 		return post_json(self.url + DEPLOYMENT_METHOD, body, self.headers, self.verify_tls)
+
+
+	def status(self, timeout=10):
+		return post_json(self.url + STATUS_METHOD, {}, self.headers, self.verify_tls, timeout=timeout)
 
 
 def register(url, token, hostname, benches, os_name=None, verify_tls=True):

@@ -1,4 +1,4 @@
-"""`wolf-agent` command line: register, run, check, discover, mark-deployment."""
+"""`wolf-agent` command line: register, run, check, discover, mark-deployment, test-fallback."""
 
 import argparse
 import json
@@ -14,7 +14,10 @@ from . import __version__
 from .collector import Collector
 from .config import DEFAULTS, config_path, load_config, press_settings, save_config
 from .discovery import discover_benches
+from .fallback import FallbackError
 from .shipper import AuthError, RejectedError, Shipper, TransportError, register
+from .util import parse_duration_minutes
+from .watchdog import STATE_FILE, Watchdog, assess
 
 log = logging.getLogger("wolf_agent")
 EXIT_AUTH = 2
@@ -106,6 +109,48 @@ def cmd_check(args):
 	collector.close()
 	body = {"hostname": cfg["hostname"], "agent_version": __version__, "metrics": metrics, "events": events}
 	print(json.dumps(body, indent=2))
+	# stdout stays the payload; the watchdog report goes to stderr
+	for line in _watchdog_report(cfg, live=args.status):
+		print(line, file=sys.stderr)
+
+
+def _watchdog(cfg):
+	return Watchdog(cfg, state_path=os.path.join(cfg["spool_dir"], STATE_FILE))
+
+
+def _watchdog_report(cfg, live=False):
+	try:
+		watchdog = _watchdog(cfg)
+		lines = watchdog.summary()
+	except Exception as e:
+		return [f"watchdog: cannot read state: {e}"]
+	if live and not (cfg.get("url") and cfg.get("agent_id") and cfg.get("agent_secret")):
+		lines.append("live status: not registered")
+	elif live:
+		try:
+			health = Shipper(cfg).status().get("health")
+		except (AuthError, RejectedError, TransportError) as e:
+			lines.append(f"live status: unavailable ({e})")
+		else:
+			if isinstance(health, dict):
+				problems = assess(health, watchdog.stale_minutes)
+				lines.append(f"live status: {'; '.join(problems) if problems else 'healthy'}")
+				lines.append("health: " + json.dumps(health, sort_keys=True))
+			else:
+				lines.append("live status: the Wolf site returned no health")
+	return lines
+
+
+def cmd_test_fallback(args):
+	_, cfg = _load(args)
+	watchdog = _watchdog(cfg)
+	try:
+		delivered = watchdog.test()
+	except FallbackError as e:
+		sys.exit(f"fallback failed: {e}")
+	if not delivered:
+		sys.exit("no fallback channel configured: set watchdog.webhook_url and/or watchdog.smtp in the config")
+	print(f"test message sent via {', '.join(delivered)}")
 
 
 def _ephemeral_config(args):
@@ -116,13 +161,24 @@ def _ephemeral_config(args):
 
 
 def cmd_mark_deployment(args):
+	silence = None
+	if args.silence:
+		try:
+			silence = parse_duration_minutes(args.silence)
+		except ValueError as e:
+			sys.exit(str(e))
 	_, cfg = _load(args)
 	shipper = Shipper(cfg)
 	try:
-		shipper.mark_deployment(args.bench, args.site, args.note, args.source)
+		resp = shipper.mark_deployment(args.bench, args.site, args.note, args.source, silence_minutes=silence)
 	except (AuthError, RejectedError, TransportError) as e:
 		sys.exit(f"could not record deployment: {e}")
 	print(f"deployment recorded for bench {args.bench}")
+	if silence:
+		if resp.get("silence"):
+			print(f"notifications silenced until {resp.get('silence_until') or 'the window ends'} ({resp['silence']})")
+		else:
+			log.warning("the Wolf App did not create a silence (older version?): notifications are not muted")
 
 
 def cmd_run(args):
@@ -132,6 +188,7 @@ def cmd_run(args):
 	state_path = os.path.join(cfg["spool_dir"], "tail-state.json")
 	collector = Collector(cfg, state_path=state_path)
 	shipper = Shipper(cfg)
+	watchdog = _watchdog(cfg)
 
 	stop = threading.Event()
 	for sig in (signal.SIGTERM, signal.SIGINT):
@@ -142,10 +199,12 @@ def cmd_run(args):
 		while not stop.is_set():
 			metrics, events = collector.collect()
 			try:
-				shipper.send(metrics, events)
+				ok = shipper.send(metrics, events)
 			except AuthError as e:
 				log.error("Wolf App rejected agent %s credentials (%s); re-register this host", cfg["agent_id"], e)
+				watchdog.fatal(f"the Wolf site rejected agent {cfg['agent_id']} credentials ({e}); re-register this host")
 				return EXIT_AUTH
+			watchdog.observe(ok, shipper.health)
 			stop.wait(shipper.push_interval)
 	finally:
 		collector.close()
@@ -175,6 +234,7 @@ def build_parser():
 	c.add_argument("--from-start", action="store_true", help="parse logs from the beginning instead of EOF")
 	c.add_argument("--bench", action="append", help="bench path when no config exists")
 	c.add_argument("--platform", choices=PLATFORMS, default="auto", help="bench layout (default: config or auto)")
+	c.add_argument("--status", action="store_true", help="also ask the Wolf site for its health (read-only)")
 	c.set_defaults(func=cmd_check)
 
 	d = sub.add_parser("discover", help="print benches found on this host")
@@ -187,7 +247,12 @@ def build_parser():
 	m.add_argument("--site")
 	m.add_argument("--note")
 	m.add_argument("--source", default="manual", choices=["manual", "pilot", "press", "migrate"])
+	m.add_argument("--silence", metavar="DURATION", help="mute notifications for this bench/site, e.g. 15m or 1h")
 	m.set_defaults(func=cmd_mark_deployment)
+
+	sub.add_parser(
+		"test-fallback", help="send a test message through the watchdog fallback channel(s)"
+	).set_defaults(func=cmd_test_fallback)
 	return p
 
 

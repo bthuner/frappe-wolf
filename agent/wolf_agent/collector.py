@@ -2,15 +2,18 @@
 
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timezone
 
-from . import pilot, press
-from .config import pilot_settings, press_settings, resolve_auth_log
+from . import database, pilot, press, tls_expiry
+from .backups import backup_metrics
+from .config import pilot_settings, press_settings, resolve_auth_log, section
 from .discovery import discover_benches, read_bench_toml, resolve_platform
 from .metrics import HostMetrics
 from .parsers import PARSERS, NginxParser
-from .redis_queue import RedisError, queue_metrics
+from .processes import ProcessWatcher
+from .redis_queue import RedisError, RedisProbe
 from .scrub import Scrubber
 from .tailer import FileTailer, JournalTailer, TailState
 
@@ -48,7 +51,7 @@ class Source:
 
 
 class Collector:
-	def __init__(self, cfg, state_path=None, from_start=False, host_metrics=None, clock=time.monotonic):
+	def __init__(self, cfg, state_path=None, from_start=False, host_metrics=None, clock=time.monotonic, sync_checks=False):
 		self.cfg = cfg
 		self.host = cfg["hostname"]
 		self.state = TailState(state_path)
@@ -60,6 +63,8 @@ class Collector:
 		self.press_jobs = None
 		self.press_fs = None
 		self.benches = list(cfg.get("benches") or [])
+		# slow or periodic infrastructure checks (see InfraChecks)
+		self.infra = InfraChecks(cfg, self.host, clock=clock, sync=sync_checks)
 		self.scrubber = Scrubber.from_config(cfg)
 
 		press_cfg = press_settings(cfg)
@@ -220,14 +225,9 @@ class Collector:
 			except Exception:
 				log.exception("collecting Pilot tasks for bench %s", watcher.bench)
 
-		for bench in self.benches:
-			url = bench.get("redis_queue")
-			if not url:
-				continue
-			try:
-				metrics += queue_metrics(url, self.host, bench["name"], now)
-			except (OSError, RedisError, ValueError) as e:
-				log.warning("queue length for bench %s (%s): %s", bench["name"], url, e)
+		m, e = self.infra.collect(self.benches, now)
+		metrics += m
+		events += e
 
 		self.state.save()
 		# before anything is spooled or sent; fingerprints were computed from the raw lines
@@ -249,6 +249,129 @@ class Collector:
 	def close(self):
 		for source in self.sources:
 			source.tailer.close()
+
+
+class InfraChecks:
+	"""Redis/RQ, backups, TLS expiry, MariaDB and process states, each on its own interval.
+
+	Redis, MariaDB and process states run every cycle. Backups run every
+	`backups.interval` seconds. TLS handshakes can take seconds per domain, so they run
+	every `tls.interval` seconds in a background thread and their samples go out with the
+	next cycle (`sync=True`, used by `wolf-agent check`, runs them inline).
+	"""
+
+	def __init__(self, cfg, host, clock=time.monotonic, sync=False):
+		self.host = host
+		self.clock = clock
+		self.sync = sync
+		self.rq = section(cfg, "rq")
+		self.backups = section(cfg, "backups")
+		self.tls = section(cfg, "tls")
+		self.mariadb = section(cfg, "mariadb")
+		self.processes = section(cfg, "processes")
+		self.redis = {}  # (bench, url) -> RedisProbe, kept so counters survive rediscovery
+		self.db_probes = None
+		self.db_key = None
+		self.watcher = ProcessWatcher(host, self.processes.get("manager")) if self.processes.get("enabled", True) else None
+		self.next_run = {}
+		self.tls_lock = threading.Lock()
+		self.tls_pending = []
+		self.tls_thread = None
+
+	def _due(self, name, interval):
+		now = self.clock()
+		if now < self.next_run.get(name, 0):
+			return False
+		self.next_run[name] = now + max(float(interval or 0), 1)
+		return True
+
+	def collect(self, benches, now):
+		metrics, events = [], []
+		for name, fn in (
+			("redis", self._redis), ("backups", self._backups), ("tls", self._tls),
+			("mariadb", self._mariadb), ("processes", self._processes),
+		):
+			try:
+				m, e = fn(benches, now)
+			except Exception:
+				log.exception("collecting %s", name)
+				continue
+			metrics += m
+			events += e
+		return metrics, events
+
+	def _redis(self, benches, now):
+		out, live = [], set()
+		for bench in benches:
+			url = bench.get("redis_queue")
+			if not url:
+				continue
+			key = (bench["name"], url)
+			live.add(key)
+			probe = self.redis.get(key)
+			if probe is None:
+				probe = self.redis[key] = RedisProbe(url, self.host, bench["name"], self.rq.get("long_job_minutes"))
+			try:
+				out += probe.collect(now)
+			except (OSError, RedisError, ValueError) as e:
+				log.warning("queue Redis for bench %s (%s): %s", bench["name"], url, e)
+		for key in set(self.redis) - live:
+			del self.redis[key]
+		return out, []
+
+	def _backups(self, benches, now):
+		if not self.backups.get("enabled", True) or not self._due("backups", self.backups.get("interval")):
+			return [], []
+		if not self.backups.get("press"):
+			benches = [b for b in benches if b.get("platform") != "press"]
+		return backup_metrics(benches, self.host, now, overrides=self.backups.get("dirs")), []
+
+	def _tls(self, benches, now):
+		if not self.tls.get("enabled", True):
+			return [], []
+		with self.tls_lock:
+			ready, self.tls_pending = self.tls_pending, []
+		running = self.tls_thread is not None and self.tls_thread.is_alive()
+		if running or not self._due("tls", self.tls.get("interval")):
+			return ready, []
+		domains = tls_expiry.site_domains(benches, self.tls.get("domains"), self.tls.get("exclude"))
+
+		def run():
+			found = tls_expiry.tls_metrics(
+				domains, self.host, port=int(self.tls.get("port") or 443),
+				timeout=float(self.tls.get("timeout") or 5), connect_host=self.tls.get("connect_host"),
+			)
+			with self.tls_lock:
+				self.tls_pending += found
+
+		if self.sync:
+			run()
+			with self.tls_lock:
+				ready, self.tls_pending = ready + self.tls_pending, []
+			return ready, []
+		self.tls_thread = threading.Thread(target=run, name="wolf-tls", daemon=True)
+		self.tls_thread.start()
+		return ready, []
+
+	def _mariadb(self, benches, now):
+		if not self.mariadb.get("enabled", True):
+			return [], []
+		key = _signature(benches)
+		if self.db_probes is None or key != self.db_key:
+			self.db_key = key
+			self.db_probes = database.build_probes(benches, self.host, self.mariadb)
+		out = []
+		for probe in self.db_probes:
+			try:
+				out += probe.collect(now)
+			except Exception as e:  # CLI errors, subprocess.TimeoutExpired
+				log.warning("MariaDB health for %s: %s", probe.label, e)
+		return out, []
+
+	def _processes(self, benches, now):
+		if not self.watcher:
+			return [], []
+		return self.watcher.collect(benches, now)
 
 
 def _signature(benches):

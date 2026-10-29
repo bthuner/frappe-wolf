@@ -285,6 +285,7 @@ class TestPressCollector(PressCase):
 		ticks = [0.0]
 		cfg = {
 			"hostname": "f1", "collect_host_metrics": False, "auth_log": False, "benches": [], "platform": "press",
+			"tls": False, "mariadb": False, "processes": False,
 			"press": {"agent_dir": self.press.agent_dir, "nginx_access_log": self.press.access_log, "rediscover_interval": 60},
 		}
 		state_path = os.path.join(self.spool, "tail-state.json")

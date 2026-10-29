@@ -100,14 +100,24 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 
 | type              | typical `category` values                                           |
 |-------------------|---------------------------------------------------------------------|
-| `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed` |
+| `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed`, `backup_failed`, `email_queue_backlog`, `email_queue_error` |
 | `cron_failure`    | `scheduled_job`                                                     |
-| `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`                       |
-| `security`        | `ssh_failed_login`, `ssh_root_login`, `frappe_failed_login`, `new_admin_ip`, `privileged_user` |
+| `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`, `process_down`       |
+| `security`        | `ssh_failed_login`, `ssh_root_login`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
 | `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
 `severity`: `info` | `warning` | `critical`.
+
+Categories added with the infrastructure signals:
+
+| category | raised by | when | payload |
+|----------|-----------|------|---------|
+| `process_down` | agent (`source`: `supervisor` / `systemd`) | a bench process enters supervisor `FATAL`/`UNKNOWN` or systemd `failed`; once per transition | `process`, `state`, `detail`, `manager` |
+| `backup_failed` | site (Error Log hook) | an Error Log whose title/method names a backup (S3/Dropbox/Google Drive backup failures) or whose traceback goes through `frappe/utils/backups.py`; `critical` | as `traceback` events |
+| `email_queue_backlog` | site, every 5 min (satellites too) | Email Queue rows `Not Sent`/`Sending`, due, older than **Wolf Settings → Email Queue Stale Minutes** (default 30); one event per site, bumped while it lasts | `pending`, `oldest`, `stale_minutes`, `suspended` |
+| `email_queue_error` | site, every 5 min | Email Queue rows that went to `Error` in the last 15 min | `errors`, `latest` |
+| `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 
 ### Metric names emitted by the agent
 
@@ -123,6 +133,23 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 | `http_5xx`           | count per push interval | host, bench, site  |
 | `http_502`           | count per push interval | host, bench, site  |
 | `queue_length`       | jobs     | host, bench, `labels.queue`       |
+| `rq_failed_jobs`     | jobs     | host, bench, `labels.queue`: size of RQ's failed-job registry (`rq:failed:<queue>`) |
+| `rq_failed_jobs_added` | jobs per push interval | host, bench, `labels.queue`: increase of that registry since the previous push (never negative; none on the agent's first cycle) |
+| `rq_long_running_jobs` | jobs   | host, bench, `labels.queue`: started jobs (`rq:wip:<queue>`) running longer than `rq.long_job_minutes` (default 30) |
+| `rq_workers`         | workers  | host, bench: live members of `rq:workers` (dead workers whose key expired are not counted) |
+| `redis_used_memory_percent` | % | host, bench, `labels.of`: queue Redis `used_memory` / `maxmemory` (`of=maxmemory`), else / `total_system_memory` (`of=system`) |
+| `redis_evicted_keys` | keys per push interval | host, bench: increase of `evicted_keys` in the queue Redis |
+| `backup_age_hours`   | hours    | host, bench, site: age of the newest `sites/<site>/private/backups/*-database.sql*`; every 10 min; sites without any backup send nothing |
+| `tls_days_left`      | days (negative = expired) | host, bench, site, `labels.domain`: certificate `notAfter` of each public site name / custom domain, hourly |
+| `db_threads_connected` | connections | host, bench (when one bench uses the server), `labels.db` (`host:port`) |
+| `db_connections_used_percent` | % | same: `Threads_connected` / `max_connections` |
+| `db_slow_queries`    | queries per push interval | same: increase of `Slow_queries` |
+| `db_replication_lag_seconds` | s | same: `Seconds_Behind_Master`, only on a replica and with REPLICATION CLIENT |
+| `db_replication_running` | 0/1 | same: both replica threads running |
+| `bench_processes_down` | processes | host, bench, `labels.manager`: supervisor processes in STOPPED/EXITED/BACKOFF/FATAL/UNKNOWN, or systemd units `failed` / restart loop |
+
+Agents older than these signals simply do not send them. The app accepts any metric name, so no
+server change is needed to receive them; the presets only need the samples to exist.
 
 ## 3. Deployment marker
 

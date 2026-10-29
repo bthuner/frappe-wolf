@@ -75,7 +75,28 @@ Presets installed on install/migrate (edit or disable freely, they are never ove
 502 spike after deployment · 5xx spike · Nightly cron failure (01:00–04:00) · Scheduler failure ·
 Worker crash · Worker queue backlog · SSH brute force · Repeated failed Frappe logins ·
 Admin login from new IP · Privileged role granted · Disk almost full · High CPU · High memory ·
-High load · Agent silent · Scheduler stalled.
+High load · Agent silent · Scheduler stalled · Background jobs failing · Long-running background
+job · No background workers · Queue Redis memory high · Queue Redis evicting keys · No backup for
+26 h · Backup failed · TLS certificate expiring within 14 days · TLS certificate expiring within 3
+days · Database connections high · Slow queries · Replication lag · Replication stopped · Bench
+process down · Email queue backlog · Email sending errors · Admin login from new country.
+
+| Preset | Signal (source) | Fires when |
+|---|---|---|
+| Background jobs failing | `rq_failed_jobs_added` (agent) | 5+ jobs added to RQ's failed registry in 10 min, per bench (warning) |
+| Long-running background job | `rq_long_running_jobs` (agent) | a job has been running longer than `rq.long_job_minutes` (30) for 15 min, per queue (warning) |
+| No background workers | `rq_workers` (agent) | no live RQ worker for 5 min, per bench (critical) |
+| Queue Redis memory high | `redis_used_memory_percent` (agent) | above 90% for 10 min (warning) |
+| Queue Redis evicting keys | `redis_evicted_keys` (agent) | any eviction in 10 min: queued jobs are being lost (critical) |
+| No backup for 26 h | `backup_age_hours` (agent) | the site's newest database backup is older than 26 h (warning) |
+| Backup failed | `error` / `backup_failed` (site) | a backup Error Log (critical) |
+| TLS certificate expiring within 14 / 3 days | `tls_days_left` (agent) | latest sample below 14 (warning) / 3 (critical), per domain |
+| Database connections high | `db_connections_used_percent` (agent) | above 85% of `max_connections` for 5 min (warning) |
+| Slow queries | `db_slow_queries` (agent) | 20+ slow queries in 10 min (warning) |
+| Replication lag / stopped | `db_replication_lag_seconds`, `db_replication_running` (agent) | more than 300 s behind for 10 min / a replica thread stopped for 5 min (critical) |
+| Bench process down | `bench_processes_down` (agent) | a supervisor/systemd process of the bench down for 3 min (critical) |
+| Email queue backlog / sending errors | `error` / `email_queue_backlog`, `email_queue_error` (site) | emails waiting longer than Email Queue Stale Minutes (30) / emails in Error in the last 15 min (warning) |
+| Admin login from new country | `security` / `admin_login_new_country` (site) | a privileged login from a country none of the user's earlier logins came from (critical, needs a GeoIP database) |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 
@@ -179,8 +200,23 @@ disruption" unless you fill its **Public Title**.
 ## Signals captured on the Wolf site itself
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),
-Error Logs, failed desk logins, privileged logins from a new IP, privileged role grants and each
+Error Logs (failed backups as `backup_failed`), failed desk logins, privileged logins from a new IP
+or a new country, privileged role grants, Email Queue backlogs and sending errors, and each
 `bench migrate` (as a deployment). Each signal can be turned off in Wolf Settings.
+
+**Admin login from a new country** needs an offline GeoIP database on the server; Wolf never calls
+an online lookup service. Set **Wolf Settings → GeoIP Database** to the path of either:
+
+- a MaxMind-format `.mmdb` file: GeoLite2-Country or GeoLite2-City (free MaxMind account),
+  DB-IP "IP to Country Lite" (`dbip-country-lite-*.mmdb`, CC BY 4.0) or IPinfo Lite. Wolf reads it
+  with its own minimal reader, so no extra Python package is needed;
+- or a CSV of ranges, one per line: `start_ip,end_ip,CC` (DB-IP / IPinfo "country lite" CSV),
+  integer `start,end,CC,...` (IP2Location LITE DB1) or `network/prefix,CC`. Header lines are skipped.
+
+Relative paths are read from the site directory (for example `private/files/dbip-country.mmdb`).
+Refresh the file monthly; Wolf reloads it when it changes. Private and loopback addresses have no
+country, and a user whose earlier logins all came from such addresses has no baseline yet, so
+nothing is flagged until a first public login is known.
 
 ## Every site on a bench
 
@@ -200,8 +236,9 @@ The same is available in Desk: **Wolf Settings → Register with central site**.
 
 A satellite:
 
-- keeps capturing its local signals (failed scheduled jobs, Error Logs, logins, privileged role
-  grants, `bench migrate`), with the same Wolf Settings switches;
+- keeps capturing its local signals (failed scheduled jobs, Error Logs and failed backups, logins
+  incl. new IPs/countries, privileged role grants, Email Queue backlog/errors, `bench migrate`),
+  with the same Wolf Settings switches;
 - stores them in **Wolf Outbox** and pushes them every minute to the central site through the
   agent ingest API, with the same host/bench/site scope, so central rules and incidents see them
   like any other event;

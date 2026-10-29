@@ -19,7 +19,9 @@ read from frappe/pilot at commit
 | Sites | Reads `sites/*/site_config.json`, plus `domains` (plain strings or `{"domain": …, "route": …}`) for host→site mapping | done, unit tested |
 | Process logs | Tails `web`, `schedule`, `worker_<queues>_<i>` and their stderr files, for both the systemd and the supervisor naming | done, unit tested |
 | nginx | Tails `<bench>/logs/nginx-access.log`, which uses the `pilot_access` format (a new parser branch) | done, unit tested |
-| Redis queue | Reads `queue_length` from `redis://127.0.0.1:<[redis] queue_port>`. `common_site_config.json`'s `redis_queue` takes precedence when present. | done |
+| Redis queue | Reads `queue_length`, the RQ failed/started registries, live workers and Redis memory/evictions from `redis://127.0.0.1:<[redis] queue_port>`. `common_site_config.json`'s `redis_queue` takes precedence when present. | done |
+| Backups, TLS, MariaDB | Same as on any bench: `sites/<site>/private/backups/`, each site and `domains` entry, the site's database credentials | done (generic) |
+| Processes | `supervisorctl status`, else systemd units whose name contains the bench name (`bench_processes_down`). Pilot's exact unit/program names were not checked: if they do not contain the `[bench] name`, nothing is reported | unverified |
 | Deployments | Emits a `deployment` event (category `pilot`) when an update, migrate, branch switch, app install, build, restart or restore task **starts**, and an `error` event (`pilot_task_failed`) when one fails. Read from the Admin API, or from the task files. | done, unit tested |
 | "Enable Wolf for this bench" toggle in Pilot | Needs a change in frappe/pilot | **not done** (see [What Pilot would need](#what-pilot-would-need)) |
 | Real Pilot host | **Not tested yet** | — |

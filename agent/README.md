@@ -70,7 +70,37 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   quoted field), else from a per-site log file name, else the bench's only site.
 - **sshd** (`/var/log/auth.log`, `/var/log/secure`, or `journalctl -u ssh -u sshd`):
   failed logins aggregated per source IP, root logins.
-- **Redis**: `queue_length` for every `rq:queue:*` list in the bench's `redis_queue`.
+- **Redis / RQ** (the bench's `redis_queue`): `queue_length` for every `rq:queue:*` list;
+  `rq_failed_jobs` (failed-job registry size) and `rq_failed_jobs_added` (its increase per push);
+  `rq_long_running_jobs` (started jobs older than `rq.long_job_minutes`, default 30);
+  `rq_workers` (live workers); `redis_used_memory_percent` and `redis_evicted_keys` from `INFO`.
+  Only the queue Redis is watched: the cache Redis is an LRU cache by design (Frappe's
+  `redis_cache.conf` sets `maxmemory` with `allkeys-lru`), so a full cache and evictions are normal.
+- **Backups**: `backup_age_hours` per site, from the newest
+  `sites/<site>/private/backups/*-database.sql*` (every `backups.interval`, 10 min). A site that
+  never had a backup sends nothing, so "No backup for 26 h" cannot fire for it. Press benches are
+  skipped (`backups.press`), since Press uploads backups offsite and its local copies are not a
+  reliable signal. Offsite-only setups can point `backups.dirs` at a mounted directory per site.
+- **TLS**: `tls_days_left` for every public site name and custom domain (`site_config.json`
+  `domains`), every `tls.interval` (1 h), in a background thread. The agent connects to
+  `<domain>:443` with SNI (or to `tls.connect_host`, e.g. `127.0.0.1`, to check the local nginx),
+  reads the leaf certificate without verifying it, so expired and self-signed certificates are
+  measured too, and times out after `tls.timeout` (5 s). `localhost`, `*.localhost`, `.local`,
+  `.test`, bare names, IP addresses and the RFC 2606 `example.*` names are skipped; unreachable
+  domains are logged and skipped. Add names with `tls.domains`, drop some with `tls.exclude`.
+- **MariaDB** through the `mariadb` (or `mysql`) client, with a site's own `db_name` /
+  `db_password` and `db_host` / `db_port` from the bench (written to a private temporary option
+  file, never on the command line): `db_threads_connected`, `db_connections_used_percent`,
+  `db_slow_queries` (increase per push) and, on a replica, `db_replication_lag_seconds` and
+  `db_replication_running`. A site user may not read replica status (REPLICATION CLIENT /
+  SLAVE MONITOR); then it is skipped, unless `mariadb.user`/`password` or `mariadb.defaults_file`
+  names a monitoring user. Without a client on the host, or for Postgres benches, nothing is sent.
+- **Processes**: `supervisorctl status` (the socket is group-accessible for the bench user's
+  group after `bench setup supervisor`), else `systemctl list-units` for service units whose name
+  contains the bench name. `bench_processes_down` per bench counts processes that are STOPPED,
+  EXITED, BACKOFF, FATAL or UNKNOWN (systemd: `failed` or a restart loop). A process that enters
+  FATAL/UNKNOWN (systemd `failed`) also sends one `worker_failure` / `process_down` event. Press
+  benches run their processes inside containers and are skipped.
 
 Logs are read from the end on first start; offsets are kept in
 `/var/lib/wolf-agent/spool/tail-state.json` so restarts and log rotation lose nothing.
@@ -103,6 +133,13 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
      "redis_queue": "redis://127.0.0.1:11000"}
   ],
   "extra_logs": [{"path": "/var/log/myapp/error.log", "parser": "traceback", "bench": null, "site": null}],
+  "rq": {"long_job_minutes": 30},
+  "backups": {"enabled": true, "interval": 600, "press": false, "dirs": {}},
+  "tls": {"enabled": true, "interval": 3600, "port": 443, "timeout": 5, "connect_host": null,
+          "domains": ["status.example.com"], "exclude": []},
+  "mariadb": {"enabled": true, "cli": null, "host": null, "port": null, "user": null,
+              "password": null, "defaults_file": null},
+  "processes": {"enabled": true, "manager": "auto"},
   "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
@@ -118,6 +155,9 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
+`rq`, `backups`, `tls`, `mariadb`, `processes`: every key is optional (defaults above), and
+`"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
+`supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
 
 ## Scrubbing (PII and secrets)
 

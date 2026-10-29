@@ -18,7 +18,7 @@ before customers notice, and keeps all data on your own Frappe site.
 cd ~/frappe-bench
 bench get-app https://github.com/bthuner/frappe-wolf
 bench --site wolf.example.com install-app frappe_wolf
-bench build --app frappe_wolf
+bench build --app frappe_wolf   # links the static assets
 ```
 
 Installing creates the roles **Wolf Manager** and **Wolf User**, a random registration token and

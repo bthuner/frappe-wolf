@@ -74,15 +74,37 @@ class Loader:
 		self.start = storage.floor(self.now - timedelta(days=args.days), storage.HOUR)
 		self.raw_start = storage.floor(self.now - timedelta(hours=args.raw_hours), storage.HOUR)
 		self.rng = random.Random(42)
-		self.counts = {}
+		self.pool = [round(self.rng.uniform(5, 95), 2) for _ in range(4093)]
+		self.pool_i, self.seq, self.counts, self.t0 = 0, 0, {}, time.perf_counter()
 
 	def value(self, metric):
 		return round(self.rng.uniform(5, 95), 2) if not metric.startswith("http_") else self.rng.randint(0, 50)
 
-	def bulk(self, doctype, fields, rows):
-		frappe.db.bulk_insert(doctype, fields, rows, chunk_size=5000)
+	def pooled(self):
+		"""Cheap pseudo-random values (generating tens of millions of rows is the slow part)."""
+		self.pool_i = (self.pool_i + 1) % len(self.pool)
+		return self.pool[self.pool_i]
+
+	def name(self):
+		self.seq += 1
+		return f"ld{self.seq:011d}"
+
+	def bulk(self, doctype, fields, rows, chunk=2000):
+		"""Multi-row INSERT (faster than frappe.db.bulk_insert for millions of rows), one commit per call."""
+		cols = ", ".join(f"`{f}`" for f in fields)
+		row_ph = "(" + ", ".join(["%s"] * len(fields)) + ")"
+		for i in range(0, len(rows), chunk):
+			part = rows[i : i + chunk]
+			frappe.db.sql(
+				f"insert into `tab{doctype}` ({cols}) values {', '.join([row_ph] * len(part))}",
+				[v for row in part for v in row],
+			)
 		frappe.db.commit()
 		self.counts[doctype] = self.counts.get(doctype, 0) + len(rows)
+		elapsed = time.perf_counter() - self.t0
+		total = sum(self.counts.values())
+		if total // 1_000_000 != (total - len(rows)) // 1_000_000:
+			print(f"    {total:,} rows in {elapsed:.0f}s ({total / max(elapsed, 1e-9):,.0f} rows/s)", flush=True)
 
 	def clean(self):
 		for table in ("Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Event"):
@@ -96,10 +118,11 @@ class Loader:
 		batch, ts, step = [], self.raw_start, timedelta(seconds=self.args.interval)
 		end = self.now - timedelta(seconds=self.args.interval)
 		while ts < end:
+			t = ts.strftime("%Y-%m-%d %H:%M:%S")
 			for host in self.hosts:
 				for metric in self.metrics:
-					batch.append((frappe.generate_hash(length=12), ts, ts, "Administrator", "Administrator", 0,
-					              metric, self.value(metric), ts, host, None, None, None, None))
+					batch.append((self.name(), t, t, "Administrator", "Administrator", 0,
+					              metric, self.pooled(), t, host, None, None, None, None))
 			if len(batch) >= 50_000:
 				self.bulk("Wolf Metric Sample", fields, batch)
 				batch = []
@@ -114,13 +137,14 @@ class Loader:
 			batch, ts, step = [], self.start, timedelta(seconds=res)
 			per_bucket = max(1, res // self.args.interval)
 			while ts < until:
+				t = ts.strftime("%Y-%m-%d %H:%M:%S")
+				last = (ts + step - timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
 				for host in self.hosts:
 					for metric in self.metrics:
-						lo, hi = sorted((self.value(metric), self.value(metric)))
-						key = (metric, host, None, None, None, ts)
-						batch.append((storage.rollup_name(res, key), ts, ts, "Administrator", "Administrator", 0,
-						              metric, res, ts, host, None, None, None,
-						              per_bucket, (lo + hi) / 2 * per_bucket, lo, hi, hi, ts + step - timedelta(seconds=1)))
+						lo, hi = sorted((self.pooled(), self.pooled()))
+						batch.append((self.name(), t, t, "Administrator", "Administrator", 0,
+						              metric, res, t, host, None, None, None,
+						              per_bucket, (lo + hi) / 2 * per_bucket, lo, hi, hi, last))
 				if len(batch) >= 50_000:
 					self.bulk("Wolf Metric Rollup", fields, batch)
 					batch = []
@@ -139,9 +163,9 @@ class Loader:
 		while ts < self.now:
 			for host in self.hosts:
 				kind = self.rng.choice(("error", "security", "cron_failure"))
-				batch.append((frappe.generate_hash(length=12), ts, ts, "Administrator", "Administrator", 0,
+				batch.append((self.name(), ts, ts, "Administrator", "Administrator", 0,
 				              f"load {kind} on {host}", kind, "load", self.rng.choice(("warning", "critical")), "load",
-				              ts, ts, 1, frappe.generate_hash(length=20), host))
+				              ts, ts, 1, f"load-{self.seq}", host))
 			ts += timedelta(hours=1)
 		self.bulk("Wolf Event", fields, batch)
 

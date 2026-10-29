@@ -207,8 +207,10 @@ class Shipper:
 		self.retry_at = 0.0
 		return True
 
-	def mark_deployment(self, bench, site=None, note=None, source="manual"):
+	def mark_deployment(self, bench, site=None, note=None, source="manual", silence_minutes=None):
 		body = {"bench": bench, "site": site, "note": note, "source": source, "timestamp": utc_iso()}
+		if silence_minutes:
+			body["silence_minutes"] = int(silence_minutes)
 		return post_json(self.url + DEPLOYMENT_METHOD, body, self.headers, self.verify_tls)
 
 

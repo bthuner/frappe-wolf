@@ -97,3 +97,18 @@ def event(
 		"fingerprint": fingerprint,
 		"payload": payload,
 	}
+
+
+_DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhd]?)\s*$", re.IGNORECASE)
+_DURATION_UNIT = {"": 60, "s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration_minutes(value):
+	"""`15m`, `1h`, `90s`, `2d` or a bare number of minutes -> whole minutes (rounded up)."""
+	m = _DURATION_RE.match(str(value or ""))
+	if not m:
+		raise ValueError(f"invalid duration {value!r} (use e.g. 15m, 1h, 90s)")
+	seconds = int(m.group(1)) * _DURATION_UNIT[m.group(2).lower()]
+	if seconds <= 0:
+		raise ValueError("duration must be positive")
+	return -(-seconds // 60)

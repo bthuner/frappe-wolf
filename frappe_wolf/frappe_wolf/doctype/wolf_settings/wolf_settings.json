@@ -39,7 +39,8 @@
   "cb_retention",
   "event_retention_days",
   "links_section",
-  "public_url"
+  "public_url",
+  "action_link_hours"
  ],
  "fields": [
   {
@@ -263,6 +264,13 @@
    "fieldtype": "Data",
    "label": "Public Url",
    "options": "URL"
+  },
+  {
+   "default": "24",
+   "description": "Acknowledge/resolve links in alerts stay valid this long. 0 disables them.",
+   "fieldname": "action_link_hours",
+   "fieldtype": "Int",
+   "label": "Action Link Hours"
   }
  ],
  "index_web_pages_for_search": 0,

@@ -34,7 +34,12 @@ doc_events = {
 
 scheduler_events = {
 	"cron": {
-		"* * * * *": ["frappe_wolf.tasks.evaluate_rules", "frappe_wolf.tasks.forward_outbox"],
+		"* * * * *": [
+			"frappe_wolf.tasks.evaluate_rules",
+			"frappe_wolf.tasks.check_incidents",
+			"frappe_wolf.tasks.forward_outbox",
+		],
+		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
 		"*/5 * * * *": ["frappe_wolf.tasks.check_agents"],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
 	},

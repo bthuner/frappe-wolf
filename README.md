@@ -64,6 +64,39 @@ Without any agent, the site running Frappe Wolf records failed Scheduled Job Log
 Error Logs, failed desk logins, privileged logins from a new IP, privileged role grants and each
 `bench migrate` (as a deployment). Each signal can be turned off in Wolf Settings.
 
+## Every site on a bench
+
+Some signals can only be seen from inside a site. Frappe logs "Scheduled Job Failed" at INFO,
+which the default logger level drops, and it often writes no Scheduled Job Log, so the agent
+cannot see a failing cron on a site from `scheduler.log`. Install `frappe_wolf` on every site
+and keep one of them as the **central** Wolf site. Set the others to **satellite** mode:
+
+```bash
+bench --site b.example.com install-app frappe_wolf
+bench --site b.example.com execute frappe_wolf.satellite.register \
+  --kwargs '{"url": "https://wolf.example.com", "token": "<central registration token>"}'
+# add "verify_tls": 0 for a self-signed central site
+```
+
+The same is available in Desk: **Wolf Settings → Register with central site**.
+
+A satellite:
+
+- keeps capturing its local signals (failed scheduled jobs, Error Logs, logins, privileged role
+  grants, `bench migrate`), with the same Wolf Settings switches;
+- stores them in **Wolf Outbox** and pushes them every minute to the central site through the
+  agent ingest API, with the same host/bench/site scope, so central rules and incidents see them
+  like any other event;
+- retries with backoff (1, 2, 4, 8, then every 15 minutes) while the central site is unreachable,
+  keeps at most 10,000 pending events (drops the oldest) and shows the forwarding status on Wolf
+  Overview and Wolf Settings (**Forward now** pushes immediately);
+- evaluates no rules, opens no incidents and stores no Wolf Events.
+
+On the central site the satellite is a **Wolf Agent** with kind `satellite`, named after its
+site. Its push runs every minute even when there is nothing to send, so the **Agent silent**
+preset also fires when a satellite's scheduler stops. Disable the Wolf Agent to stop accepting
+its events. Setting Mode back to `central` makes the site a standalone Wolf again.
+
 ## Development
 
 ```bash

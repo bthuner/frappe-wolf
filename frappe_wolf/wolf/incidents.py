@@ -134,7 +134,16 @@ def attach_to_open_incident(event_name, event):
 			or (ifnull(bench, '') != '' and bench = %(bench)s and ifnull(host, '') in ('', %(host)s))
 			or (host = %(host)s and ifnull(bench, '') = '' and ifnull(site, '') = '')
 		)
-		order by started_at desc limit 1""",
+		order by
+			-- most specific scope first: a site event belongs to the site's incident
+			-- rather than to a host-wide one (disk, load) opened later
+			case
+				when ifnull(site, '') != '' and site = %(site)s then 0
+				when ifnull(bench, '') != '' and bench = %(bench)s then 1
+				else 2
+			end,
+			started_at desc
+		limit 1""",
 		{"site": event.get("site") or "", "bench": event.get("bench") or "", "host": event.get("host") or ""},
 	)
 	if not rows:

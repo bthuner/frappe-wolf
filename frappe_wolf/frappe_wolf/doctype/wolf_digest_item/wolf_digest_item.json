@@ -13,6 +13,7 @@
   "cb_1",
   "channel_type",
   "destination",
+  "channel_row",
   "queued_at"
  ],
  "fields": [
@@ -62,6 +63,12 @@
    "label": "Destination"
   },
   {
+   "fieldname": "channel_row",
+   "fieldtype": "Data",
+   "label": "Channel Row",
+   "description": "Wolf Alert Channel row a native channel's digest is sent with (its secrets stay there)."
+  },
+  {
    "fieldname": "queued_at",
    "fieldtype": "Datetime",
    "label": "Queued At",
@@ -71,7 +78,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Digest Item",

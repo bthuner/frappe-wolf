@@ -1,0 +1,222 @@
+{
+ "actions": [],
+ "autoname": "WPM-.#####",
+ "creation": "2026-10-30 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "incident",
+  "status",
+  "cb_1",
+  "severity",
+  "started_at",
+  "resolved_at",
+  "duration_minutes",
+  "scope_section",
+  "site",
+  "cb_2",
+  "bench",
+  "cb_3",
+  "host",
+  "summary_section",
+  "summary",
+  "impact",
+  "root_cause",
+  "lessons_learned",
+  "actions_section",
+  "action_items",
+  "timeline_section",
+  "timeline_snapshot"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "length": 255,
+   "reqd": 1
+  },
+  {
+   "fieldname": "incident",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Incident",
+   "options": "Wolf Incident",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nIn Review\nPublished"
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "incident.severity",
+   "fieldname": "severity",
+   "fieldtype": "Data",
+   "label": "Severity",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "incident.started_at",
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "incident.resolved_at",
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duration_minutes",
+   "fieldtype": "Float",
+   "label": "Duration (minutes)",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Scope"
+  },
+  {
+   "fetch_from": "incident.site",
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Site",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "incident.bench",
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "label": "Bench",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "incident.host",
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host",
+   "read_only": 1
+  },
+  {
+   "fieldname": "summary_section",
+   "fieldtype": "Section Break",
+   "label": "Analysis"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Text Editor",
+   "label": "Summary"
+  },
+  {
+   "fieldname": "impact",
+   "fieldtype": "Text Editor",
+   "label": "Impact"
+  },
+  {
+   "fieldname": "root_cause",
+   "fieldtype": "Text Editor",
+   "label": "Root Cause"
+  },
+  {
+   "fieldname": "lessons_learned",
+   "fieldtype": "Text Editor",
+   "label": "Lessons Learned"
+  },
+  {
+   "fieldname": "actions_section",
+   "fieldtype": "Section Break",
+   "label": "Action Items"
+  },
+  {
+   "fieldname": "action_items",
+   "fieldtype": "Table",
+   "label": "Action Items",
+   "options": "Wolf Postmortem Action Item"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "timeline_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline Snapshot"
+  },
+  {
+   "description": "Frozen copy of the incident timeline when this postmortem was started.",
+   "fieldname": "timeline_snapshot",
+   "fieldtype": "Text Editor",
+   "label": "Timeline Snapshot"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Postmortem",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "search_fields": "incident,site",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

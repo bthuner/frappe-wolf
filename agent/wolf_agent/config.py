@@ -58,6 +58,9 @@ DEFAULTS = {
 	"processes": {"enabled": True, "manager": "auto"},
 	# alerts when the Wolf site itself stops working, sent without going through it
 	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
+	# PII/secret scrubbing of event titles and payloads before they are shipped (scrub.py).
+	# `ips` is off because the SSH brute-force / new-IP signals need the addresses.
+	"scrub": {"enabled": True, "ips": False, "extra_patterns": [], "keep": []},
 	"watchdog": {"enabled": True, "stale_minutes": 5, "webhook_url": None, "smtp": None},
 }
 

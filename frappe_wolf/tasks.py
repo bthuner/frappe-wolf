@@ -104,4 +104,5 @@ def purge_old_data():
 		{"before": add_days(now, -event_days)},
 	)
 	frappe.db.delete("Wolf Silence", {"ends_at": ("<", add_days(now, -event_days))})
+	frappe.db.delete("Wolf Delivery", {"at": ("<", add_days(now, -event_days))})
 	frappe.db.commit()

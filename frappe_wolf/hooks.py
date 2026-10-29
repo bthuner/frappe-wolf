@@ -19,11 +19,29 @@ add_to_apps_screen = [
 	}
 ]
 
-after_install = "frappe_wolf.install.after_install"
+# Public, opt-in status pages (Wolf Status Page): www/wolf_status.py
+website_route_rules = [
+	{"from_route": "/wolf-status/<slug>", "to_route": "wolf_status"},
+]
+
+after_install ="frappe_wolf.install.after_install"
 after_migrate = "frappe_wolf.install.after_migrate"
 
 override_doctype_class = {
 	"Scheduled Job Type": "frappe_wolf.overrides.scheduled_job_type.WolfScheduledJobType",
+}
+
+# Wolf User Scope: restricted Wolf Users only see their sites/benches/hosts (wolf/access.py)
+permission_query_conditions = {
+	"Wolf Event": "frappe_wolf.wolf.access.event_query",
+	"Wolf Metric Sample": "frappe_wolf.wolf.access.metric_query",
+	"Wolf Incident": "frappe_wolf.wolf.access.incident_query",
+	"Wolf Silence": "frappe_wolf.wolf.access.silence_query",
+	"Wolf Agent": "frappe_wolf.wolf.access.agent_query",
+}
+has_permission = {
+	doctype: "frappe_wolf.wolf.access.has_permission"
+	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Incident", "Wolf Silence", "Wolf Agent")
 }
 
 doc_events = {

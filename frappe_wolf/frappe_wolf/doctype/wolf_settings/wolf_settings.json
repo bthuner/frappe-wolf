@@ -24,6 +24,7 @@
   "cb_agents",
   "max_events_per_push",
   "max_metrics_per_push",
+  "max_pushes_per_minute",
   "correlation_section",
   "deployment_window_minutes",
   "timeline_padding_minutes",
@@ -180,6 +181,14 @@
    "fieldname": "max_metrics_per_push",
    "fieldtype": "Int",
    "label": "Max Metrics Per Push"
+  },
+  {
+   "default": "120",
+   "description": "Per agent (and satellite). Pushes over the limit get HTTP 429 and the agent retries with backoff. 0 turns the limit off.",
+   "fieldname": "max_pushes_per_minute",
+   "fieldtype": "Int",
+   "label": "Max Pushes Per Minute",
+   "non_negative": 1
   },
   {
    "fieldname": "correlation_section",

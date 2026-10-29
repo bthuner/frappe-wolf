@@ -8,7 +8,8 @@
   "hostname",
   "status",
   "kind",
-  "agent_secret",
+  "secret_hash",
+  "secret_issued_at",
   "cb_1",
   "last_seen",
   "last_ip",
@@ -50,10 +51,21 @@
    "read_only": 1
   },
   {
-   "description": "Rotated each time the agent registers.",
-   "fieldname": "agent_secret",
-   "fieldtype": "Password",
-   "label": "Agent Secret",
+   "description": "Salted hash of the agent secret. The secret itself is shown once, when the agent registers or the secret is rotated, and is not stored.",
+   "fieldname": "secret_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Secret Hash",
+   "no_copy": 1,
+   "permlevel": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Set each time the agent registers or the secret is rotated.",
+   "fieldname": "secret_issued_at",
+   "fieldtype": "Datetime",
+   "label": "Secret Issued At",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -114,7 +126,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-30 09:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Agent",
@@ -150,6 +162,16 @@
    "read": 1,
    "report": 1,
    "role": "Wolf User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "Wolf Manager"
   }
  ],
  "search_fields": "hostname",

@@ -3,6 +3,7 @@ import frappe
 from frappe_wolf.patches import default_signal_settings
 from frappe_wolf.wolf.local_signals import after_migrate_marker
 from frappe_wolf.wolf.presets import install_presets
+from frappe_wolf.wolf.rate import DEFAULT_PUSHES_PER_MINUTE
 
 ROLES = ("Wolf Manager", "Wolf User")
 
@@ -22,6 +23,8 @@ def ensure_settings():
 	for field, value in default_signal_settings.DEFAULTS.items():
 		if settings.get(field) is None:
 			settings.set(field, value)
+	if settings.max_pushes_per_minute is None:
+		settings.max_pushes_per_minute = DEFAULT_PUSHES_PER_MINUTE
 	if not settings.get_password("registration_token", raise_exception=False):
 		settings.registration_token = frappe.generate_hash(length=32)
 		settings.flags.ignore_permissions = True

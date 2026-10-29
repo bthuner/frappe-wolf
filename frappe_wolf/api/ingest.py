@@ -4,7 +4,7 @@ from frappe.utils import cint, now_datetime
 
 from frappe_wolf import satellite
 from frappe_wolf.api.agent import _request_json, authenticate_agent, push_interval
-from frappe_wolf.wolf import events, health, schema, silences
+from frappe_wolf.wolf import events, health, rate, schema, silences
 from frappe_wolf.wolf.incidents import attach_to_open_incident
 
 
@@ -12,13 +12,14 @@ from frappe_wolf.wolf.incidents import attach_to_open_incident
 def push():
 	"""Receive a batch of metrics and events from an agent (docs/protocol.md §2)."""
 	agent = authenticate_agent()
+	settings = frappe.get_cached_doc("Wolf Settings")
+	rate.check_push_rate(agent, cint(settings.max_pushes_per_minute))
 	data = _request_json()
 	metrics_in = data.get("metrics") or []
 	events_in = data.get("events") or []
 	if not isinstance(metrics_in, list) or not isinstance(events_in, list):
 		frappe.throw(_("metrics and events must be lists"))
 
-	settings = frappe.get_cached_doc("Wolf Settings")
 	if len(metrics_in) > (cint(settings.max_metrics_per_push) or 5000) or len(events_in) > (
 		cint(settings.max_events_per_push) or 1000
 	):

@@ -14,6 +14,7 @@ from .metrics import HostMetrics
 from .parsers import PARSERS, NginxParser
 from .processes import ProcessWatcher
 from .redis_queue import RedisError, RedisProbe
+from .scrub import Scrubber
 from .tailer import FileTailer, JournalTailer, TailState
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class Collector:
 		self.benches = list(cfg.get("benches") or [])
 		# slow or periodic infrastructure checks (see InfraChecks)
 		self.infra = InfraChecks(cfg, self.host, clock=clock, sync=sync_checks)
+		self.scrubber = Scrubber.from_config(cfg)
 
 		press_cfg = press_settings(cfg)
 		if resolve_platform(cfg.get("platform"), press_cfg["agent_dir"]) == "press":
@@ -228,7 +230,8 @@ class Collector:
 		events += e
 
 		self.state.save()
-		return metrics, events
+		# before anything is spooled or sent; fingerprints were computed from the raw lines
+		return metrics, self.scrubber.events(events)
 
 	def _press_deployments(self, now):
 		if not self.press_jobs:

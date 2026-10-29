@@ -140,6 +140,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "mariadb": {"enabled": true, "cli": null, "host": null, "port": null, "user": null,
               "password": null, "defaults_file": null},
   "processes": {"enabled": true, "manager": "auto"},
+  "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
     "stale_minutes": 5,
@@ -157,6 +158,37 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `rq`, `backups`, `tls`, `mariadb`, `processes`: every key is optional (defaults above), and
 `"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
 `supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
+
+## Scrubbing (PII and secrets)
+
+Before an event is spooled or sent, the agent scrubs its title and every string in its
+payload (sample lines, tracebacks, messages, routes). It is on by default:
+
+| what | becomes |
+|------|---------|
+| e-mail addresses, also URL-encoded (`jane%40example.com`) | `[EMAIL]` |
+| `Authorization:` / `Proxy-Authorization:` header values, `Cookie:` / `Set-Cookie:` values | `[REDACTED]` |
+| `Bearer …`, `token <key>:<secret>`, `Basic …` credentials | `[REDACTED]` |
+| JWTs (`eyJ….….…`) | `[JWT]` |
+| values of `password`, `pwd`, `new_password`, `*_secret`, `*_token`, `api_key`, `sid`, `session_id`, `otp`, `signature` keys, in query strings, forms, JSON or Python dict reprs | `[REDACTED]` |
+| card-like numbers (13–19 digits, Luhn-valid, issuer digit 2–6) | `[CARD]` |
+| IBAN-like strings (mod-97 checked) | `[IBAN]` |
+| IP addresses, only with `"ips": true` | `[IP:<8 hex>]` (keyed hash, stable per agent) |
+
+IPs are kept by default because the SSH brute-force and "admin login from a new IP" rules
+are built on them; turn `ips` on if addresses count as personal data for you and you can
+live without per-IP grouping in titles. Type, host, bench, site, timestamp and fingerprint
+are never changed. Fingerprints are computed from the raw lines before scrubbing, so
+grouping and deduplication on the Wolf site work the same either way.
+
+- `extra_patterns`: more regexes, as strings (replaced by `[REDACTED]`) or
+  `{"pattern": "CUST-\\d{6}", "replacement": "[CUSTOMER]"}`. Invalid ones are logged and skipped.
+- `keep`: values never replaced: exact strings (case-insensitive), or `@domain` to keep every
+  address at that domain (e.g. your own `@dokos.io` system mails).
+- `"scrub": false` or `"enabled": false` ships the lines as they are.
+
+Run `wolf-agent check` to see exactly what would be sent. Metrics carry no free text and are
+not scrubbed. Text you type yourself (`mark-deployment --note`) is sent as is.
 
 ## Watchdog
 

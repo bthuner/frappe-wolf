@@ -90,7 +90,42 @@ per request; the agent splits larger batches.
 ```
 POST /api/method/frappe_wolf.api.ingest.deployment
 X-Wolf-Agent-Id / X-Wolf-Agent-Secret headers
-{"bench": "main", "site": null, "note": "bench update", "source": "manual", "timestamp": "..."}
+{"bench": "main", "site": null, "note": "bench update", "source": "manual", "timestamp": "...",
+ "silence_minutes": 15}
 ```
 
 Equivalent to pushing a single `deployment` event. `wolf-agent mark-deployment` calls it.
+
+`silence_minutes` is optional (added after v1, backward compatible: older apps ignore it, and
+agents omit it unless `--silence` is given). When it is a positive integer, the app also creates a
+**Wolf Silence** (maintenance window) from now for that many minutes (capped at 24 h), scoped to the
+agent's host plus the given bench and site. Incidents matching the silence still open and update,
+so the timeline stays complete, but their notifications are held back; incidents still open when
+the window ends are notified then.
+
+Response: `{"message": {"event": "<Wolf Event name>"}}`, plus
+`"silence": "WSIL-00001", "silence_until": "2026-10-29 02:15:00"` (site time zone) when a silence
+was created. An agent that asked for a silence and gets no `silence` key back is talking to an app
+without silence support and should warn.
+
+## 4. Incident action links (alerts → app)
+
+Email, Raven and webhook alerts for unresolved incidents carry signed links:
+
+```
+GET /api/method/frappe_wolf.api.actions.incident_action
+    ?incident=WINC-00012&action=ack|resolve&expires=<unix seconds>[&actor=<email>]&sig=<hex>
+```
+
+`sig` is HMAC-SHA256 over `wolf-incident-action\n<incident>\n<action>\n<expires>\n<actor>` with a
+key derived from the site's `encryption_key`. Links expire after **Wolf Settings → Action Link
+Hours** (default 24, 0 disables them). `actor` is the recipient's address in emails (one email per
+recipient), absent for Raven and webhooks.
+
+GET only renders a confirmation page; the button POSTs the same parameters, and only the POST
+acknowledges or resolves, so link scanners cannot act on an incident. The incident records
+`acknowledged_by` / `resolved_by` as the logged-in user, else the `actor`, else `link`.
+
+Webhook bodies expose the same URLs as `incident.actions = {"ack": "...", "resolve": "..."}`
+(empty once resolved). Hourly digests are posted as
+`{"text": "...", "digest": [{"incident", "kind", "severity", "title", "at", "url"}]}`.

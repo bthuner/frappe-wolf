@@ -48,7 +48,21 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 | Active from/to | only evaluate in this window. It may wrap midnight (`04:00 → 01:00`) |
 | Require recent deployment | only fire if a deployment hit the same bench/site/host recently |
 | Cooldown | re-fire into the just-resolved incident instead of opening a new one |
-| Channels | Email, Webhook (Slack/Mattermost-compatible JSON), Raven channel |
+| Fire / resolve after evaluations | consecutive breached (or clear) one-minute evaluations before an incident opens (or auto-resolves). Default 1 |
+| Separate resolve threshold | hysteresis: e.g. fire above 90, resolve only once at or below 80 |
+| Channels | Email, Webhook (Slack/Mattermost-compatible JSON), Raven channel. Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
+| Notify on resolve | also tell the channels when the incident auto-resolves (default on) |
+| Escalate after minutes | if still Open (not acknowledged) this long after the first alert, notify the escalation channels once |
+
+Alerts for unresolved incidents carry signed **Acknowledge / Resolve** links (valid 24 h, see Wolf
+Settings → Action Link Hours). Opening a link shows a confirmation page; only its button acts, so
+mail scanners cannot acknowledge for you.
+
+**Maintenance windows**: a **Wolf Silence** (host, bench, site and/or rule, start and end) keeps
+incidents opening, so the timeline stays complete, but holds back their notifications. Incidents
+still open when the window ends are notified then. Create one in Desk, through
+`/api/resource/Wolf Silence`, or with the deployment marker:
+`wolf-agent mark-deployment --bench main --silence 15m`.
 
 Presets installed on install/migrate (edit or disable freely, they are never overwritten):
 502 spike after deployment · 5xx spike · Nightly cron failure (01:00–04:00) · Scheduler failure ·

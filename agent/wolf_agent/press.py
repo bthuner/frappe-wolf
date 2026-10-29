@@ -255,7 +255,7 @@ class PressJobWatcher:
 			[floor, *names],
 		)
 		cols = [c[0] for c in cur.description]
-		return [dict(zip(cols, row)) for row in cur.fetchall()]
+		return [dict(zip(cols, row)) for row in cur.fetchall()]  # noqa: B905 (Python 3.9: no strict=)
 
 	def _steps(self, conn, job_id):
 		try:
@@ -272,7 +272,7 @@ class PressJobWatcher:
 		if isinstance(data, dict) and "function" in data:
 			args = data.get("args") or []
 			kwargs = data.get("kwargs") or {}
-			values = dict(zip(params, args))
+			values = dict(zip(params, args))  # noqa: B905 (fewer args than params is expected)
 			# keyword names in frappe/agent: name/target/bench/sites
 			for key, role in (("name", params[0] if params else None), ("target", "bench"), ("bench", "bench"), ("sites", "sites")):
 				if role and key in kwargs and role not in values:

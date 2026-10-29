@@ -3,6 +3,7 @@
 import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
+from frappe_wolf import satellite
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 
@@ -57,7 +58,7 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 	silence = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
 	agents = frappe.get_all(
 		"Wolf Agent",
-		fields=["name", "hostname", "status", "last_seen", "agent_version"],
+		fields=["name", "hostname", "kind", "status", "last_seen", "agent_version"],
 		order_by="hostname asc",
 	)
 	cutoff = add_to_date(now_datetime(), minutes=-silence)
@@ -71,6 +72,7 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 		"counts": counts,
 		"agents": agents,
 		"scopes": _known_scopes(),
+		"wolf": satellite.status(),
 	}
 
 
@@ -83,7 +85,9 @@ def _known_scopes():
 			where `timestamp` >= %(since)s and coalesce(`{field}`, '') != '' order by `{field}` limit 200""",
 			{"since": since},
 		)
-	out["host"] = sorted(set(out["host"]) | set(frappe.get_all("Wolf Agent", pluck="hostname")))
+	# a satellite's hostname is its site name, not a host
+	agents = frappe.get_all("Wolf Agent", filters={"kind": ("!=", "satellite")}, pluck="hostname")
+	out["host"] = sorted(set(out["host"]) | set(agents))
 	return out
 
 

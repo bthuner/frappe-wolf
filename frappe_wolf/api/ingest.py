@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime
 
+from frappe_wolf import satellite
 from frappe_wolf.api.agent import _request_json, authenticate_agent, push_interval
 from frappe_wolf.wolf import events, health, schema
 from frappe_wolf.wolf.incidents import attach_to_open_incident
@@ -24,6 +25,7 @@ def push():
 		frappe.throw(_("Batch too large, split it"), frappe.ValidationError)
 
 	tz, now = events.system_tz(), now_datetime()
+	correlate = not satellite.is_satellite()  # a satellite opens no incidents
 	hostname = (data.get("hostname") or "").strip()[:140] or None
 	rejected = []
 
@@ -43,7 +45,8 @@ def push():
 			rejected.append(str(e))
 			continue
 		name = events.insert_event(event, agent=agent)
-		attach_to_open_incident(name, event)
+		if correlate:
+			attach_to_open_incident(name, event)
 		accepted_events += 1
 
 	frappe.db.set_value(

@@ -131,7 +131,8 @@ def attach_to_open_incident(event_name, event):
 		"""select name from `tabWolf Incident`
 		where status in ('Open', 'Acknowledged') and (
 			(coalesce(site, '') != '' and site = %(site)s)
-			or (coalesce(bench, '') != '' and bench = %(bench)s and coalesce(host, '') in ('', %(host)s))
+			or (coalesce(site, '') = '' and coalesce(bench, '') != '' and bench = %(bench)s
+				and coalesce(host, '') in ('', %(host)s))
 			or (host = %(host)s and coalesce(bench, '') = '' and coalesce(site, '') = '')
 		)
 		order by

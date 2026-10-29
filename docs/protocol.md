@@ -27,6 +27,19 @@ Response (`message` key, Frappe convention):
 The secret is returned once; the agent stores it in `/etc/wolf-agent/config.json` (mode 0600).
 Re-registering the same hostname rotates the secret.
 
+Optional `"kind"`: `"agent"` (default) or `"satellite"`. A satellite is another Frappe site
+running `frappe_wolf` in satellite mode; it registers with `hostname` set to its site name and
+one bench entry carrying its real `host`:
+
+```json
+{"registration_token": "...", "kind": "satellite", "hostname": "b.example.com", "agent_version": "0.1.0",
+ "os": "Linux-6.1...", "benches": [{"name": "frappe-bench", "path": "/home/frappe/frappe-bench",
+ "sites": ["b.example.com"], "host": "bench-01"}]}
+```
+
+A hostname already registered with the other kind is refused. A site in satellite mode refuses
+all registrations (register with its central site instead).
+
 ## 2. Telemetry push
 
 ```
@@ -58,6 +71,12 @@ if the site could not compute it, and absent on older servers.
 HTTP 401/403 → bad credentials (agent stops and logs). HTTP 5xx or network error → agent
 keeps the batch in its on-disk spool and retries with backoff. Max 5000 metrics + 1000 events
 per request; the agent splits larger batches.
+
+Satellites use this same endpoint with their satellite credentials. They send no metrics, at
+most 100 events per request, every event with explicit `host`/`bench`/`site`, `fingerprint` and
+`count` (duplicates seen before forwarding are merged into one event). They push an empty body
+every minute as a heartbeat. 401/403 → retry in 15 minutes; other 4xx (except 408/429) → the
+batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minutes.
 
 ### Event types (`type`)
 

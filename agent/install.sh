@@ -78,6 +78,12 @@ else
 		-o /etc/systemd/system/wolf-agent.service
 	chmod 0644 /etc/systemd/system/wolf-agent.service
 fi
+
+if ! command -v systemctl >/dev/null || [[ ! -d /run/systemd/system ]]; then
+	echo "==> no systemd here (container?). Start the agent yourself, as $USER_NAME:"
+	echo "    $PREFIX/bin/wolf-agent --config $CONFIG run"
+	exit 0
+fi
 systemctl daemon-reload
 
 if [[ -f "$CONFIG" ]]; then

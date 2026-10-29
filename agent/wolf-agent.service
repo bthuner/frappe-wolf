@@ -1,0 +1,25 @@
+[Unit]
+Description=Frappe Wolf observability agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Unprivileged user; install.sh adds it to `adm` (auth.log, nginx logs),
+# `systemd-journal` (journalctl fallback) and `frappe` (bench logs) when they exist.
+User=wolf-agent
+Group=wolf-agent
+ExecStart=/opt/wolf-agent/bin/wolf-agent --config /etc/wolf-agent/config.json run
+Restart=always
+RestartSec=10
+# exit code 2 = credentials rejected by the Wolf App: restarting won't help
+RestartPreventExitStatus=2
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/wolf-agent
+
+[Install]
+WantedBy=multi-user.target

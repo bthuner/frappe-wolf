@@ -28,6 +28,12 @@
   "cb_cond",
   "window_minutes",
   "group_by",
+  "flapping_section",
+  "fire_after_evaluations",
+  "resolve_after_evaluations",
+  "cb_flapping",
+  "use_resolve_threshold",
+  "resolve_threshold",
   "scope_section",
   "filter_host",
   "cb_scope1",
@@ -44,11 +50,16 @@
   "auto_resolve",
   "channels_section",
   "channels",
+  "notify_on_resolve",
+  "escalation_section",
+  "escalate_after_minutes",
+  "escalation_channels",
   "status_section",
   "last_evaluated",
   "cb_status",
   "last_fired",
-  "last_error"
+  "last_error",
+  "evaluation_state"
  ],
  "fields": [
   {
@@ -202,6 +213,43 @@
   },
   {
    "collapsible": 1,
+   "fieldname": "flapping_section",
+   "fieldtype": "Section Break",
+   "label": "Flapping control"
+  },
+  {
+   "default": "1",
+   "description": "Consecutive breached evaluations (one per minute) before an incident opens.",
+   "fieldname": "fire_after_evaluations",
+   "fieldtype": "Int",
+   "label": "Fire After Evaluations"
+  },
+  {
+   "default": "1",
+   "description": "Consecutive clear evaluations before an open incident auto-resolves.",
+   "fieldname": "resolve_after_evaluations",
+   "fieldtype": "Int",
+   "label": "Resolve After Evaluations"
+  },
+  {
+   "fieldname": "cb_flapping",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Keep the incident open until the value crosses a looser threshold (e.g. fire above 90, resolve below 80).",
+   "fieldname": "use_resolve_threshold",
+   "fieldtype": "Check",
+   "label": "Separate Resolve Threshold"
+  },
+  {
+   "depends_on": "use_resolve_threshold",
+   "description": "Resolves once the condition no longer holds against this value.",
+   "fieldname": "resolve_threshold",
+   "fieldtype": "Float",
+   "label": "Resolve Threshold"
+  },
+  {
+   "collapsible": 1,
    "fieldname": "scope_section",
    "fieldtype": "Section Break",
    "label": "Scope filters"
@@ -289,6 +337,33 @@
    "options": "Wolf Alert Channel"
   },
   {
+   "default": "1",
+   "description": "Also notify the channels when the incident auto-resolves.",
+   "fieldname": "notify_on_resolve",
+   "fieldtype": "Check",
+   "label": "Notify On Resolve"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "escalation_section",
+   "fieldtype": "Section Break",
+   "label": "Escalation"
+  },
+  {
+   "default": "0",
+   "description": "Notify the escalation channels once if the incident is still Open (not acknowledged) this long after the first alert. 0 = off.",
+   "fieldname": "escalate_after_minutes",
+   "fieldtype": "Int",
+   "label": "Escalate After Minutes"
+  },
+  {
+   "depends_on": "escalate_after_minutes",
+   "fieldname": "escalation_channels",
+   "fieldtype": "Table",
+   "label": "Escalation Channels",
+   "options": "Wolf Alert Channel"
+  },
+  {
    "collapsible": 1,
    "fieldname": "status_section",
    "fieldtype": "Section Break",
@@ -315,11 +390,20 @@
    "fieldtype": "Small Text",
    "label": "Last Error",
    "read_only": 1
+  },
+  {
+   "description": "Per-group hysteresis counters, maintained by the evaluator.",
+   "fieldname": "evaluation_state",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Evaluation State",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Alert Rule",

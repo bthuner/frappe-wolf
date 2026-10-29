@@ -30,6 +30,9 @@ DEFAULTS = {
 		"rediscover_interval": 60,
 		"deployments": True,
 	},
+	# alerts when the Wolf site itself stops working, sent without going through it
+	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
+	"watchdog": {"enabled": True, "stale_minutes": 5, "webhook_url": None, "smtp": None},
 }
 
 

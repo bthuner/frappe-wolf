@@ -20,6 +20,7 @@ class FakeWolf(ThreadingHTTPServer):
 		self.requests = []
 		self.status = 200
 		self.push_interval = 30
+		self.health = None
 		threading.Thread(target=self.serve_forever, daemon=True).start()
 
 	@property
@@ -43,8 +44,11 @@ class FakeWolfHandler(BaseHTTPRequestHandler):
 					"metrics": len(body["metrics"]),
 					"events": len(body["events"]),
 					"push_interval": self.server.push_interval,
+					"health": self.server.health,
 				}
 			}
+		elif self.path.endswith("ingest.status"):
+			resp = {"message": {"agent": "WAG-0001", "health": self.server.health}}
 		else:
 			resp = {"message": {"ok": True}}
 		data = json.dumps(resp if status == 200 else {"exc_type": "Error"}).encode()
@@ -182,6 +186,22 @@ class TestShipper(unittest.TestCase):
 		self.assertFalse(self.shipper.send([{"n": 1}], []))
 		self.assertEqual(len(self.shipper.spool), 1)
 
+	def test_health_from_push_and_status(self):
+		self.assertTrue(self.shipper.send([], []))
+		self.assertIsNone(self.shipper.health)  # older servers send no health
+		self.server.health = {"ok": True, "rules": {"age_seconds": 12}}
+		self.shipper.send([], [])
+		self.assertEqual(self.shipper.health["rules"]["age_seconds"], 12)
+		self.server.status = 502
+		self.shipper.send([], [])
+		self.assertIsNone(self.shipper.health)  # a failed push says nothing about health
+
+		self.server.status = 200
+		self.assertEqual(self.shipper.status()["health"]["ok"], True)
+		req = self.server.requests[-1]
+		self.assertEqual(req["path"], "/api/method/frappe_wolf.api.ingest.status")
+		self.assertEqual(req["headers"]["X-Wolf-Agent-Secret"], "secret")
+
 	def test_mark_deployment(self):
 		self.shipper.mark_deployment("main", note="bench update")
 		req = self.server.requests[-1]
@@ -189,6 +209,13 @@ class TestShipper(unittest.TestCase):
 		self.assertEqual(req["body"]["bench"], "main")
 		self.assertEqual(req["body"]["source"], "manual")
 		self.assertEqual(req["headers"]["X-Wolf-Agent-Id"], "WAG-0001")
+		self.assertNotIn("silence_minutes", req["body"])
+
+	def test_mark_deployment_with_silence(self):
+		self.shipper.mark_deployment("main", site="a.example.com", silence_minutes=15)
+		body = self.server.requests[-1]["body"]
+		self.assertEqual(body["silence_minutes"], 15)
+		self.assertEqual(body["site"], "a.example.com")
 
 	def test_register(self):
 		resp = register(self.server.url, "tok", "bench-01", [{"name": "main", "path": "/b", "sites": ["a"], "logs_dir": "/b/logs"}], "Debian 12")

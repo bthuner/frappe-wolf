@@ -23,6 +23,19 @@ class WolfAlertRule(Document):
 			frappe.throw(_("Event rules need an event type"))
 		if bool(self.active_from) != bool(self.active_to):
 			frappe.throw(_("Set both Active From and Active To, or neither"))
+		for field in ("fire_after_evaluations", "resolve_after_evaluations"):
+			if cint(self.get(field)) < 1:
+				self.set(field, 1)
+		if self.use_resolve_threshold:
+			error = conditions.resolve_threshold_error(self.operator, self.threshold, self.resolve_threshold)
+			if error:
+				frappe.throw(_(error))
+		if cint(self.escalate_after_minutes) < 0:
+			frappe.throw(_("Escalate After Minutes cannot be negative"))
+		# The evaluator owns the hysteresis counters: a form opened minutes ago must
+		# not write back stale ones.
+		if not self.is_new():
+			self.evaluation_state = frappe.db.get_value(self.doctype, self.name, "evaluation_state")
 
 	@frappe.whitelist()
 	def preview(self):

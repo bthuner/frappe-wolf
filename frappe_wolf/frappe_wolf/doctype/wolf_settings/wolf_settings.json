@@ -4,6 +4,18 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "mode_section",
+  "mode",
+  "central_url",
+  "verify_tls",
+  "satellite_id",
+  "satellite_secret",
+  "cb_mode",
+  "last_forward_at",
+  "last_forward_status",
+  "last_forward_error",
+  "forward_retry_at",
+  "forward_failures",
   "agents_section",
   "registration_token",
   "push_interval",
@@ -27,9 +39,93 @@
   "cb_retention",
   "event_retention_days",
   "links_section",
-  "public_url"
+  "public_url",
+  "action_link_hours"
  ],
  "fields": [
+  {
+   "fieldname": "mode_section",
+   "fieldtype": "Section Break",
+   "label": "Mode"
+  },
+  {
+   "default": "central",
+   "description": "central: this site stores events, evaluates rules and opens incidents. satellite: this site only captures its local signals and forwards them to a central Wolf site.",
+   "fieldname": "mode",
+   "fieldtype": "Select",
+   "label": "Mode",
+   "options": "central\nsatellite"
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "description": "Set by Register with central site.",
+   "fieldname": "central_url",
+   "fieldtype": "Data",
+   "label": "Central URL",
+   "options": "URL"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.mode=='satellite'",
+   "fieldname": "verify_tls",
+   "fieldtype": "Check",
+   "label": "Verify TLS"
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "description": "Wolf Agent name of this site on the central site.",
+   "fieldname": "satellite_id",
+   "fieldtype": "Data",
+   "label": "Satellite ID",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "fieldname": "satellite_secret",
+   "fieldtype": "Password",
+   "label": "Satellite Secret",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_mode",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "description": "Last successful push to the central site.",
+   "fieldname": "last_forward_at",
+   "fieldtype": "Datetime",
+   "label": "Last Forward At",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "fieldname": "last_forward_status",
+   "fieldtype": "Data",
+   "label": "Last Forward Status",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "fieldname": "last_forward_error",
+   "fieldtype": "Small Text",
+   "label": "Last Forward Error",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.mode=='satellite'",
+   "fieldname": "forward_retry_at",
+   "fieldtype": "Datetime",
+   "label": "Next Retry At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "forward_failures",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Forward Failures",
+   "read_only": 1
+  },
   {
    "fieldname": "agents_section",
    "fieldtype": "Section Break",
@@ -168,12 +264,19 @@
    "fieldtype": "Data",
    "label": "Public Url",
    "options": "URL"
+  },
+  {
+   "default": "24",
+   "description": "Acknowledge/resolve links in alerts stay valid this long. 0 disables them.",
+   "fieldname": "action_link_hours",
+   "fieldtype": "Int",
+   "label": "Action Link Hours"
   }
  ],
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

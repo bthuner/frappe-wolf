@@ -63,3 +63,10 @@ if [ "$status" -ne 0 ] || grep -q '^FAIL' /tmp/db_smoke.log || ! grep -q '^all c
 	echo "::error title=db_smoke ($DB_TYPE)::smoke test failed (exit $status)"
 	exit 1
 fi
+
+# Optional synthetic load (workflow_dispatch input load_test), on the same throwaway site.
+if [ "${WOLF_LOAD_TEST:-0}" = 1 ]; then
+	echo "Running load_test.py on $SITE ($DB_TYPE) ${WOLF_LOAD_ARGS:-}"
+	# shellcheck disable=SC2086 # WOLF_LOAD_ARGS is a list of flags
+	../env/bin/python "$SRC/ci/load_test.py" "$SITE" ${WOLF_LOAD_ARGS:-}
+fi

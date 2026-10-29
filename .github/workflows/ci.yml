@@ -5,6 +5,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      load_test:
+        description: "Also run ci/load_test.py in the bench integration jobs"
+        type: boolean
+        default: false
+      load_args:
+        description: "Flags for ci/load_test.py"
+        type: string
+        default: "--hosts 100 --metrics 15 --days 7"
 
 permissions:
   contents: read
@@ -57,7 +66,7 @@ jobs:
   integration:
     name: Bench integration (${{ matrix.db }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: ${{ inputs.load_test && 150 || 40 }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,8 +108,12 @@ jobs:
           docker logs db
           exit 1
       - name: Install frappe_wolf and run db_smoke.py
+        env:
+          LOAD_TEST: ${{ inputs.load_test && '1' || '0' }}
+          LOAD_ARGS: ${{ inputs.load_args }}
         run: |
           docker run --rm --network wolf-ci --entrypoint bash \
+            -e WOLF_LOAD_TEST="$LOAD_TEST" -e WOLF_LOAD_ARGS="$LOAD_ARGS" \
             -v "$GITHUB_WORKSPACE:/src:ro" "$BENCH_IMAGE" /src/ci/integration.sh "${{ matrix.db }}"
       - name: Database logs
         if: failure()

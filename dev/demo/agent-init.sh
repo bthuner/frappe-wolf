@@ -27,4 +27,4 @@ json.dump(cfg, open(path, "w"), indent=2)
 PY
 fi
 
-exec env/bin/wolf-agent run -v
+exec env/bin/wolf-agent -v run

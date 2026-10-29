@@ -33,6 +33,7 @@ def step(msg):
 
 def api(method, path, data=None):
 	body = json.dumps(data).encode() if data is not None else None
+	path = urllib.parse.quote(path, safe="/?&=%")
 	req = urllib.request.Request(URL + path, data=body, method=method, headers={"Content-Type": "application/json"})
 	with opener.open(req, timeout=30) as resp:
 		return json.loads(resp.read() or b"{}")
@@ -72,11 +73,11 @@ def main():
 	zone = night_zone()
 	step(f"Move the site clock to the night: System Settings time zone = {zone} "
 	     f"(local time {datetime.now(ZoneInfo(zone)):%H:%M})")
-	api("PUT", "/api/resource/System Settings/System Settings", {"time_zone": zone})
+	api("PUT", "/api/resource/System Settings/System Settings", {"time_zone": zone, "language": "en"})
 
 	step("Route the demo rules to the webhook sink")
 	for rule in RULES:
-		path = "/api/resource/Wolf Alert Rule/" + urllib.parse.quote(rule)
+		path = "/api/resource/Wolf Alert Rule/" + rule
 		api("PUT", path, {"channels": [{"channel_type": "Webhook", "webhook_url": WEBHOOK, "enabled": 1}]})
 		print("   ", rule)
 

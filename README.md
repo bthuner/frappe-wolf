@@ -145,6 +145,37 @@ Setup notes:
   (`https://events.eu.pagerduty.com/v2/enqueue`) or for an Events-v2 compatible receiver (Grafana
   OnCall, Opsgenie and others accept the same body). PagerDuty channels are never digested.
 
+## Incident workflow
+
+On a **Wolf Incident** (Wolf Manager):
+
+- **Assign to me**, or set **Assigned To**: Frappe's assignment runs (ToDo, sidebar, notification to
+  the assignee). The sidebar's own assign/unassign keeps the field in step.
+- **Add comment** on the timeline. Comments, assignments and status changes (who acknowledged or
+  resolved, from Version history; auto-resolves from the incident's own fields) are interleaved
+  with the events. Wolf Users can comment too.
+- **Manual incidents**: create one in Desk, or **Open incident from this event** on a Wolf Event.
+  They have no rule, so the rules engine never auto-resolves them.
+- **Actions → Merge into…** moves events and comments to the target, resolves the source with
+  **Merged Into** set. If the source came from a rule, further breaches of that rule feed the
+  target instead of opening a duplicate. **Actions → Split…** moves the events you tick to a new
+  incident (no rule, **Split From** set).
+- **Write postmortem** on a resolved incident creates a **Wolf Postmortem**: summary, impact
+  (scope, duration, event count), root cause, lessons, action items (owner, due date, status) and
+  a frozen, escaped timeline snapshot.
+
+**Wolf Incident Metrics** (script report): incidents, MTTA (acknowledged − started) and MTTR
+(resolved − started) average, p50 and p90 in minutes, per site, bench, host, rule or severity over
+a date range. Merged incidents are left out so an outage counts once.
+
+**Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
+history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
+ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the
+resolved ones of the last N days, with only a title, severity, public status (Investigating /
+Identified / Resolved) and times. Hosts, rules, summaries and payloads never leave the server.
+Internal titles often name hosts, so an incident is shown as "Degraded performance" or "Service
+disruption" unless you fill its **Public Title**.
+
 ## Signals captured on the Wolf site itself
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),

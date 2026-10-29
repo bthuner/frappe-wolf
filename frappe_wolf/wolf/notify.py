@@ -2,7 +2,7 @@
 
 import frappe
 import requests
-from frappe.utils import escape_html, get_url
+from frappe.utils import escape_html, get_datetime, get_url
 
 KIND_LABEL = {"fired": "FIRING", "reopened": "RE-OPENED", "resolved": "RESOLVED", "test": "TEST"}
 
@@ -31,16 +31,21 @@ def render(inc, kind):
 	lines = [
 		f"{label} · {inc.severity} · {inc.title}",
 		f"Scope: {scope}",
-		f"Started: {inc.started_at}",
+		f"Started: {_ts(inc.started_at)}",
 	]
 	if inc.summary:
 		lines.append(f"Details: {inc.summary}")
 	if inc.deployment_at:
-		lines.append(f"Deployment shortly before: {inc.deployment_at}")
+		lines.append(f"Deployment shortly before: {_ts(inc.deployment_at)}")
 	lines.append(url)
 	text = "\n".join(lines)
 	html = "<br>".join(escape_html(line) for line in lines[:-1]) + f'<br><a href="{escape_html(url)}">{escape_html(inc.name)}</a>'
 	return subject, text, html
+
+
+def _ts(value):
+	"""Datetime to the second, in the site's time zone (no microseconds in alerts)."""
+	return get_datetime(value).strftime("%Y-%m-%d %H:%M:%S") if value else ""
 
 
 def recipients(value):
@@ -87,7 +92,7 @@ def deliver(ch, inc, kind, subject, text, html):
 					"site": inc.site,
 					"bench": inc.bench,
 					"host": inc.host,
-					"started_at": str(inc.started_at),
+					"started_at": _ts(inc.started_at),
 					"url": incident_url(inc.name),
 				},
 			}

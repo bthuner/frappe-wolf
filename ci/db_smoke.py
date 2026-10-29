@@ -109,12 +109,13 @@ def main():
 		return f"{len(data['open_incidents'])} open, {len(data['events'])} events, series={sorted(series)}"
 
 	def purge():
-		frappe.db.sql("update `tabWolf Event` set `timestamp` = %s where host = %s and event_type = 'deployment'",
-		              (now - timedelta(days=400), HOST))
+		old = events.insert_event(schema.normalize_event(
+			{"type": "error", "host": HOST, "severity": "warning", "title": "smoke old unlinked"},
+			tz, now - timedelta(days=400)))
 		tasks.purge_old_data()
-		left = frappe.db.count("Wolf Event", {"host": HOST, "event_type": "deployment"})
-		assert left == 0, f"old unattached deployment survived purge ({left})"
-		return "old events purged, open-incident events kept"
+		assert not frappe.db.exists("Wolf Event", old), "old unattached event survived purge"
+		kept = frappe.db.count("Wolf Event", {"incident": ("is", "set"), "host": HOST})
+		return f"old unattached event purged, {kept} incident-linked events kept"
 
 	def resolve():
 		frappe.db.delete("Wolf Metric Sample", {"host": HOST})

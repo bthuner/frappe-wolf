@@ -69,12 +69,16 @@ def purge_old_data():
 	metric_days = cint(settings.metric_retention_days) or 14
 	event_days = cint(settings.event_retention_days) or 90
 	frappe.db.delete("Wolf Metric Sample", {"timestamp": ("<", add_days(now, -metric_days))})
-	# Keep events still attached to an unresolved incident.
+	# Keep events attached to an unresolved incident, or linked as its deployment.
 	frappe.db.sql(
 		"""delete from `tabWolf Event`
 		where `timestamp` < %(before)s
 			and coalesce(incident, '') not in (
 				select name from `tabWolf Incident` where status != 'Resolved'
+			)
+			and name not in (
+				select deployment_event from `tabWolf Incident`
+				where status != 'Resolved' and coalesce(deployment_event, '') != ''
 			)""",
 		{"before": add_days(now, -event_days)},
 	)

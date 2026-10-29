@@ -12,7 +12,8 @@ def bucket_start(ts, seconds):
 def bucket_series(rows, seconds, counter=lambda name: name.startswith("http_")):
 	"""rows: dicts with metric_name, label_key, timestamp, value (any order).
 
-	Returns {"metric [label]": [["YYYY-MM-DD HH:MM:SS", value], ...]} sorted by time, where
+	A row may carry `count`: it then stands for that many samples whose sum is `value` (a
+	rollup bucket), so averages stay weighted by samples. Returns {"metric [label]": [["YYYY-MM-DD HH:MM:SS", value], ...]} sorted by time, where
 	value is the bucket's sum for counters (http_*) and its average otherwise.
 	"""
 	acc = {}
@@ -20,7 +21,7 @@ def bucket_series(rows, seconds, counter=lambda name: name.startswith("http_")):
 		key = r["metric_name"] + (f" [{r['label_key']}]" if r.get("label_key") else "")
 		slot = acc.setdefault(key, {}).setdefault(bucket_start(r["timestamp"], seconds), [0.0, 0])
 		slot[0] += float(r["value"])
-		slot[1] += 1
+		slot[1] += int(r.get("count") or 1)
 	series = {}
 	for key, buckets in acc.items():
 		name = key.split(" [")[0]

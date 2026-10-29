@@ -1,0 +1,32 @@
+name: Publish making-of
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/making-of/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: making-of-pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy site
+        run: |
+          mkdir -p _site
+          cp docs/making-of/index.html _site/
+          cp -r docs/making-of/assets _site/
+          touch _site/.nojekyll
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _site
+          publish_branch: gh-pages
+          commit_message: "Publish making-of from ${{ github.sha }}"

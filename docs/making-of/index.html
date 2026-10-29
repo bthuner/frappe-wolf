@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Making Frappe Wolf</title>
+<meta name="description" content="The making-of Frappe Wolf: brief, brand idea, identity, information architecture, protocol and build log of a Frappe-native observability plane.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
+<link rel="apple-touch-icon" href="assets/logo-192.png">
+<meta name="theme-color" content="#035AEC">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Making Frappe Wolf">
+<meta property="og:description" content="Brief, brand, identity, protocol and build log of Frappe Wolf: observability for Frappe benches, sites and Linux hosts.">
+<meta property="og:url" content="https://bthuner.github.io/frappe-wolf/">
+<meta property="og:image" content="https://bthuner.github.io/frappe-wolf/assets/og-1200x630.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Frappe Wolf logo, a white line wolf head on an electric blue rounded square, on a dark background">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root {
+  --bg: #F4F2EC;
+  --surface: #FFFFFF;
+  --line: #DCD8CE;
+  --ink: #121725;
+  --muted: #565D6B;
+  --brand: #035AEC;
+  --on-brand: #FFFFFF;
+  --brand-text: #035AEC;
+  --info: #6B4FA0;
+  --warning: #8A5200;
+  --critical: #B0281C;
+  --ok: #2E6B4A;
+  --glow: rgba(3, 90, 236, 0.10);
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Inter Tight", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --gutter: clamp(16px, 5vw, 64px);
+  --measure: 68ch;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0F1C;
+    --surface: #131A2A;
+    --line: #283147;
+    --ink: #ECEEF3;
+    --muted: #A2AABA;
+    --brand: #035AEC;
+    --on-brand: #FFFFFF;
+    --brand-text: #7FA8FF;
+    --info: #BBA6E6;
+    --warning: #F0B04A;
+    --critical: #FF7466;
+    --ok: #7CC79E;
+    --glow: rgba(3, 90, 236, 0.28);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0F1C;
+  --surface: #131A2A;
+  --line: #283147;
+  --ink: #ECEEF3;
+  --muted: #A2AABA;
+  --brand: #035AEC;
+  --on-brand: #FFFFFF;
+  --brand-text: #7FA8FF;
+  --info: #BBA6E6;
+  --warning: #F0B04A;
+  --critical: #FF7466;
+  --ok: #7CC79E;
+  --glow: rgba(3, 90, 236, 0.28);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1.0625rem/1.6 var(--sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+img, svg { max-width: 100%; height: auto; display: block; }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: var(--brand-text); }
+:focus-visible { outline: 2px solid var(--brand-text); outline-offset: 3px; border-radius: 2px; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; font-variant-numeric: tabular-nums; }
+code { overflow-wrap: anywhere; }
+
+.skip { position: absolute; left: -999px; top: 8px; background: var(--ink); color: var(--bg); padding: 8px 12px; z-index: 10; }
+.skip:focus { left: 16px; }
+
+.wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding-inline: var(--gutter); }
+
+/* Masthead */
+.masthead {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-block: 20px; border-bottom: 1px solid var(--line);
+  font: 500 0.8rem/1 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.masthead .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; }
+.masthead .brand img { width: 28px; height: 28px; }
+.theme-toggle {
+  font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--ink); }
+
+/* Hero */
+.hero { position: relative; padding-block: clamp(56px, 12vw, 160px) clamp(48px, 8vw, 112px); }
+.hero::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(40rem 24rem at 78% 30%, var(--glow), transparent 70%);
+}
+.eyebrow { font: 500 0.8rem/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 24px; }
+.hero h1 {
+  font: 400 clamp(2.8rem, 9vw, 6.5rem)/0.95 var(--serif);
+  letter-spacing: -0.02em; margin: 0; max-width: 13ch;
+}
+.hero h1 em { font-style: italic; color: var(--brand-text); }
+.hero .lead { font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.5; max-width: 40ch; margin: 32px 0 0; color: var(--ink); }
+.hero-grid { display: grid; grid-template-columns: 1fr; gap: 48px; align-items: end; }
+.hero-mark { width: clamp(120px, 22vw, 260px); height: auto; aspect-ratio: 1; justify-self: start; filter: drop-shadow(0 24px 48px var(--glow)); }
+@media (min-width: 880px) {
+  .hero-grid { grid-template-columns: 1.6fr 1fr; }
+  .hero-mark { justify-self: end; }
+}
+.meta-row { display: flex; flex-wrap: wrap; gap: 8px 32px; margin-top: 48px; font: 400 0.8rem/1.5 var(--mono); color: var(--muted); }
+.meta-row b { color: var(--ink); font-weight: 500; }
+
+/* Chapters */
+.chapter { border-top: 1px solid var(--line); padding-block: clamp(56px, 9vw, 120px); }
+.chapter-head { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: clamp(32px, 5vw, 56px); }
+@media (min-width: 880px) { .chapter-head { grid-template-columns: 220px 1fr; gap: 48px; } }
+.num { font: 500 0.8rem/1.4 var(--mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; padding-top: 0.9em; }
+.num span { color: var(--brand-text); }
+h2 { font: 400 clamp(1.9rem, 4.6vw, 3.4rem)/1.05 var(--serif); letter-spacing: -0.01em; margin: 0; max-width: 20ch; }
+h2 em { font-style: italic; }
+h3 { font: 600 1.05rem/1.3 var(--sans); margin: 0 0 8px; letter-spacing: -0.005em; }
+.body { display: grid; grid-template-columns: 1fr; gap: 24px; }
+.body > *, .chapter-head > *, .hero-grid > *, .arch > * { min-width: 0; }
+@media (min-width: 880px) { .body { grid-template-columns: 220px 1fr; gap: 48px; } .body > * { grid-column: 2; } }
+.prose { max-width: var(--measure); }
+.prose p { margin: 0 0 1.1em; }
+.prose p:last-child { margin-bottom: 0; }
+.pull {
+  font: italic 400 clamp(1.5rem, 3.4vw, 2.3rem)/1.2 var(--serif);
+  margin: 8px 0; padding-left: 20px; border-left: 2px solid var(--brand-text); max-width: 30ch;
+}
+.aside { font-size: 0.92rem; color: var(--muted); }
+.fr { font-style: italic; }
+
+.status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 500 0.72rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 5px 9px; border-radius: 999px; border: 1px solid currentColor; vertical-align: middle;
+}
+.status.wip { color: var(--warning); }
+.status.done { color: var(--ok); }
+
+/* Cards grid */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.card { background: var(--surface); padding: 24px; min-width: 0; }
+.card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.card .k { font: 500 0.75rem/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; display: block; }
+
+/* Palette */
+.swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; }
+.swatch { border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.swatch .chip { height: 88px; }
+.swatch .lbl { padding: 12px; font: 400 0.78rem/1.5 var(--mono); }
+.swatch .lbl b { display: block; font: 600 0.9rem/1.3 var(--sans); margin-bottom: 2px; }
+
+/* Logo sheet */
+.logo-sheet { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.logo-stage { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 48px 24px; min-height: 240px; }
+.logo-stage img { height: auto; }
+.logo-stage-dark { background: #0A0F1C; }
+.logo-stage-light { background: #F4F2EC; }
+.logo-sizes { background: var(--surface); align-items: flex-end; }
+.logo-sheet figcaption { grid-column: 1 / -1; background: var(--surface); padding: 12px 16px; font: 400 0.78rem/1.5 var(--mono); color: var(--muted); }
+
+/* Severity moon phases */
+.moons { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.moon { display: flex; gap: 16px; align-items: flex-start; padding: 20px; border: 1px solid var(--line); background: var(--surface); }
+.moon svg { width: 40px; height: 40px; flex: none; }
+.moon b { display: block; font: 500 0.82rem/1.3 var(--mono); margin-bottom: 4px; }
+.moon span { color: var(--muted); font-size: 0.93rem; }
+.sev-info { color: var(--info); }
+.sev-warning { color: var(--warning); }
+.sev-critical { color: var(--critical); }
+.sev-ok { color: var(--ok); }
+
+/* Type specimen */
+.specimen { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.specimen > div { background: var(--surface); padding: 24px; display: grid; gap: 8px; min-width: 0; }
+.specimen .tag { font: 500 0.72rem/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.sp-serif { font: 400 clamp(2rem, 6vw, 3.6rem)/1 var(--serif); }
+.sp-sans { font: 500 clamp(1.2rem, 3vw, 1.6rem)/1.25 var(--sans); }
+.sp-mono { font: 400 clamp(0.85rem, 2.2vw, 1rem)/1.5 var(--mono); overflow-wrap: anywhere; }
+
+/* Night strip */
+.strip { border: 1px solid var(--line); background: var(--surface); padding: 20px 16px 8px; }
+.strip text { font-family: var(--mono); }
+.strip figcaption { font: 400 0.78rem/1.5 var(--mono); color: var(--muted); padding: 12px 4px 8px; }
+
+/* Incident timeline: the hero object */
+.incident { border: 1px solid var(--line); background: var(--surface); }
+.incident-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.incident-head .id { font: 500 0.8rem/1.4 var(--mono); color: var(--muted); }
+.incident-head .title { font: 400 clamp(1.4rem, 3vw, 1.9rem)/1.15 var(--serif); margin: 4px 0 0; }
+.incident-head .scope { font: 400 0.8rem/1.6 var(--mono); color: var(--muted); align-self: end; }
+.tl { list-style: none; margin: 0; padding: 8px 0; }
+.tl li { display: grid; grid-template-columns: 56px 28px 1fr; gap: 0 12px; padding: 14px 24px 14px 16px; position: relative; }
+@media (min-width: 640px) { .tl li { grid-template-columns: 72px 32px 1fr; padding-left: 24px; } }
+.tl li + li { border-top: 1px dashed var(--line); }
+.tl time { font: 500 0.9rem/1.6 var(--mono); font-variant-numeric: tabular-nums; }
+.tl .glyph { width: 20px; height: 20px; margin-top: 3px; }
+.tl .what { min-width: 0; }
+.tl .what b { font-weight: 600; }
+.tl .what .src { display: block; font: 400 0.78rem/1.6 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.tl li.gap { padding-block: 6px; }
+.tl li.gap .what { font: italic 400 1rem/1.4 var(--serif); color: var(--muted); }
+.reveal .tl li { opacity: 0; transform: translateY(8px); animation: rise 0.6s cubic-bezier(.2,.7,.2,1) forwards; }
+.reveal .tl li:nth-child(1) { animation-delay: 0.05s; }
+.reveal .tl li:nth-child(2) { animation-delay: 0.15s; }
+.reveal .tl li:nth-child(3) { animation-delay: 0.25s; }
+.reveal .tl li:nth-child(4) { animation-delay: 0.35s; }
+.reveal .tl li:nth-child(5) { animation-delay: 0.45s; }
+.reveal .tl li:nth-child(6) { animation-delay: 0.55s; }
+.reveal .tl li:nth-child(7) { animation-delay: 0.65s; }
+.reveal .tl li:nth-child(8) { animation-delay: 0.75s; }
+
+/* Architecture */
+.arch { display: grid; grid-template-columns: 1fr; gap: 0; align-items: stretch; }
+@media (min-width: 960px) { .arch { grid-template-columns: 1fr 72px 1.25fr 72px 0.8fr; } }
+.node { border: 1px solid var(--line); background: var(--surface); padding: 22px; min-width: 0; }
+.node .k { font: 500 0.72rem/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.node h3 { font: 400 1.6rem/1.1 var(--serif); margin: 10px 0 14px; }
+.node ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.node li { font: 400 0.82rem/1.45 var(--mono); padding-left: 14px; position: relative; overflow-wrap: anywhere; }
+.node li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 6px; height: 1px; background: var(--muted); }
+.pipe { display: flex; align-items: center; justify-content: center; padding: 10px 0; color: var(--muted); }
+.pipe svg { width: 28px; height: 56px; }
+@media (min-width: 960px) { .pipe svg { width: 56px; height: 28px; transform: none; } .pipe .v { display: none; } }
+@media (max-width: 959px) { .pipe .h { display: none; } }
+.pipe-label { font: 400 0.72rem/1.4 var(--mono); color: var(--muted); text-align: center; margin-top: 4px; }
+
+/* Protocol */
+.code {
+  margin: 0; min-width: 0; width: 100%; background: var(--surface); border: 1px solid var(--line); padding: 20px;
+  font: 400 0.82rem/1.6 var(--mono); overflow-x: auto; max-width: 100%; white-space: pre;
+}
+.code .c { color: var(--muted); }
+.code .w { color: var(--brand-text); }
+.decisions { counter-reset: d; list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.decisions li { counter-increment: d; display: grid; grid-template-columns: 44px 1fr; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.decisions li::before { content: counter(d, decimal-leading-zero); font: 500 0.8rem/1.9 var(--mono); color: var(--brand-text); }
+.decisions p { margin: 0; color: var(--muted); }
+.decisions b { color: var(--ink); font-weight: 600; }
+
+/* Build log */
+.log { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--line); }
+.log li { position: relative; padding: 0 0 28px 28px; }
+.log li::before { content: ""; position: absolute; left: -5px; top: 0.55em; width: 9px; height: 9px; border-radius: 50%; background: var(--bg); border: 1px solid var(--ink); }
+.log li.wip::before { background: linear-gradient(90deg, var(--warning) 50%, var(--bg) 50%); border-color: var(--warning); }
+.log li.done::before { background: var(--ink); }
+.log time { font: 500 0.78rem/1.4 var(--mono); color: var(--muted); display: block; margin-bottom: 4px; }
+.log p { margin: 4px 0 0; color: var(--muted); max-width: var(--measure); }
+
+/* Trade-offs */
+.tradeoffs { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+@media (min-width: 720px) { .tradeoffs { grid-template-columns: 1fr 1fr; } }
+.tradeoffs > div { background: var(--surface); padding: 24px; }
+.tradeoffs p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+footer { border-top: 1px solid var(--line); padding-block: 48px 64px; color: var(--muted); font: 400 0.8rem/1.7 var(--mono); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
+
+/* Mark motion */
+.hero h1, .hero .lead, .hero .meta-row { animation: rise 0.9s cubic-bezier(.2,.7,.2,1) both; }
+.hero .lead { animation-delay: 0.12s; }
+.hero .meta-row { animation-delay: 0.24s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal .tl li { opacity: 1; transform: none; }
+}
+@media print {
+  .theme-toggle, .skip { display: none; }
+  .chapter { break-inside: avoid-page; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="moon-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="moon-warning" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></symbol>
+    <symbol id="moon-critical" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.5" fill="currentColor"/></symbol>
+    <symbol id="moon-ok" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.4 10.2l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<header class="wrap masthead">
+  <a class="brand" href="#top" aria-label="Frappe Wolf, back to top">
+    <img src="assets/logo-192.png" width="28" height="28" alt="">
+    <span>Frappe Wolf · Making-of</span>
+  </a>
+  <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Toggle colour theme">Nuit / Jour</button>
+</header>
+
+<main id="main">
+  <section class="wrap hero" id="top" aria-labelledby="hero-title">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Making-of · v0.1 · in progress</p>
+        <h1 id="hero-title">The night shift <em>never</em> sleeps.</h1>
+        <p class="lead">How we shaped Frappe Wolf: observability for Frappe benches, ERPNext and Dokos sites, and the Linux hosts under them. It is owned by the people who run them, not rented from a vendor.</p>
+      </div>
+      <img class="hero-mark" src="assets/logo-512.png" width="512" height="512" alt="Frappe Wolf logo: a white single-line wolf head in profile with an angular eye slit, on an electric blue rounded square">
+    </div>
+    <div class="meta-row">
+      <span><b>Client</b> · Dokos (internal brief)</span>
+      <span><b>Scope</b> · Brand, UI architecture, protocol, MVP build</span>
+      <span><b>Stack</b> · Frappe app + Python agent</span>
+      <span><b>Started</b> · 29.10.2026</span>
+    </div>
+  </section>
+
+  <!-- 01 Brief -->
+  <section class="chapter" aria-labelledby="c1">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>01</span> / Le brief</p>
+        <h2 id="c1">An email from a customer at 9AM is a <em>design failure</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>The brief fit on one page, and that was its best quality. Dokos wanted first-class observability for its own stack: Frappe benches, ERPNext sites, Pilot-managed benches, and the Linux hosts that carry them. It had to use open formats (JSON logs, syslog, OpenTelemetry where useful) and self-hosted storage. It had to be simple enough to adopt <em>in one afternoon</em>.</p>
+          <p>It also listed non-goals, which most briefs don't. No Datadog clone. No LLM observability, no SLO cathedrals, no RUM. Four signals had to be caught before the customer noticed: 5xx/502 windows, failed cron jobs, worker crashes and queue backlogs, and suspicious access.</p>
+        </div>
+        <blockquote class="pull">“The team wakes up with a clear incident timeline, not a surprise email from the customer at 9AM.”</blockquote>
+        <p class="aside">That line from the brief became our acceptance test. Every decision below was checked against it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 Idea -->
+  <section class="chapter" aria-labelledby="c2">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>02</span> / L’idée</p>
+        <h2 id="c2">A wolf doesn't panic. It <em>listens</em>, then it howls once.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>Monitoring brands love the all-seeing eye: the dashboard that sees everything, the watchtower, the radar. We wanted something more animal and less panoptic. A wolf works the night shift. It hunts in a pack: the agent on the host and the app on the site, two halves of one animal. And it saves its voice for when it matters.</p>
+          <p>That gave us a behavioural brief for the product, not just a logo. <strong>Listen widely</strong>: tail nginx, Frappe, scheduler, worker and auth logs, and read <code>/proc</code>. <strong>Group before you shout</strong>: correlate events into one incident per scope. <strong>Howl once</strong>: notify when an incident opens or reopens, never on every event.</p>
+        </div>
+        <div class="cards" role="list">
+          <div class="card" role="listitem"><span class="k">Watchful</span><h3>Sees the 2AM job</h3><p>Rules can be scoped to a time window that wraps over midnight, e.g. 01:00–04:00 for nightly cron.</p></div>
+          <div class="card" role="listitem"><span class="k">Pack</span><h3>Agent + App</h3><p>A stdlib-only Python daemon on the host, a Frappe app on the site, joined by one small HTTPS protocol.</p></div>
+          <div class="card" role="listitem"><span class="k">Territory</span><h3>Your storage</h3><p>Events, metrics, rules and incidents are plain DocTypes in a database Dokos controls.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 Naming & voice -->
+  <section class="chapter" aria-labelledby="c3">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>03</span> / Nom &amp; voix</p>
+        <h2 id="c3">The brand is the wolf. The product is a <em>tool</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>We kept the name the brief already used, <em>Frappe Wolf</em>, and split it in two: <strong>Wolf Agent</strong> for the host daemon and <strong>Wolf App</strong> for the Frappe side. The DocTypes keep sober technical names, like Wolf Event, Wolf Incident and Wolf Alert Rule, because an operator types them into the awesome bar at 2AM. Puns cost seconds.</p>
+          <p>The voice is the voice of a good on-call colleague. It states facts and leads with scope. It prefers numbers to adjectives and puts the link last. We allow one wolf metaphor per screen, at most. The notification templates in <code>notify.py</code> follow that grammar:</p>
+        </div>
+        <pre class="code" aria-label="Example alert subject and body"><span class="w">[Wolf] FIRING CRITICAL:</span> 502 spike after deployment: a.example.com
+FIRING · critical · 502 spike after deployment: a.example.com
+Scope: a.example.com / main / bench-01
+Started: 2026-10-29 01:48:00
+Details: sum(http_502) = 14 (&gt;= 10) over 5 min
+Deployment shortly before: 2026-10-29 01:47:12
+<span class="c">https://wolf.example.com/app/wolf-incident/WINC-00001</span></pre>
+        <p class="aside">Illustrative values. The structure (label, severity, title, scope, start, details, deployment, link) is the one <code>render()</code> produces.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 Identity -->
+  <section class="chapter" aria-labelledby="c4">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>04</span> / Identité</p>
+        <h2 id="c4">One line, one eye, one <em>blue</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>The mark is the founder's own drawing, and we didn't redraw it. It is a wolf head in profile, traced in a single continuous white line: two pricked ears, the long muzzle, the open jaw. One angular slit makes the eye. It sits on a rounded square of electric blue, <code>#035AEC</code>. The open jaw does the howling. The narrowed eye does the watching. A good mark already contains the brief.</p>
+          <p>Everything else follows from that blue. It is the only saturated colour that is <em>ours</em>. It marks the brand, links and focus, and nothing else. Severity colours sit around it and never compete with it. Neutrals are a cool bone for daytime review and a blue-black <span class="fr">Nuit</span>, pulled toward the brand, for the 2AM laptop.</p>
+        </div>
+
+        <figure class="logo-sheet" aria-labelledby="logo-cap">
+          <div class="logo-stage logo-stage-dark"><img src="assets/logo-512.png" width="160" height="160" alt="Frappe Wolf logo on the dark background"></div>
+          <div class="logo-stage logo-stage-light"><img src="assets/logo-512.png" width="160" height="160" alt="Frappe Wolf logo on the light background"></div>
+          <div class="logo-stage logo-sizes">
+            <img src="assets/logo-192.png" width="64" height="64" alt="Logo at 64 pixels">
+            <img src="assets/logo-192.png" width="32" height="32" alt="Logo at 32 pixels">
+            <img src="assets/favicon-32.png" width="16" height="16" alt="Logo at 16 pixels, the minimum size">
+          </div>
+          <figcaption id="logo-cap">The official mark on Nuit and on Os, then at 64, 32 and 16px. 16px is the minimum: below that, the eye slit closes.</figcaption>
+        </figure>
+
+        <div class="cards" role="list">
+          <div class="card" role="listitem"><span class="k">Clear space</span><h3>A quarter of the tile</h3><p>Keep at least 25% of the square's width free on every side. No text, edge or other logo enters it.</p></div>
+          <div class="card" role="listitem"><span class="k">Minimum size</span><h3>24px, 16px for favicons</h3><p>24px in UI and print equivalents. The 16px favicon is the only exception, and it uses the dedicated asset.</p></div>
+          <div class="card" role="listitem"><span class="k">Don't</span><h3>Leave the wolf alone</h3><p>Don't recolour the tile or the line. Don't remove the square, outline it, stretch it, rotate it, add a shadow inside it, or put it on a busy photo. Never redraw it as a "simplified" SVG.</p></div>
+        </div>
+
+        <div class="swatches">
+          <div class="swatch"><div class="chip" style="background:#035AEC"></div><div class="lbl"><b>Bleu Wolf</b>#035AEC · white on it 5.7:1 · #7FA8FF as text on dark</div></div>
+          <div class="swatch"><div class="chip" style="background:#0A0F1C"></div><div class="lbl"><b>Nuit</b>#0A0F1C · dark bg</div></div>
+          <div class="swatch"><div class="chip" style="background:#F4F2EC"></div><div class="lbl"><b>Os</b>#F4F2EC · light bg</div></div>
+          <div class="swatch"><div class="chip" style="background:#BBA6E6"></div><div class="lbl"><b>Lune</b> · info<br>#BBA6E6 · #6B4FA0 on light</div></div>
+          <div class="swatch"><div class="chip" style="background:#F0B04A"></div><div class="lbl"><b>Ambre</b> · warning<br>#F0B04A · #8A5200 on light</div></div>
+          <div class="swatch"><div class="chip" style="background:#FF7466"></div><div class="lbl"><b>Braise</b> · critical<br>#FF7466 · #B0281C on light</div></div>
+          <div class="swatch"><div class="chip" style="background:#7CC79E"></div><div class="lbl"><b>Mousse</b> · resolved<br>#7CC79E · #2E6B4A on light</div></div>
+        </div>
+        <div class="prose">
+          <p><strong>Why info is moonlight, not blue.</strong> The first draft used a steel blue for <code>info</code>. Next to <code>#035AEC</code>, every deployment marker would have looked like a brand element or a link, and a timeline would have read as "Wolf is talking" instead of "this happened". Info is now <span class="fr">Lune</span>, a lilac moonlight. It stays cool and calm, it sits below amber and ember in loudness, and it can't be mistaken for something to click. Amber is no longer the eye of the brand. It is only <em>warning</em>.</p>
+        </div>
+
+        <h3 style="margin-top:24px">Severity reads as moon phases</h3>
+        <div class="prose"><p>Colour alone fails people with colour blindness, it fails in greyscale, and it fails in a forwarded email. So each severity is also a shape: the moon filling up as the night gets worse.</p></div>
+        <div class="moons">
+          <div class="moon"><svg class="sev-info" aria-hidden="true"><use href="#moon-info"/></svg><div><b class="sev-info">info · new moon</b><span>The wolf hears something. Deployments, context.</span></div></div>
+          <div class="moon"><svg class="sev-warning" aria-hidden="true"><use href="#moon-warning"/></svg><div><b class="sev-warning">warning · half moon</b><span>One eye opens. Failed logins, 5xx, worker hiccups.</span></div></div>
+          <div class="moon"><svg class="sev-critical" aria-hidden="true"><use href="#moon-critical"/></svg><div><b class="sev-critical">critical · full moon</b><span>The howl. 502/503/504 bursts, cron failures.</span></div></div>
+          <div class="moon"><svg class="sev-ok" aria-hidden="true"><use href="#moon-ok"/></svg><div><b class="sev-ok">resolved</b><span>Back to sleep. Condition cleared, or a human closed it.</span></div></div>
+        </div>
+
+        <h3 style="margin-top:24px">Three voices of type</h3>
+        <div class="specimen">
+          <div><span class="tag">Display · Instrument Serif</span><span class="sp-serif">Une nuit calme.</span></div>
+          <div><span class="tag">Text &amp; UI · Inter Tight</span><span class="sp-sans">502 on a.example.com after deployment</span></div>
+          <div><span class="tag">Data · JetBrains Mono, tabular</span><span class="sp-mono">02:00:13 cron_failure scheduled_job · count 1 · WINC-00001</span></div>
+        </div>
+        <p class="aside">The serif belongs to storytelling surfaces like this page. Inside Desk, Wolf respects Frappe's own type and only adds the mono face for timestamps and values, so nothing jumps when you tab between ERPNext and Wolf.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 Hero object -->
+  <section class="chapter" aria-labelledby="c5">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>05</span> / L’objet</p>
+        <h2 id="c5">The hero isn't a dashboard. It's the <em>timeline</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>Dashboards answer "how are things?". At 9AM, after a bad night, the question is "what happened, in what order, and was it the deployment?". So the object we designed first is the incident timeline. Every event in the incident's scope, from a little before it started until it was resolved, sits on one vertical rail: mono timestamps on the left, moon glyphs in the gutter, the plain-language title on the right.</p>
+          <p>Below is the demo scenario from the brief, staged with illustrative times.</p>
+        </div>
+
+        <figure class="strip" aria-labelledby="strip-cap">
+          <svg viewBox="0 0 900 120" role="img" aria-labelledby="strip-title strip-desc">
+            <title id="strip-title">Night strip, 00:00 to 09:00</title>
+            <desc id="strip-desc">A deployment at 01:47, a 502 burst at 01:48, a cron failure at 02:00, alerts sent at 02:01, acknowledgement at 08:55.</desc>
+            <line x1="20" y1="70" x2="880" y2="70" stroke="var(--line)" stroke-width="2"/>
+            <g fill="var(--muted)" font-size="14" text-anchor="middle">
+              <text x="20" y="108">00h</text><text x="116" y="108">01h</text><text x="211" y="108">02h</text><text x="307" y="108">03h</text><text x="402" y="108">04h</text><text x="498" y="108">05h</text><text x="593" y="108">06h</text><text x="689" y="108">07h</text><text x="784" y="108">08h</text><text x="880" y="108">09h</text>
+            </g>
+            <rect x="116" y="62" width="286" height="16" fill="var(--warning)" opacity="0.14"/>
+            <text x="259" y="54" font-size="13" fill="var(--muted)" text-anchor="middle">active window 01:00–04:00</text>
+            <circle cx="191" cy="70" r="7" fill="var(--surface)" stroke="var(--info)" stroke-width="2.5"/>
+            <circle cx="193" cy="70" r="8" fill="var(--critical)"/>
+            <circle cx="211" cy="70" r="8" fill="var(--critical)"/>
+            <text x="186" y="30" font-size="14" fill="var(--ink)" text-anchor="end">deploy → 502 → cron</text>
+            <line x1="200" y1="36" x2="200" y2="58" stroke="var(--ink)" stroke-width="1"/>
+            <circle cx="873" cy="70" r="7.5" fill="var(--surface)" stroke="var(--ok)" stroke-width="2.5"/>
+            <text x="873" y="40" font-size="14" fill="var(--ink)" text-anchor="end">08:55 ack</text>
+          </svg>
+          <figcaption id="strip-cap">The night, compressed: three minutes of trouble, seven hours of silence. The silence is the product working, because nobody was woken up twice.</figcaption>
+        </figure>
+
+        <article class="incident reveal" aria-label="Example incident timeline">
+          <div class="incident-head">
+            <div>
+              <div class="id">WINC-00001 · <span class="sev-critical">● critical</span> · Acknowledged</div>
+              <p class="title">502 spike after deployment: a.example.com</p>
+            </div>
+            <div class="scope">site a.example.com · bench main · host bench-01</div>
+          </div>
+          <ol class="tl">
+            <li><time>01:47</time><svg class="glyph sev-info" aria-label="info"><use href="#moon-info"/></svg><div class="what"><b>Deployment on main</b>: bench update<span class="src">deployment · manual · wolf-agent mark-deployment</span></div></li>
+            <li><time>01:48</time><svg class="glyph sev-critical" aria-label="critical"><use href="#moon-critical"/></svg><div class="what"><b>502 on GET /api/method/…</b> ×14<span class="src">error · http_502 · nginx access.log</span></div></li>
+            <li><time>01:50</time><svg class="glyph sev-critical" aria-label="critical"><use href="#moon-critical"/></svg><div class="what"><b>Incident opened</b>: rule fired, deployment 3 min earlier linked<span class="src">Wolf Alert Rule · require_recent_deployment · sum(http_502) ≥ 10 / 5 min</span></div></li>
+            <li><time>01:50</time><svg class="glyph sev-warning" aria-label="warning"><use href="#moon-warning"/></svg><div class="what"><b>Notified</b>: email + Raven channel<span class="src">notify.enqueue → short queue, after commit</span></div></li>
+            <li><time>02:00</time><svg class="glyph sev-critical" aria-label="critical"><use href="#moon-critical"/></svg><div class="what"><b>Scheduled job failed</b>: nightly task, migration error<span class="src">cron_failure · scheduled_job · scheduler.log traceback</span></div></li>
+            <li><time>02:00</time><svg class="glyph sev-warning" aria-label="warning"><use href="#moon-warning"/></svg><div class="what"><b>Correlated</b> into the open incident: same bench, no second howl<span class="src">attach_to_open_incident · scope site → bench+host → host</span></div></li>
+            <li class="gap"><span></span><span></span><div class="what">seven quiet hours</div></li>
+            <li><time>08:55</time><svg class="glyph sev-ok" aria-label="resolved"><use href="#moon-ok"/></svg><div class="what"><b>Acknowledged</b> by the morning team, before the first customer email<span class="src">status Open → Acknowledged</span></div></li>
+          </ol>
+        </article>
+        <p class="aside">Status: the timeline <em>query</em> (<code>incidents.get_timeline</code>) and correlation are written. The Desk rendering of this rail on the Wolf Incident form is <span class="status wip">◐ in progress</span>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 IA -->
+  <section class="chapter" aria-labelledby="c6">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>06</span> / Architecture de l’info</p>
+        <h2 id="c6">Three rooms. No <em>maze</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>The UI lives inside Frappe Desk on purpose. Operators already live there, and permissions, list views, filters and the awesome bar come for free. We drew only three rooms on top.</p>
+        </div>
+        <div class="cards" role="list">
+          <div class="card" role="listitem"><span class="k">Room 1 · Overview <span class="status wip">◐ wip</span></span><h3>“Is anyone howling?”</h3><p>Open incidents, critical events over a time range, agents online or silent, and host metric charts (CPU, RAM, disk, load), filterable by site, bench and host.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 2 · Incident <span class="status wip">◐ wip</span></span><h3>“What happened?”</h3><p>The timeline above, with scope, linked deployment, event count, and acknowledge/resolve actions. Notes stay with the incident.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 3 · Rules <span class="status done">● data model done</span></span><h3>“When should it wake me?”</h3><p>One form that reads like a sentence: <em>when</em> a metric or event, <em>is</em> an operator and threshold, <em>over</em> a window, <em>per</em> a group, <em>between</em> two hours, <em>tell</em> these channels.</p></div>
+        </div>
+        <div class="prose">
+          <p>The rule form is the IA decision we're proudest of. The brief asked for "when X &gt; Y for Z minutes, send alert", and the DocType is laid out in that order: signal, aggregation, operator, threshold, window, group, timing, channels. "For Z minutes" is not a hidden state machine. It is the <code>min</code> aggregation: if the minimum over the window is above the threshold, the value stayed above it the whole time. The field description says so in one line.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 System -->
+  <section class="chapter" aria-labelledby="c7">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>07</span> / Le système</p>
+        <h2 id="c7">Two halves of <em>one animal</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="arch" role="group" aria-label="Architecture: host agent pushes to Wolf App, which notifies channels">
+          <div class="node">
+            <span class="k">Host · Wolf Agent</span>
+            <h3>Listens</h3>
+            <ul>
+              <li>/proc → cpu, memory, swap, load, disk</li>
+              <li>nginx access.log → http_5xx, http_502</li>
+              <li>frappe.web.log → tracebacks</li>
+              <li>scheduler.log → cron_failure</li>
+              <li>worker.log → worker_failure</li>
+              <li>auth.log / journalctl → security</li>
+              <li>redis rq:queue:* → queue_length</li>
+            </ul>
+          </div>
+          <div class="pipe" aria-hidden="true">
+            <div>
+              <svg class="h" viewBox="0 0 56 28"><path d="M2 14h48m-8-7 8 7-8 7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <svg class="v" viewBox="0 0 28 56"><path d="M14 2v48m-7-8 7 8 7-8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <div class="pipe-label">HTTPS · JSON · UTC<br>push / 30 s</div>
+            </div>
+          </div>
+          <div class="node">
+            <span class="k">Site · Wolf App</span>
+            <h3>Remembers &amp; decides</h3>
+            <ul>
+              <li>api.agent.register: token in, secret out, once</li>
+              <li>api.ingest.push → Wolf Metric Sample (bulk) + Wolf Event</li>
+              <li>correlation → open Wolf Incident in same scope</li>
+              <li>rules.evaluate_all: every minute</li>
+              <li>metric | event · avg min max sum count last</li>
+              <li>group: none · host · bench · site · host_label</li>
+              <li>cooldown re-opens · auto-resolve on clear</li>
+            </ul>
+          </div>
+          <div class="pipe" aria-hidden="true">
+            <div>
+              <svg class="h" viewBox="0 0 56 28"><path d="M2 14h48m-8-7 8 7-8 7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <svg class="v" viewBox="0 0 28 56"><path d="M14 2v48m-7-8 7 8 7-8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+              <div class="pipe-label">on open / reopen / resolve</div>
+            </div>
+          </div>
+          <div class="node">
+            <span class="k">Channels</span>
+            <h3>Howls</h3>
+            <ul>
+              <li>Email (frappe.sendmail)</li>
+              <li>Webhook, Slack/Mattermost-shaped JSON</li>
+              <li>Raven channel message</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 Protocol -->
+  <section class="chapter" aria-labelledby="c8">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>08</span> / Le protocole</p>
+        <h2 id="c8">A protocol is an interface. We <em>designed</em> it like one.</h2>
+      </div>
+      <div class="body">
+        <div class="prose">
+          <p>The agent and the app were built at the same time by two different hands. The only thing between them is <code>docs/protocol.md</code>, so we wrote it first and treated it as the brand's most important typographic object: short, unambiguous, readable in one screen.</p>
+        </div>
+<pre class="code" aria-label="Protocol excerpt"><span class="c"># one endpoint for everything that happens</span>
+POST /api/method/frappe_wolf.api.ingest.push
+X-Wolf-Agent-Id: WAG-0001
+X-Wolf-Agent-Secret: ••••••••
+
+{ "metrics": [ { "metric_name": "http_502", "value": 14, "site": "a.example.com", … } ],
+  "events":  [ { "type": "cron_failure", "category": "scheduled_job",
+                 "severity": "critical", "timestamp": "2026-10-29T01:00:13Z", … } ] }</pre>
+        <ol class="decisions">
+          <li><div><b>UTC on the wire, local time in the UI.</b><p>Timestamps travel as ISO-8601 UTC. The app converts them to the site's system timezone. A 2AM job is 02:00 in Paris on the incident page, not a math exercise.</p></div></li>
+          <li><div><b>The secret is shown once.</b><p>Registration takes a shared token and returns a 40-character secret that the agent stores with mode 0600. Re-registering rotates it. The endpoint is rate-limited.</p></div></li>
+          <li><div><b>Aggregate at the edge.</b><p>The agent counts 502s per site per interval and sends a number, not a firehose. Events carry a <code>count</code> and up to three sample lines.</p></div></li>
+          <li><div><b>Fail closed, retry open.</b><p>A 401/403 stops the agent loudly. A 5xx or network error spools the batch to disk and retries with backoff. A bad night on the Wolf site must not lose the evidence of that night.</p></div></li>
+          <li><div><b>Two vocabularies, both small.</b><p>Six event types and a dozen metric names. Categories, like <code>http_502</code>, <code>ssh_failed_login</code> or <code>scheduled_job</code>, carry the nuance, so rules can be precise without the schema growing.</p></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 09 Build log -->
+  <section class="chapter" aria-labelledby="c9" id="build-log">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>09</span> / Journal de bord</p>
+        <h2 id="c9">Build log.</h2>
+      </div>
+      <div class="body">
+        <ol class="log">
+          <!-- Append new entries at the end. Classes: done | wip -->
+          <li class="done"><time>2026-10-29 · Brief</time><b>Brief adopted as-is.</b><p>CLAUDE.md becomes the source of truth: MVP goals, non-goals, data model and the 2AM demo scenario.</p></li>
+          <li class="done"><time>2026-10-29 · Protocol</time><b>Protocol v1 written before any code.</b><p>Registration, push and deployment marker, with event types and metric names, in <code>docs/protocol.md</code>. It is the contract between the two builds running in parallel.</p></li>
+          <li class="done"><time>2026-10-29 · Data model</time><b>Seven DocTypes from one spec.</b><p>Wolf Settings, Wolf Agent, Wolf Event, Wolf Metric Sample, Wolf Alert Rule, Wolf Alert Channel and Wolf Incident are generated from a single field list, so naming stays consistent. High-volume tables use hash names and indexed scope fields.</p></li>
+          <li class="done"><time>2026-10-29 · Core</time><b>Pure logic kept out of Frappe.</b><p><code>schema.py</code> (payload normalisation, UTC→system time) and <code>conditions.py</code> (operators, midnight-wrapping windows, grouping) import nothing from Frappe, so they can be tested without a bench.</p></li>
+          <li class="done"><time>2026-10-29 · Engine</time><b>Ingest, rules, incidents, notifications.</b><p>Agent registration and push API; a rule engine with metric and event signals, deployment gating, cooldown re-open and auto-resolve; scope-based correlation; email, webhook and Raven delivery.</p></li>
+          <li class="wip"><time>2026-10-29 · Agent</time><b>Wolf Agent: stdlib-only Python daemon.</b><p>Collector, rotation-aware tailer, parsers (nginx, traceback, scheduler, worker, auth), a minimal Redis RESP client and a spooling shipper. Tests, <code>install.sh</code> and a systemd unit are in the tree and being finalised. It reads Pilot's <code>bench.toml</code> defensively when one is present.</p></li>
+          <li class="wip"><time>2026-10-29 · Desk</time><b>Overview page, incident timeline, workspace, presets.</b><p>The three rooms of chapter 06, the Dokos preset rules and local signals from the Wolf site itself (failed scheduled jobs, error logs, logins, privileged roles).</p></li>
+          <li class="done"><time>2026-10-29 · Identity</time><b>Official logo adopted.</b><p>The founder's mark replaces the placeholder drawn for the first draft of this page: a single-line wolf head with an angular eye slit on a <code>#035AEC</code> rounded square. The palette was rebuilt around that blue. Info moved to lilac so it can't read as the brand, and amber now means only warning.</p></li>
+          <li class="done"><time>2026-10-29 · Publishing</time><b>Making-of published on GitHub Pages.</b><p>This page and its <code>assets/</code> ship as a static site, with Open Graph image and favicons. Relative paths keep it portable.</p></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 Trade-offs & next -->
+  <section class="chapter" aria-labelledby="c10">
+    <div class="wrap">
+      <div class="chapter-head">
+        <p class="num"><span>10</span> / Partis pris</p>
+        <h2 id="c10">What we chose not to <em>be</em>.</h2>
+      </div>
+      <div class="body">
+        <div class="tradeoffs">
+          <div><h3>Python, not Rust, for the agent</h3><p>The brief recommends it, and we agree: Frappe contributors can read it on day one. The protocol is generic enough that a Rust agent can replace it later without touching the app.</p></div>
+          <div><h3>DocTypes, not ClickHouse</h3><p>Storage you already back up, with retention settings to keep it lean. That is the right size for an MVP on Dokos stacks. A columnar store is a later conversation, not a launch requirement.</p></div>
+          <div><h3>Thresholds, not anomaly ML</h3><p>A rule you can read is a rule you can trust at 2AM. Datadog and SigNoz inspired the <em>shape</em> of alerting, not its opacity.</p></div>
+          <div><h3>Desk, not a separate SPA</h3><p>We gave up some art direction for zero new logins, native permissions and familiar list views. The craft lives in the timeline and the copy.</p></div>
+        </div>
+        <div class="prose" style="margin-top:32px">
+          <h3>Next</h3>
+          <p>Finish the Desk rooms. Ship the Dokos presets: 502 after a deployment, cron failures between 01:00 and 04:00, queue backlog, and failed or unusual logins. Harden <code>bench.toml</code> discovery once Pilot's schema is pinned down. The agent reads it defensively today. Then run the first demo end to end, a deployment and nginx reload causing a short 502 window followed by a failing 2AM job, and add the real screenshots to this page.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Frappe Wolf · MIT · Making-of, edition 0.1</span>
+    <span>Type: Instrument Serif, Inter Tight, JetBrains Mono · Palette: Bleu Wolf #035AEC, Nuit, Os · Logo © the founder</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("theme-toggle");
+  try {
+    var saved = localStorage.getItem("wolf-theme");
+    if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  } catch (e) {}
+  btn.addEventListener("click", function () {
+    var current = root.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var next = current === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("wolf-theme", next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

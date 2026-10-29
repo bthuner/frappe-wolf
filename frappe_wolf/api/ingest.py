@@ -73,18 +73,15 @@ def accept(agent, data, now=None):
 		if not queued:
 			store_batch(agent, metrics, events_ok)
 
-	frappe.db.set_value(
-		"Wolf Agent",
-		agent,
-		{
-			"last_seen": now,
-			"last_ip": frappe.local.request_ip,
-			"agent_version": str(data.get("agent_version") or "")[:140] or None,
-			"silence_reported": 0,
-			"clock_skew_seconds": skew,
-		},
-		update_modified=False,
-	)
+	heartbeat = {
+		"last_seen": now,
+		"last_ip": frappe.local.request_ip,
+		"agent_version": str(data.get("agent_version") or "")[:140] or None,
+		"silence_reported": 0,
+	}
+	if skew is not None:  # no sent_at (older agents): keep the last known skew (the column is NOT NULL)
+		heartbeat["clock_skew_seconds"] = skew
+	frappe.db.set_value("Wolf Agent", agent, heartbeat, update_modified=False)
 	frappe.db.commit()
 
 	# after the commit: a health failure must not cost the telemetry

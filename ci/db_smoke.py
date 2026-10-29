@@ -258,7 +258,9 @@ def main():
 		stamp = (now - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S")
 
 		def payload(tag):
-			return {"hostname": "smoke-ingest", "agent_version": "smoke",
+			# the sync push has no sent_at (older agents), the async one has
+			sent_at = {"sent_at": (now - timedelta(seconds=2)).isoformat()} if tag == "async" else {}
+			return {**sent_at, "hostname": "smoke-ingest", "agent_version": "smoke",
 			        "metrics": [{"metric_name": "smoke_ingest", "value": 1, "labels": {"mode": tag}}],
 			        "events": [{"type": "error", "category": "http_502", "severity": "critical", "host": HOST,
 			                    "bench": "b1", "site": "smoke.localhost", "title": f"smoke {tag} 502",

@@ -1,0 +1,364 @@
+{
+ "actions": [],
+ "autoname": "field:rule_name",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "rule_name",
+  "enabled",
+  "signal_type",
+  "cb_1",
+  "severity",
+  "is_preset",
+  "description",
+  "metric_section",
+  "metric_name",
+  "aggregation",
+  "cb_metric",
+  "min_samples",
+  "event_section",
+  "event_type",
+  "event_category",
+  "cb_event",
+  "min_severity",
+  "condition_section",
+  "operator",
+  "threshold",
+  "cb_cond",
+  "window_minutes",
+  "group_by",
+  "scope_section",
+  "filter_host",
+  "cb_scope1",
+  "filter_bench",
+  "cb_scope2",
+  "filter_site",
+  "timing_section",
+  "active_from",
+  "active_to",
+  "require_recent_deployment",
+  "deployment_window_minutes",
+  "cb_timing",
+  "cooldown_minutes",
+  "auto_resolve",
+  "channels_section",
+  "channels",
+  "status_section",
+  "last_evaluated",
+  "cb_status",
+  "last_fired",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "rule_name",
+   "fieldtype": "Data",
+   "label": "Rule Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "metric",
+   "fieldname": "signal_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Signal Type",
+   "options": "metric\nevent",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "warning",
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Severity",
+   "options": "info\nwarning\ncritical"
+  },
+  {
+   "fieldname": "is_preset",
+   "fieldtype": "Check",
+   "label": "Dokos preset",
+   "read_only": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "depends_on": "eval:doc.signal_type=='metric'",
+   "fieldname": "metric_section",
+   "fieldtype": "Section Break",
+   "label": "Metric condition"
+  },
+  {
+   "description": "cpu_usage, memory_used_percent, disk_used_percent, load_per_core, http_5xx, http_502, queue_length ...",
+   "fieldname": "metric_name",
+   "fieldtype": "Data",
+   "label": "Metric Name",
+   "mandatory_depends_on": "eval:doc.signal_type=='metric'"
+  },
+  {
+   "default": "avg",
+   "description": "Use <b>min</b> for “value stayed above the threshold for the whole window”, <b>sum</b> for counters like http_5xx.",
+   "fieldname": "aggregation",
+   "fieldtype": "Select",
+   "label": "Aggregation",
+   "options": "avg\nmin\nmax\nsum\ncount\nlast"
+  },
+  {
+   "fieldname": "cb_metric",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Ignore groups with fewer samples in the window.",
+   "fieldname": "min_samples",
+   "fieldtype": "Int",
+   "label": "Min Samples"
+  },
+  {
+   "depends_on": "eval:doc.signal_type=='event'",
+   "fieldname": "event_section",
+   "fieldtype": "Section Break",
+   "label": "Event condition"
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Select",
+   "label": "Event Type",
+   "mandatory_depends_on": "eval:doc.signal_type=='event'",
+   "options": "\nerror\ncron_failure\nworker_failure\nsecurity\nhost_metric_alert\ndeployment"
+  },
+  {
+   "description": "Optional, e.g. ssh_failed_login, http_502, scheduled_job.",
+   "fieldname": "event_category",
+   "fieldtype": "Data",
+   "label": "Event Category"
+  },
+  {
+   "fieldname": "cb_event",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Only count events at or above this severity.",
+   "fieldname": "min_severity",
+   "fieldtype": "Select",
+   "label": "Min Severity",
+   "options": "\ninfo\nwarning\ncritical"
+  },
+  {
+   "fieldname": "condition_section",
+   "fieldtype": "Section Break",
+   "label": "Threshold"
+  },
+  {
+   "default": ">",
+   "fieldname": "operator",
+   "fieldtype": "Select",
+   "label": "Operator",
+   "options": ">\n>=\n<\n<=\n==\n!=",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "threshold",
+   "fieldtype": "Float",
+   "label": "Threshold"
+  },
+  {
+   "fieldname": "cb_cond",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "5",
+   "description": "Look-back window. Event rules compare the number of matching occurrences in this window.",
+   "fieldname": "window_minutes",
+   "fieldtype": "Int",
+   "label": "Window Minutes",
+   "reqd": 1
+  },
+  {
+   "default": "host",
+   "description": "One incident per group. host_label = per host and per label (e.g. disk mount).",
+   "fieldname": "group_by",
+   "fieldtype": "Select",
+   "label": "Group By",
+   "options": "none\nhost\nbench\nsite\nhost_label"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Scope filters"
+  },
+  {
+   "fieldname": "filter_host",
+   "fieldtype": "Data",
+   "label": "Filter Host"
+  },
+  {
+   "fieldname": "cb_scope1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "filter_bench",
+   "fieldtype": "Data",
+   "label": "Filter Bench"
+  },
+  {
+   "fieldname": "cb_scope2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "filter_site",
+   "fieldtype": "Data",
+   "label": "Filter Site"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "timing_section",
+   "fieldtype": "Section Break",
+   "label": "Timing"
+  },
+  {
+   "description": "Only evaluate between these times (system timezone). Wraps over midnight.",
+   "fieldname": "active_from",
+   "fieldtype": "Time",
+   "label": "Active From"
+  },
+  {
+   "fieldname": "active_to",
+   "fieldtype": "Time",
+   "label": "Active To"
+  },
+  {
+   "description": "Only fire when a deployment happened on the same bench/site/host recently.",
+   "fieldname": "require_recent_deployment",
+   "fieldtype": "Check",
+   "label": "Require Recent Deployment"
+  },
+  {
+   "default": "30",
+   "depends_on": "require_recent_deployment",
+   "fieldname": "deployment_window_minutes",
+   "fieldtype": "Int",
+   "label": "Deployment Window Minutes"
+  },
+  {
+   "fieldname": "cb_timing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "30",
+   "description": "After an incident is resolved, re-fire into the same incident instead of opening a new one during this period.",
+   "fieldname": "cooldown_minutes",
+   "fieldtype": "Int",
+   "label": "Cooldown Minutes"
+  },
+  {
+   "default": "1",
+   "description": "Resolve the incident when the condition clears.",
+   "fieldname": "auto_resolve",
+   "fieldtype": "Check",
+   "label": "Auto Resolve"
+  },
+  {
+   "fieldname": "channels_section",
+   "fieldtype": "Section Break",
+   "label": "Notify"
+  },
+  {
+   "fieldname": "channels",
+   "fieldtype": "Table",
+   "label": "Channels",
+   "options": "Wolf Alert Channel"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "last_evaluated",
+   "fieldtype": "Datetime",
+   "label": "Last Evaluated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_fired",
+   "fieldtype": "Datetime",
+   "label": "Last Fired",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Alert Rule",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "rule_name"
+}

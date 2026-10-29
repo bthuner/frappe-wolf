@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "autoname": "WAG-.####",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "hostname",
+  "status",
+  "agent_secret",
+  "cb_1",
+  "last_seen",
+  "last_ip",
+  "agent_version",
+  "os",
+  "benches_section",
+  "benches",
+  "silence_reported"
+ ],
+ "fields": [
+  {
+   "fieldname": "hostname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Hostname",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nDisabled"
+  },
+  {
+   "description": "Rotated each time the agent registers.",
+   "fieldname": "agent_secret",
+   "fieldtype": "Password",
+   "label": "Agent Secret",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Seen",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_ip",
+   "fieldtype": "Data",
+   "label": "Last IP",
+   "read_only": 1
+  },
+  {
+   "fieldname": "agent_version",
+   "fieldtype": "Data",
+   "label": "Agent Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "os",
+   "fieldtype": "Data",
+   "label": "OS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "benches_section",
+   "fieldtype": "Section Break",
+   "label": "Discovered benches"
+  },
+  {
+   "fieldname": "benches",
+   "fieldtype": "Code",
+   "label": "Benches",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "silence_reported",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Silence Reported",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Agent",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "search_fields": "hostname",
+ "sort_field": "last_seen",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "hostname"
+}

@@ -1,0 +1,19 @@
+[project]
+name = "frappe_wolf"
+authors = [{ name = "Théo Hunerblaes", email = "theohunerblaes@me.com" }]
+description = "First-class observability for Frappe benches, ERPNext/Dokos sites and Linux hosts"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = []
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<17.0.0"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

@@ -1,0 +1,240 @@
+{
+ "actions": [],
+ "autoname": "WINC-.#####",
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "status",
+  "severity",
+  "alert_rule",
+  "group_key",
+  "cb_1",
+  "started_at",
+  "last_event_at",
+  "acknowledged_by",
+  "resolved_at",
+  "event_count",
+  "scope_section",
+  "host",
+  "cb_2",
+  "bench",
+  "cb_3",
+  "site",
+  "deployment_section",
+  "deployment_event",
+  "cb_4",
+  "deployment_at",
+  "timeline_section",
+  "summary",
+  "timeline_html",
+  "notes_section",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "length": 255,
+   "reqd": 1
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nAcknowledged\nResolved",
+   "search_index": 1
+  },
+  {
+   "default": "warning",
+   "fieldname": "severity",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Severity",
+   "options": "info\nwarning\ncritical"
+  },
+  {
+   "fieldname": "alert_rule",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Alert Rule",
+   "options": "Wolf Alert Rule"
+  },
+  {
+   "fieldname": "group_key",
+   "fieldtype": "Data",
+   "label": "Group Key",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started At",
+   "search_index": 1
+  },
+  {
+   "fieldname": "last_event_at",
+   "fieldtype": "Datetime",
+   "label": "Last Event At"
+  },
+  {
+   "fieldname": "acknowledged_by",
+   "fieldtype": "Link",
+   "label": "Acknowledged By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "resolved_at",
+   "fieldtype": "Datetime",
+   "label": "Resolved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "event_count",
+   "fieldtype": "Int",
+   "label": "Event Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scope_section",
+   "fieldtype": "Section Break",
+   "label": "Scope"
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Host"
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Bench"
+  },
+  {
+   "fieldname": "cb_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Site"
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "deployment_event",
+   "fieldname": "deployment_section",
+   "fieldtype": "Section Break",
+   "label": "Deployment"
+  },
+  {
+   "fieldname": "deployment_event",
+   "fieldtype": "Link",
+   "label": "Deployment Event",
+   "options": "Wolf Event",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "deployment_at",
+   "fieldtype": "Datetime",
+   "label": "Deployment At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "timeline_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "label": "Summary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "timeline_html",
+   "fieldtype": "HTML",
+   "label": "Timeline"
+  },
+  {
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Text Editor",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Incident",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "search_fields": "title,site,bench,host",
+ "sort_field": "started_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

@@ -1,0 +1,210 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "agents_section",
+  "registration_token",
+  "push_interval",
+  "agent_silence_minutes",
+  "cb_agents",
+  "max_events_per_push",
+  "max_metrics_per_push",
+  "correlation_section",
+  "deployment_window_minutes",
+  "timeline_padding_minutes",
+  "local_section",
+  "capture_scheduler_failures",
+  "capture_error_logs",
+  "cb_local",
+  "capture_login_failures",
+  "capture_admin_logins",
+  "capture_privileged_users",
+  "privileged_roles",
+  "retention_section",
+  "metric_retention_days",
+  "cb_retention",
+  "event_retention_days",
+  "links_section",
+  "public_url"
+ ],
+ "fields": [
+  {
+   "fieldname": "agents_section",
+   "fieldtype": "Section Break",
+   "label": "Agents"
+  },
+  {
+   "description": "Shared secret that `wolf-agent register --token` must present. Leave empty to disable new registrations.",
+   "fieldname": "registration_token",
+   "fieldtype": "Password",
+   "label": "Registration Token"
+  },
+  {
+   "default": "30",
+   "description": "Seconds between agent pushes (sent back to agents).",
+   "fieldname": "push_interval",
+   "fieldtype": "Int",
+   "label": "Push Interval"
+  },
+  {
+   "default": "5",
+   "description": "Raise a warning event when an agent has not pushed for this long.",
+   "fieldname": "agent_silence_minutes",
+   "fieldtype": "Int",
+   "label": "Agent Silence Minutes"
+  },
+  {
+   "fieldname": "cb_agents",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1000",
+   "fieldname": "max_events_per_push",
+   "fieldtype": "Int",
+   "label": "Max Events Per Push"
+  },
+  {
+   "default": "5000",
+   "fieldname": "max_metrics_per_push",
+   "fieldtype": "Int",
+   "label": "Max Metrics Per Push"
+  },
+  {
+   "fieldname": "correlation_section",
+   "fieldtype": "Section Break",
+   "label": "Correlation"
+  },
+  {
+   "default": "30",
+   "description": "Deployments this recent are linked to new incidents.",
+   "fieldname": "deployment_window_minutes",
+   "fieldtype": "Int",
+   "label": "Deployment Window Minutes"
+  },
+  {
+   "default": "30",
+   "description": "Events this long before an incident started are shown in its timeline.",
+   "fieldname": "timeline_padding_minutes",
+   "fieldtype": "Int",
+   "label": "Timeline Padding Minutes"
+  },
+  {
+   "fieldname": "local_section",
+   "fieldtype": "Section Break",
+   "label": "Local signals (this site)"
+  },
+  {
+   "default": "1",
+   "fieldname": "capture_scheduler_failures",
+   "fieldtype": "Check",
+   "label": "Capture failed Scheduled Job Logs"
+  },
+  {
+   "default": "1",
+   "fieldname": "capture_error_logs",
+   "fieldtype": "Check",
+   "label": "Capture Error Logs"
+  },
+  {
+   "fieldname": "cb_local",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "capture_login_failures",
+   "fieldtype": "Check",
+   "label": "Capture failed logins"
+  },
+  {
+   "default": "1",
+   "fieldname": "capture_admin_logins",
+   "fieldtype": "Check",
+   "label": "Flag privileged logins from new IPs"
+  },
+  {
+   "default": "1",
+   "fieldname": "capture_privileged_users",
+   "fieldtype": "Check",
+   "label": "Flag users granted privileged roles"
+  },
+  {
+   "default": "System Manager\nAdministrator\nWolf Manager",
+   "description": "One role per line.",
+   "fieldname": "privileged_roles",
+   "fieldtype": "Small Text",
+   "label": "Privileged Roles"
+  },
+  {
+   "fieldname": "retention_section",
+   "fieldtype": "Section Break",
+   "label": "Retention"
+  },
+  {
+   "default": "14",
+   "fieldname": "metric_retention_days",
+   "fieldtype": "Int",
+   "label": "Metric Retention Days"
+  },
+  {
+   "fieldname": "cb_retention",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "90",
+   "fieldname": "event_retention_days",
+   "fieldtype": "Int",
+   "label": "Event Retention Days"
+  },
+  {
+   "fieldname": "links_section",
+   "fieldtype": "Section Break",
+   "label": "Notifications"
+  },
+  {
+   "description": "Base URL used in alert links. Defaults to this site's URL.",
+   "fieldname": "public_url",
+   "fieldtype": "Data",
+   "label": "Public Url",
+   "options": "URL"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

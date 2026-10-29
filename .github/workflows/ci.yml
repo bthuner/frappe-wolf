@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff + shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ruff
+        run: |
+          pip install ruff==0.17.3
+          ruff check --output-format=github .
+      - name: shellcheck
+        run: shellcheck agent/install.sh ci/integration.sh
+
+  app-tests:
+    name: App unit tests (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tests -t . -v
+
+  agent-tests:
+    name: Agent unit tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s agent/tests -v
+
+  integration:
+    name: Bench integration (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - db: mariadb
+            image: mariadb:10.6
+          - db: postgres
+            image: postgres:16
+    env:
+      BENCH_IMAGE: registry.gitlab.com/dokos/dokos:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pull images
+        run: |
+          docker pull --quiet "$BENCH_IMAGE" & bench_pull=$!
+          docker pull --quiet "${{ matrix.image }}"
+          docker pull --quiet redis:6.2-alpine
+          wait "$bench_pull"
+          docker image ls
+      - name: Start database and Redis
+        run: |
+          docker network create wolf-ci
+          docker run -d --name redis --network wolf-ci redis:6.2-alpine
+          if [ "${{ matrix.db }}" = mariadb ]; then
+            docker run -d --name db --network wolf-ci -e MARIADB_ROOT_PASSWORD=admin \
+              --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 3s \
+              "${{ matrix.image }}" \
+              --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci \
+              --skip-character-set-client-handshake
+          else
+            docker run -d --name db --network wolf-ci -e POSTGRES_PASSWORD=admin \
+              --health-cmd "pg_isready -U postgres" --health-interval 3s \
+              "${{ matrix.image }}"
+          fi
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' db)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs db
+          exit 1
+      - name: Install frappe_wolf and run db_smoke.py
+        run: |
+          docker run --rm --network wolf-ci --entrypoint bash \
+            -v "$GITHUB_WORKSPACE:/src:ro" "$BENCH_IMAGE" /src/ci/integration.sh "${{ matrix.db }}"
+      - name: Database logs
+        if: failure()
+        run: docker logs db 2>&1 | tail -100

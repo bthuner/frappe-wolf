@@ -56,7 +56,7 @@ class FileTailer:
 		data = self.buffer + chunk
 		lines = data.split(b"\n")
 		self.buffer = lines.pop()  # incomplete trailing line
-		return [l.decode("utf-8", errors="replace") for l in lines]
+		return [raw.decode("utf-8", errors="replace") for raw in lines]
 
 	def read_lines(self):
 		try:

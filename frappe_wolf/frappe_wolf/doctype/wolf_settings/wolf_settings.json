@@ -35,6 +35,12 @@
   "capture_admin_logins",
   "capture_privileged_users",
   "privileged_roles",
+  "signals_section",
+  "capture_email_queue",
+  "email_queue_stale_minutes",
+  "cb_signals",
+  "capture_admin_countries",
+  "geoip_database",
   "retention_section",
   "metric_retention_days",
   "cb_retention",
@@ -241,6 +247,44 @@
    "label": "Privileged Roles"
   },
   {
+   "fieldname": "signals_section",
+   "fieldtype": "Section Break",
+   "label": "Email queue and login geography (this site)"
+  },
+  {
+   "default": "1",
+   "description": "Every 5 minutes: an event while emails wait in the Email Queue longer than the limit below, and while sending errors keep appearing.",
+   "fieldname": "capture_email_queue",
+   "fieldtype": "Check",
+   "label": "Watch the Email Queue"
+  },
+  {
+   "default": "30",
+   "depends_on": "capture_email_queue",
+   "description": "Not Sent / Sending emails older than this (and due) count as a backlog.",
+   "fieldname": "email_queue_stale_minutes",
+   "fieldtype": "Int",
+   "label": "Email Queue Stale Minutes"
+  },
+  {
+   "fieldname": "cb_signals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "With a GeoIP database below: flag privileged logins from a country none of the user's earlier logins came from.",
+   "fieldname": "capture_admin_countries",
+   "fieldtype": "Check",
+   "label": "Flag privileged logins from new countries"
+  },
+  {
+   "depends_on": "capture_admin_countries",
+   "description": "Path to an offline database on this server: a MaxMind-format .mmdb (GeoLite2-Country, DB-IP Lite, IPinfo Lite) or a CSV of start_ip,end_ip,country ranges. Relative paths are read from the site directory. No online lookup is ever made.",
+   "fieldname": "geoip_database",
+   "fieldtype": "Data",
+   "label": "GeoIP Database"
+  },
+  {
    "fieldname": "retention_section",
    "fieldtype": "Section Break",
    "label": "Retention"
@@ -284,7 +328,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-30 09:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

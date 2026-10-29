@@ -121,6 +121,77 @@ def main():
 		series = ui.get_metric_series(HOST, metrics=json.dumps(["disk_used_percent", "http_502"]), range="1h")["series"]
 		return f"{len(data['open_incidents'])} open, {len(data['events'])} events, series={sorted(series)}"
 
+	def presets_and_signal_rules():
+		from frappe_wolf.wolf.presets import PRESETS, install_presets
+
+		install_presets()
+		missing = [p["rule_name"] for p in PRESETS if not frappe.db.exists("Wolf Alert Rule", p["rule_name"])]
+		assert not missing, f"presets not installed: {missing}"
+		samples = [
+			schema.normalize_metric({"metric_name": "tls_days_left", "value": 2.5, "host": HOST, "bench": "b1",
+			                         "site": "smoke.localhost", "labels": {"domain": "smoke.example.net"}}, tz, now),
+			schema.normalize_metric({"metric_name": "backup_age_hours", "value": 30, "host": HOST, "bench": "b1",
+			                         "site": "smoke.localhost"}, tz, now),
+		]
+		events.insert_metrics(samples)
+		fired = {}
+		for preset in ("TLS certificate expiring within 3 days", "No backup for 26 h"):
+			spec = next(p for p in PRESETS if p["rule_name"] == preset)
+			doc = rule(f"smoke {preset}", **{k: v for k, v in spec.items() if k != "rule_name"}, filter_host=HOST)
+			res = rules.evaluate(doc)
+			assert res["fired"] or res["updated"], f"{preset} did not fire: {res}"
+			fired[preset] = res["fired"] or res["updated"]
+			frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
+		return f"{len(PRESETS)} presets installed; fired {fired}"
+
+	def email_queue_signals():
+		from frappe_wolf.wolf import email_queue
+
+		names = []
+		for status, age in (("Not Sent", 120), ("Error", 1), ("Sent", 120)):
+			doc = frappe.get_doc({"doctype": "Email Queue", "sender": "smoke@example.com", "message": "smoke",
+			                      "status": status, "name": frappe.generate_hash(length=12)})
+			doc.db_insert()
+			stamp = now - timedelta(minutes=age)
+			frappe.db.sql("update `tabEmail Queue` set creation = %s, modified = %s where name = %s", (stamp, stamp, doc.name))
+			names.append(doc.name)
+		found = email_queue.check(now)
+		assert found["backlog"] >= 1 and found["errors"] >= 1, found
+		cats = set(frappe.get_all("Wolf Event", filters={"category": ("in", ["email_queue_backlog", "email_queue_error"])},
+		                          pluck="category"))
+		assert cats == {"email_queue_backlog", "email_queue_error"}, cats
+		again = email_queue.check(now)  # bumps, does not duplicate
+		count = frappe.db.count("Wolf Event", {"category": "email_queue_backlog"})
+		frappe.db.delete("Email Queue", {"name": ("in", names)})
+		return f"{found} then {again}; {count} backlog event(s)"
+
+	def backup_failure_and_geoip():
+		import os
+		import tempfile
+
+		frappe.log_error(title="Dropbox Backup Failed", message="Traceback: smoke backup failure")
+		assert frappe.db.exists("Wolf Event", {"category": "backup_failed"}), "backup failure not captured"
+
+		fd, path = tempfile.mkstemp(suffix=".csv")
+		with os.fdopen(fd, "w") as f:
+			f.write("start_ip,end_ip,country\n81.2.69.0,81.2.69.255,FR\n89.160.20.0,89.160.23.255,DE\n")
+		settings = frappe.get_single("Wolf Settings")
+		settings.geoip_database = path
+		settings.capture_admin_countries = 1
+		settings.capture_admin_logins = 1
+		settings.save()
+		user = "Administrator"
+		for ip in ("81.2.69.10", "81.2.69.11", "89.160.20.7"):
+			frappe.get_doc({"doctype": "Activity Log", "operation": "Login", "status": "Success", "user": user,
+			                "subject": "smoke login", "ip_address": ip}).insert(ignore_permissions=True)
+		events_found = frappe.get_all("Wolf Event", filters={"category": "admin_login_new_country"},
+		                              fields=["title", "payload"])
+		settings.geoip_database = None
+		settings.save()
+		os.unlink(path)
+		assert len(events_found) == 1, events_found
+		return events_found[0].title
+
 	def purge():
 		old = events.insert_event(schema.normalize_event(
 			{"type": "error", "host": HOST, "severity": "warning", "title": "smoke old unlinked"},
@@ -137,7 +208,9 @@ def main():
 		return f"resolved {res['resolved']}"
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
-	                 ("overview+charts", overview), ("purge", purge), ("auto-resolve", resolve)]:
+	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
+	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
+	                 ("purge", purge), ("auto-resolve", resolve)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

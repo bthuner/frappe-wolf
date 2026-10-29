@@ -1,9 +1,11 @@
 """Signals captured on the site where Frappe Wolf itself is installed (doc_events)."""
 
+import os
+
 import frappe
 from frappe.utils import cint
 
-from frappe_wolf.wolf import events
+from frappe_wolf.wolf import events, geoip
 from frappe_wolf.wolf.schema import fingerprint
 
 
@@ -67,11 +69,12 @@ def on_error_log(doc):
 		return
 	trace = doc.get("error") or ""
 	last_line = trace.strip().splitlines()[-1] if trace.strip() else title
+	backup = is_backup_failure(title, trace)
 	events.emit(
 		"error",
 		f"{title}: {last_line}"[:255],
-		severity="warning",
-		category="traceback",
+		severity="critical" if backup else "warning",
+		category="backup_failed" if backup else "traceback",
 		source="frappe",
 		payload={"error_log": doc.name, "reference": [doc.get("reference_doctype"), doc.get("reference_name")], "traceback": trace[-4000:]},
 		fingerprint=fingerprint("error_log", title, last_line),
@@ -94,7 +97,10 @@ def on_activity_log(doc):
 			payload={"user": doc.user, "ip": doc.ip_address, "activity_log": doc.name},
 		)
 	elif doc.status == "Success" and cint(settings.capture_admin_logins) and doc.ip_address:
-		if not is_privileged(doc.user, settings) or not is_new_ip(doc):
+		if not is_privileged(doc.user, settings):
+			return
+		previous = previous_login_ips(doc)
+		if not previous or doc.ip_address in previous:
 			return
 		events.emit(
 			"security",
@@ -104,6 +110,40 @@ def on_activity_log(doc):
 			source="frappe",
 			payload={"user": doc.user, "ip": doc.ip_address, "activity_log": doc.name},
 		)
+		check_new_country(doc, previous, settings)
+
+
+def check_new_country(doc, previous, settings):
+	"""`admin_login_new_country` when the new IP's country differs from every earlier login's.
+
+	Uses the offline database in Wolf Settings → GeoIP Database; never a network service.
+	"""
+	path = (settings.get("geoip_database") or "").strip()
+	if not path or not cint(settings.get("capture_admin_countries")):
+		return
+	if not os.path.isabs(path):
+		path = frappe.get_site_path(path)  # e.g. private/files/GeoLite2-Country.mmdb
+	try:
+		country = geoip.country(path, doc.ip_address)
+		if not country:
+			return
+		known = {geoip.country(path, ip) for ip in previous} - {None}
+	except (OSError, ValueError) as e:
+		frappe.logger("frappe_wolf").warning(f"GeoIP lookup with {path} failed: {e}")
+		return
+	if not known or country in known:
+		return  # no baseline yet (only private IPs so far), or a known country
+	events.emit(
+		"security",
+		f"Privileged user {doc.user} logged in from a new country: {country} ({doc.ip_address})",
+		severity="critical",
+		category="admin_login_new_country",
+		source="frappe",
+		payload={
+			"user": doc.user, "ip": doc.ip_address, "country": country,
+			"known_countries": sorted(known), "activity_log": doc.name,
+		},
+	)  # fmt: skip
 
 
 @_safe
@@ -146,13 +186,26 @@ def is_privileged(user, settings):
 	return bool(roles & privileged_roles(settings))
 
 
-def is_new_ip(doc):
-	"""True when this user logged in before, but never from this IP."""
-	previous = frappe.get_all(
+def previous_login_ips(doc):
+	"""IPs of this user's earlier successful logins (latest 500)."""
+	rows = frappe.get_all(
 		"Activity Log",
 		filters={"user": doc.user, "operation": "Login", "status": "Success", "name": ("!=", doc.name)},
 		fields=["ip_address"],
 		limit=500,
 		order_by="creation desc",
 	)
-	return bool(previous) and doc.ip_address not in {p.ip_address for p in previous}
+	return {r.ip_address for r in rows if r.ip_address}
+
+
+BACKUP_TRACE_MARKERS = ("frappe/utils/backups.py", "frappe.utils.backups", "offsite_backup_utils")
+
+
+def is_backup_failure(title, trace=""):
+	"""Error Logs of failed backups. Frappe's S3/Dropbox/Google Drive integrations name the
+	backup in the title or method ("Dropbox Backup Failed", "...take_backups_..."); a
+	traceback through frappe/utils/backups.py is a failed `bench backup` / scheduled backup."""
+	if "backup" in str(title or "").lower():
+		return True
+	tail = (trace or "")[-4000:]
+	return any(m in tail for m in BACKUP_TRACE_MARKERS)

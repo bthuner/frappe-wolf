@@ -40,7 +40,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.forward_outbox",
 		],
 		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
-		"*/5 * * * *": ["frappe_wolf.tasks.check_agents"],
+		"*/5 * * * *": ["frappe_wolf.tasks.check_agents", "frappe_wolf.tasks.check_email_queue"],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
 	},
 }

@@ -160,7 +160,7 @@ def main():
 		key, token, path_secret = "smoke-routing-key-123", "tk_smoke_secret_456", "SLACKPATHSECRET789"
 		try:
 			doc = rule(
-				"smoke channels", signal_type="event", event_type="smoke_never", operator=">=", threshold=1,
+				"smoke channels", signal_type="event", event_type="security", filter_host="smoke-channels-none", operator=">=", threshold=1,
 				window_minutes=5, group_by="none", notify_on_resolve=0,
 				channels=[
 					{"channel_type": "PagerDuty", "enabled": 1, "pagerduty_url": f"{base}/v2/enqueue",

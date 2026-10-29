@@ -19,7 +19,12 @@ add_to_apps_screen = [
 	}
 ]
 
-after_install = "frappe_wolf.install.after_install"
+# Public, opt-in status pages (Wolf Status Page): www/wolf_status.py
+website_route_rules = [
+	{"from_route": "/wolf-status/<slug>", "to_route": "wolf_status"},
+]
+
+after_install ="frappe_wolf.install.after_install"
 after_migrate = "frappe_wolf.install.after_migrate"
 
 override_doctype_class = {

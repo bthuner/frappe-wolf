@@ -1,0 +1,76 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ status_title | e }}{% endblock %}
+
+{% block page_content %}
+<style>
+	.wolf-status { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+	.wolf-status h1 { font-size: 1.6rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+	.wolf-status .ws-intro { color: var(--text-muted, #6b7280); margin: 0 0 20px; white-space: pre-line; }
+	.wolf-status .ws-banner { border-radius: 10px; padding: 16px 18px; font-weight: 600; font-size: 1.05rem; margin-bottom: 28px; color: #fff; }
+	.wolf-status .ws-operational { background: #16a34a; }
+	.wolf-status .ws-degraded { background: #d97706; }
+	.wolf-status .ws-outage { background: #dc2626; }
+	.wolf-status h2 { font-size: 1.1rem; margin: 28px 0 10px; }
+	.wolf-status h3 { font-size: .95rem; color: var(--text-muted, #6b7280); margin: 18px 0 6px; font-variant-numeric: tabular-nums; }
+	.wolf-status ul { list-style: none; padding: 0; margin: 0; }
+	.wolf-status li { border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; }
+	.wolf-status .ws-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #9ca3af; }
+	.wolf-status .ws-critical { background: #dc2626; }
+	.wolf-status .ws-warning { background: #d97706; }
+	.wolf-status .ws-info { background: #2563eb; }
+	.wolf-status .ws-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+	.wolf-status .ws-meta { color: var(--text-muted, #6b7280); font-size: .85rem; font-variant-numeric: tabular-nums; }
+	.wolf-status .ws-status { font-size: .8rem; font-weight: 600; white-space: nowrap; }
+	.wolf-status .ws-empty { color: var(--text-muted, #6b7280); }
+	.wolf-status footer { margin-top: 32px; color: var(--text-muted, #6b7280); font-size: .8rem; }
+</style>
+<div class="wolf-status">
+	<h1>{{ status_title | e }}</h1>
+	{% if intro %}<p class="ws-intro">{{ intro | e }}</p>{% endif %}
+
+	<div class="ws-banner ws-{{ overall_state | e }}" role="status">{{ _(overall_label) | e }}</div>
+
+	{% if current %}
+	<h2>{{ _("Current incidents") | e }}</h2>
+	<ul>
+		{% for i in current %}
+		<li>
+			<span class="ws-dot ws-{{ i.severity | e }}" title="{{ i.severity | e }}"></span>
+			<div class="ws-body">
+				<div>{{ _(i.title) | e }}</div>
+				<div class="ws-meta">{{ _("Since") | e }} {{ i.started_at | e }}</div>
+			</div>
+			<span class="ws-status">{{ _(i.status) | e }}</span>
+		</li>
+		{% endfor %}
+	</ul>
+	{% endif %}
+
+	{% if history_days %}
+	<h2>{{ _("Past {0} days").format(history_days) | e }}</h2>
+	{% if history %}
+		{% for day in history %}
+		<h3>{{ day.day | e }}</h3>
+		<ul>
+			{% for i in day.incidents %}
+			<li>
+				<span class="ws-dot ws-{{ i.severity | e }}" title="{{ i.severity | e }}"></span>
+				<div class="ws-body">
+					<div>{{ _(i.title) | e }}</div>
+					<div class="ws-meta">{{ i.started_at | e }}{% if i.resolved_at %} &rarr; {{ i.resolved_at | e }}{% endif %}</div>
+				</div>
+				<span class="ws-status">{{ _(i.status) | e }}</span>
+			</li>
+			{% endfor %}
+		</ul>
+		{% endfor %}
+	{% else %}
+		<p class="ws-empty">{{ _("No incidents reported.") | e }}</p>
+	{% endif %}
+	{% endif %}
+
+	<footer>{% if tz_label %}{{ _("Times in {0}.").format(tz_label) | e }} {% endif %}{{ _("This page refreshes every minute.") | e }}</footer>
+</div>
+<script>setTimeout(function () { window.location.reload(); }, 60000);</script>
+{% endblock %}

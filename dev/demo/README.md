@@ -21,9 +21,10 @@ Desk: <http://localhost:8099/app/wolf-overview>, login `Administrator` / `admin`
 
 ## What `scenario.py` does
 
-1. Sets the site time zone to one where it is currently between 01:00 and 04:00. This moves
-   the site clock "into the night" without faking the system clock. Events stored earlier in
-   the old zone will look shifted.
+1. Keeps the site time zone if it is already night there; otherwise switches to a real zone
+   where it is between 01:00 and 04:00 (e.g. Asia/Shanghai). This moves the site clock "into
+   the night" without faking the system clock. Prefer moving the clock forward: switching to
+   an earlier zone leaves future-dated rows behind (see Setup wizard below).
 2. Adds a webhook channel (`http://catcher:9999/`) to the 502 and scheduler preset rules.
 3. Marks a deployment with `wolf-agent mark-deployment`.
 4. Stops the backend for 60 s while sending traffic, so nginx answers 502.

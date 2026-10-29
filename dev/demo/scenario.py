@@ -20,8 +20,14 @@ URL = "http://localhost:8099"
 SITE = "wolf.localhost"
 WEBHOOK = "http://catcher:9999/"
 RULES = ["502 spike after deployment", "Nightly cron failure (01:00-04:00)", "Scheduler failure"]
-# Candidate zones: the demo picks one where it is currently between 01:00 and 03:59.
-ZONES = [f"Etc/GMT{'+' if h > 0 else '-'}{abs(h)}" if h else "UTC" for h in range(-14, 13)]
+# Candidate zones (one per hour of offset): the demo picks one where it is between 01:00 and 03:59.
+ZONES = [
+	"Pacific/Pago_Pago", "Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles", "America/Denver",
+	"America/Chicago", "America/New_York", "America/Halifax", "America/Sao_Paulo", "Atlantic/South_Georgia",
+	"Atlantic/Azores", "Europe/London", "Europe/Paris", "Europe/Athens", "Europe/Moscow", "Asia/Dubai",
+	"Asia/Karachi", "Asia/Dhaka", "Asia/Bangkok", "Asia/Shanghai", "Asia/Tokyo", "Australia/Brisbane",
+	"Pacific/Noumea", "Pacific/Auckland", "Pacific/Tongatapu", "Pacific/Kiritimati",
+]
 
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
@@ -70,7 +76,8 @@ def main():
 	step("Log in as Administrator")
 	api("POST", "/api/method/login", {"usr": "Administrator", "pwd": "admin"})
 
-	zone = night_zone()
+	current = api("GET", "/api/resource/System Settings/System Settings")["data"].get("time_zone")
+	zone = current if current and 1 <= datetime.now(ZoneInfo(current)).hour < 4 else night_zone()
 	step(f"Move the site clock to the night: System Settings time zone = {zone} "
 	     f"(local time {datetime.now(ZoneInfo(zone)):%H:%M})")
 	api("PUT", "/api/resource/System Settings/System Settings", {"time_zone": zone, "language": "en"})

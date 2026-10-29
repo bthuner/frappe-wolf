@@ -42,6 +42,19 @@ deploy/update/migrate jobs (`jobs.sqlite3`, read-only) into `deployment` events,
 `error` event when one fails. Details, source references and limitations are in
 [`../docs/press.md`](../docs/press.md).
 
+## Pilot benches
+
+Benches created by [Frappe Pilot](https://github.com/frappe/pilot) (`~/pilot/benches/*`,
+`bench.toml` with `[bench] name` and `python`) are read with Pilot's real schema.
+Wolf tails Pilot's process logs (`web`, `schedule`, `worker_*` and their stderr files) and
+`logs/nginx-access.log` (in the `pilot_access` format), and it reads queues on
+`[redis] queue_port`. It turns Pilot tasks (update, migrate, switch-branch, app install,
+build, restart, restore) into `deployment` events, plus `error` events for failed tasks.
+Tasks are read from the bench's Admin API (`GET /api/v1/tasks`), or from `<bench>/tasks/`
+when the agent runs as the bench user. The API token is `pilot.token`, or one Wolf mints
+from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
+[`../docs/pilot.md`](../docs/pilot.md).
+
 ## What is collected
 
 - **Host**: `cpu_usage`, `memory_used_percent`, `swap_used_percent`, `load_1m/5m/15m`,
@@ -82,6 +95,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "platform": null,
   "press": {"agent_dir": "/home/frappe/agent", "nginx_access_log": "/var/log/nginx/access.log",
             "rediscover_interval": 60, "deployments": true},
+  "pilot": {"deployments": true, "api_url": null, "token": null, "jwt_secret": null},
   "benches": [
     {"name": "frappe-bench", "path": "/home/frappe/frappe-bench", "sites": ["a.example.com"],
      "logs_dir": "/home/frappe/frappe-bench/logs", "nginx_access_log": "/var/log/nginx/access.log",

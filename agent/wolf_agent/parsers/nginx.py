@@ -13,6 +13,11 @@ _LINE_RE = re.compile(
 	r'"(?P<request>[^"]*)" (?P<status>\d{3}) (?P<bytes>\S+)'
 	r'(?: "(?P<referer>[^"]*)" "(?P<agent>[^"]*)")?(?P<rest>.*)$'
 )
+# Frappe Pilot's `pilot_access` format (pilot/managers/nginx/templates/server.conf.template):
+# '$pilot_client_addr [$time_local] "$request_method $uri" $status "$host" $request_time'
+_PILOT_RE = re.compile(
+	r'^(?P<addr>\S+) \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d{3}) "(?P<host>[^"]*)"(?P<rest>.*)$'
+)
 _QUOTED_RE = re.compile(r'"([^"]*)"')
 CRITICAL_STATUSES = {502, 503, 504}
 MAX_SAMPLES = 3
@@ -22,7 +27,9 @@ def parse_line(line):
 	"""Parse one access log line into a dict, or None if it isn't one."""
 	m = _LINE_RE.match(line.strip())
 	if not m:
-		return None
+		m = _PILOT_RE.match(line.strip())
+		if not m:
+			return None
 	parts = m.group("request").split()
 	if len(parts) >= 2:
 		method, target = parts[0], parts[1]
@@ -32,7 +39,7 @@ def parse_line(line):
 		ts = utc_iso(datetime.strptime(m.group("time"), "%d/%b/%Y:%H:%M:%S %z"))
 	except ValueError:
 		ts = None
-	vhost = m.group("vhost")
+	vhost = m.groupdict().get("vhost") or m.groupdict().get("host")
 	if vhost:
 		vhost = vhost.split(":", 1)[0]
 	return {

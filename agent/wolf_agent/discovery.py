@@ -1,8 +1,10 @@
 """Bench discovery from the filesystem, Pilot's bench.toml, or a Press server's layout.
 
-bench.toml's schema isn't pinned down yet, so every key is read defensively
-from a few plausible locations; anything missing falls back to what the
-bench directory itself shows (sites/, logs/, common_site_config.json).
+A bench.toml written by Frappe Pilot (github.com/frappe/pilot, `[bench] name`)
+is read with its real schema (see pilot.py and docs/pilot.md). Other bench.toml
+files are still read defensively from a few plausible key locations; anything
+missing falls back to what the bench directory itself shows (sites/, logs/,
+common_site_config.json).
 """
 
 import glob
@@ -10,11 +12,11 @@ import json
 import logging
 import os
 
-from . import press
+from . import pilot, press
 
 log = logging.getLogger(__name__)
 
-DEFAULT_SEARCH_GLOBS = ("/home/*/frappe-bench", "/home/frappe/*")
+DEFAULT_SEARCH_GLOBS = ("/home/*/frappe-bench", "/home/frappe/*") + pilot.PILOT_SEARCH_GLOBS
 DEFAULT_NGINX_ACCESS_LOG = "/var/log/nginx/access.log"
 
 try:
@@ -116,7 +118,7 @@ def describe_bench(path, nginx_default=DEFAULT_NGINX_ACCESS_LOG):
 		port = redis_queue.get("port", 11000)
 		redis_queue = f"redis://{host}:{port}"
 
-	return {
+	desc = {
 		"name": str(_dig(toml, "bench.name", "name") or os.path.basename(path)),
 		"path": path,
 		"sites": sites,
@@ -125,6 +127,15 @@ def describe_bench(path, nginx_default=DEFAULT_NGINX_ACCESS_LOG):
 		"redis_queue": redis_queue,
 		"bench_toml": bool(toml),
 	}
+	if pilot.is_pilot_toml(toml):
+		# Pilot has no [nginx]/logs keys: its layout is fixed (logs/, logs/nginx-access.log)
+		extra = pilot.describe(path, toml)
+		for key, explicit in (("redis_queue", redis_queue), ("logs_dir", logs_dir), ("nginx_access_log", _dig(toml, "nginx.access_log"))):
+			if explicit:
+				extra.pop(key, None)
+		desc.update(extra)
+		desc["site_domains"] = pilot.site_domains(path, sites)
+	return desc
 
 
 def resolve_platform(platform=None, press_agent_dir=press.DEFAULT_AGENT_DIR):

@@ -5,9 +5,9 @@ import os
 import time
 from datetime import datetime, timezone
 
-from . import press
-from .config import press_settings, resolve_auth_log
-from .discovery import discover_benches, resolve_platform
+from . import pilot, press
+from .config import pilot_settings, press_settings, resolve_auth_log
+from .discovery import discover_benches, read_bench_toml, resolve_platform
 from .metrics import HostMetrics
 from .parsers import PARSERS, NginxParser
 from .redis_queue import RedisError, queue_metrics
@@ -63,7 +63,30 @@ class Collector:
 		press_cfg = press_settings(cfg)
 		if resolve_platform(cfg.get("platform"), press_cfg["agent_dir"]) == "press":
 			self._setup_press(press_cfg, state_path)
+		self.pilot_tasks = self._setup_pilot(state_path)
 		self._build()
+
+	def _setup_pilot(self, state_path):
+		settings = pilot_settings(self.cfg)
+		if not settings.get("deployments", True):
+			return []
+		spool = os.path.dirname(state_path) if state_path else None
+		watchers = []
+		for bench in self.benches:
+			if bench.get("platform") != "pilot":
+				continue
+			watchers.append(
+				pilot.PilotTaskWatcher(
+					self.host,
+					bench,
+					state_path=os.path.join(spool, "pilot-tasks.json") if spool else None,
+					api_url=settings.get("api_url"),
+					token=settings.get("token"),
+					jwt_secret=settings.get("jwt_secret"),
+					toml_reader=read_bench_toml,
+				)
+			)
+		return watchers
 
 	def _setup_press(self, press_cfg, state_path):
 		"""Press benches come and go with every deploy: rediscover them at runtime."""
@@ -122,7 +145,9 @@ class Collector:
 			logs_dir = bench.get("logs_dir") or os.path.join(bench["path"], "logs")
 			# a bench created while we run has brand-new logs: read them from the start
 			fresh = True if name in fresh_benches else None
-			for filename, parser_names in BENCH_LOGS.items():
+			files = dict(BENCH_LOGS)
+			files.update(bench.get("log_files") or {})  # e.g. Pilot's per-process logs
+			for filename, parser_names in files.items():
 				self._file_source(os.path.join(logs_dir, filename), parser_names, from_start=fresh, bench=name)
 			for site in bench.get("sites") or []:
 				site_logs = os.path.join(bench["path"], "sites", site, "logs")
@@ -187,6 +212,11 @@ class Collector:
 			metrics += self.host_metrics.collect(now)
 
 		events += self._press_deployments(now)
+		for watcher in self.pilot_tasks:
+			try:
+				events += watcher.poll(now) or []
+			except Exception:
+				log.exception("collecting Pilot tasks for bench %s", watcher.bench)
 
 		for bench in self.benches:
 			url = bench.get("redis_queue")

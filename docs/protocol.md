@@ -61,12 +61,12 @@ per request; the agent splits larger batches.
 
 | type              | typical `category` values                                           |
 |-------------------|---------------------------------------------------------------------|
-| `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`             |
+| `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed` |
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`                       |
 | `security`        | `ssh_failed_login`, `ssh_root_login`, `frappe_failed_login`, `new_admin_ip`, `privileged_user` |
 | `host_metric_alert` | (created by the app when a metric rule fires)                     |
-| `deployment`      | `manual`, `pilot`, `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
+| `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
 `severity`: `info` | `warning` | `critical`.
 

@@ -31,7 +31,10 @@ curl -fsSL https://raw.githubusercontent.com/bthuner/frappe-wolf/main/agent/inst
   | sudo WOLF_URL=https://wolf.example.com WOLF_TOKEN=<registration token> bash
 ```
 
-The agent finds benches automatically (via `bench.toml`, or `sites/` + `apps/frappe`). On
+The agent finds benches automatically (via `bench.toml`, or `sites/` + `apps/frappe`).
+Benches managed by [Frappe Pilot](https://github.com/frappe/pilot) are read from their real
+`bench.toml`, and Pilot update/migrate tasks become deployment events. See
+[`docs/pilot.md`](docs/pilot.md). On
 servers managed by a self-hosted Press (Frappe Cloud stack), it reads the Press agent's
 layout, and it turns Press deploy/update/migrate jobs into deployment events. See
 [`docs/press.md`](docs/press.md). See [`agent/README.md`](agent/README.md) for

@@ -112,7 +112,7 @@ def link_events(incident, names):
 		return
 	frappe.db.sql(
 		"""update `tabWolf Event` set incident = %(incident)s
-		where name in %(names)s and ifnull(incident, '') = ''""",
+		where name in %(names)s and coalesce(incident, '') = ''""",
 		{"incident": incident, "names": tuple(names)},
 	)
 	refresh_event_count(incident)
@@ -130,16 +130,16 @@ def attach_to_open_incident(event_name, event):
 	rows = frappe.db.sql(
 		"""select name from `tabWolf Incident`
 		where status in ('Open', 'Acknowledged') and (
-			(ifnull(site, '') != '' and site = %(site)s)
-			or (ifnull(bench, '') != '' and bench = %(bench)s and ifnull(host, '') in ('', %(host)s))
-			or (host = %(host)s and ifnull(bench, '') = '' and ifnull(site, '') = '')
+			(coalesce(site, '') != '' and site = %(site)s)
+			or (coalesce(bench, '') != '' and bench = %(bench)s and coalesce(host, '') in ('', %(host)s))
+			or (host = %(host)s and coalesce(bench, '') = '' and coalesce(site, '') = '')
 		)
 		order by
 			-- most specific scope first: a site event belongs to the site's incident
 			-- rather than to a host-wide one (disk, load) opened later
 			case
-				when ifnull(site, '') != '' and site = %(site)s then 0
-				when ifnull(bench, '') != '' and bench = %(bench)s then 1
+				when coalesce(site, '') != '' and site = %(site)s then 0
+				when coalesce(bench, '') != '' and bench = %(bench)s then 1
 				else 2
 			end,
 			started_at desc

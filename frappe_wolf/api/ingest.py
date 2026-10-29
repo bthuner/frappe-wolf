@@ -67,7 +67,8 @@ def push():
 			"last_ip": frappe.local.request_ip,
 			"agent_version": str(data.get("agent_version") or "")[:140] or None,
 			"silence_reported": 0,
-			"clock_skew_seconds": skew,
+			# satellites and older agents send no sent_at: keep the last known skew
+			**({"clock_skew_seconds": skew} if skew is not None else {}),
 		},
 		update_modified=False,
 	)

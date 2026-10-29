@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import cint, now_datetime
 
 from frappe_wolf.api.agent import _request_json, authenticate_agent, push_interval
-from frappe_wolf.wolf import events, schema
+from frappe_wolf.wolf import events, schema, silences
 from frappe_wolf.wolf.incidents import attach_to_open_incident
 
 
@@ -91,5 +91,19 @@ def deployment():
 	except schema.PayloadError as e:
 		frappe.throw(str(e))
 	name = events.insert_event(event, agent=agent)
+	result = {"event": name}
+
+	# Optional maintenance window (protocol v1 addition, ignored by older apps).
+	if cint(data.get("silence_minutes")) > 0:
+		result["silence"] = silences.create(
+			data["silence_minutes"],
+			host=event["host"],
+			bench=event.get("bench"),
+			site=event.get("site"),
+			reason=event["title"],
+			source="deployment",
+			deployment_event=name,
+		)
+		result["silence_until"] = str(frappe.db.get_value("Wolf Silence", result["silence"], "ends_at"))
 	frappe.db.commit()
-	return {"event": name}
+	return result

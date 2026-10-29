@@ -37,17 +37,57 @@ def evaluate(rule, now=None):
 	since = add_to_date(now, minutes=-max(cint(rule.window_minutes), 1))
 	rows = query_metric(rule, since) if rule.signal_type == "metric" else query_events(rule, since)
 
-	breached = {}
-	for row in rows:
-		if conditions.is_breached(row, rule.operator, rule.threshold, cint(rule.min_samples) or 1):
-			breached[conditions.group_key(rule.group_by, row)] = row
+	min_samples = cint(rule.min_samples) or 1
+	resolve_threshold = rule.resolve_threshold if rule.get("use_resolve_threshold") else None
+	fire_after = cint(rule.get("fire_after_evaluations")) or 1
+	by_key = {conditions.group_key(rule.group_by, row): row for row in rows}
+	open_by_key = {
+		inc.group_key: inc.name
+		for inc in frappe.get_all(
+			"Wolf Incident",
+			filters={"alert_rule": rule.name, "status": ("in", incidents.OPEN)},
+			fields=["name", "group_key"],
+			order_by="started_at asc",
+		)
+	}
+	old_state = conditions.load_state(rule.get("evaluation_state"))
+	state = {}
 
-	for key, row in breached.items():
+	# Every group with data, an open incident or a pending counter gets one step.
+	for key in sorted(set(by_key) | set(open_by_key) | set(old_state)):
+		row = by_key.get(key)
+		breached = row is not None and conditions.is_breached(row, rule.operator, rule.threshold, min_samples)
+		still = conditions.is_still_breached(row, rule.operator, rule.threshold, resolve_threshold, min_samples)
+		new, action = conditions.hysteresis_step(
+			old_state.get(key),
+			breached,
+			still,
+			key in open_by_key,
+			fire_after=fire_after,
+			resolve_after=cint(rule.get("resolve_after_evaluations")) or 1,
+			auto_resolve=bool(rule.auto_resolve),
+		)
+		if new:
+			state[key] = new
+
+		if action == "resolve":
+			name = open_by_key[key]
+			incidents.resolve(name)
+			result["resolved"].append(name)
+			if _flag(rule, "notify_on_resolve"):
+				notify.enqueue(name, "resolved")
+			continue
+		if action not in ("fire", "update"):
+			continue
+
 		scope = {f: row.get(f) or row.get(f"{f}_hint") for f in SCOPE_FIELDS}
 		scope["label_key"] = row.get("label_key")
 		if rule.require_recent_deployment and not incidents.latest_deployment(
 			scope["host"], scope["bench"], scope["site"], minutes=cint(rule.deployment_window_minutes) or 30
 		):
+			if action == "fire" and fire_after > 1:
+				# Keep the streak so the next breach after a deployment fires at once.
+				state[key] = [fire_after - 1, 0]
 			continue
 
 		summary = (
@@ -65,20 +105,19 @@ def evaluate(rule, now=None):
 		else:
 			result["updated"].append(name)
 
-	if rule.auto_resolve:
-		for inc in frappe.get_all(
-			"Wolf Incident",
-			filters={"alert_rule": rule.name, "status": ("in", incidents.OPEN)},
-			fields=["name", "group_key"],
-		):
-			if inc.group_key not in breached:
-				incidents.resolve(inc.name)
-				result["resolved"].append(inc.name)
-				notify.enqueue(inc.name, "resolved")
-
+	if state != old_state:
+		frappe.db.set_value(
+			"Wolf Alert Rule", rule.name, "evaluation_state", conditions.dump_state(state) if state else None, update_modified=False
+		)
 	if result["fired"]:
 		frappe.db.set_value("Wolf Alert Rule", rule.name, "last_fired", now, update_modified=False)
 	return result
+
+
+def _flag(doc, field, default=1):
+	"""Check fields added after a rule was created read as None on in-memory docs."""
+	value = doc.get(field)
+	return default if value is None else cint(value)
 
 
 def describe_signal(rule):

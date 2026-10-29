@@ -37,7 +37,9 @@ def scheduler_inactive_reason():
 def queue_health():
 	try:
 		from frappe.utils.background_jobs import get_queue, get_queue_list, get_workers
-
+	except ImportError:
+		return {}  # helpers renamed in this Frappe version: unknown, not an error
+	try:
 		return {
 			"lengths": {q: get_queue(q).count for q in get_queue_list()},
 			"workers": len(get_workers()),

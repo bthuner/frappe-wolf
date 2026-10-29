@@ -67,7 +67,9 @@ Two things to watch:
   wizard moves on.
 - **Time zone.** The wizard replaces the time zone that `scenario.py` set. Rows recorded
   under the night zone are then stamped hours in the future and skew rule windows until real
-  time catches up. Delete them, or reset the stack.
+  time catches up. Frappe's own scheduler stalls the same way: every Scheduled Job Type's
+  `last_execution` is in the future, so no job is due. Delete the future rows and set those
+  `last_execution` values to now, or reset the stack.
 
 ## Email and Raven channels
 

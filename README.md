@@ -2,6 +2,8 @@
 
 # Frappe Wolf
 
+[![CI](https://github.com/bthuner/frappe-wolf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bthuner/frappe-wolf/actions/workflows/ci.yml)
+
 Self-hosted observability for Frappe benches, ERPNext/Dokos sites and Linux hosts.
 It catches 502 windows, failed nightly crons, worker crashes and suspicious logins
 before customers notice, and keeps all data on your own Frappe site.
@@ -104,10 +106,39 @@ python3 -m unittest discover -s tests -t .           # app pure-python tests
 python3 -m unittest discover -s agent/tests          # agent tests
 ```
 
+### CI checks
+
+Every pull request and every push to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+lint (ruff, shellcheck), the app tests on Python 3.12, the agent tests on Python 3.9 and 3.14, and a
+bench integration job on MariaDB 10.6 and on Postgres 16. To run the same checks locally:
+
+```bash
+pip install ruff==0.17.3                             # ruff rules are in pyproject.toml
+ruff check .
+shellcheck agent/install.sh ci/integration.sh
+python3 -m unittest discover -s tests -t .
+python3.9 -m unittest discover -s agent/tests        # the agent must keep working on 3.9
+```
+
+The integration job installs this checkout into the public Dokos image, creates a site and runs
+[`ci/db_smoke.py`](ci/db_smoke.py), which exercises every Wolf SQL path. With Docker:
+
+```bash
+docker network create wolf-ci
+docker run -d --name db --network wolf-ci -e MARIADB_ROOT_PASSWORD=admin mariadb:10.6 \
+  --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+docker run -d --name redis --network wolf-ci redis:6.2-alpine
+docker run --rm --network wolf-ci --entrypoint bash -v "$PWD:/src:ro" \
+  registry.gitlab.com/dokos/dokos:latest /src/ci/integration.sh mariadb
+```
+
+For Postgres, start `postgres:16` as `db` with `-e POSTGRES_PASSWORD=admin` and pass `postgres`.
+On an existing bench, run `../env/bin/python /path/to/ci/db_smoke.py <site>` from `sites/`.
+
 ## Status
 
 MVP, tested on a Dokos (Dodock 5.18) bench, on MariaDB 10.6 and on Postgres 17
-(see `dev/demo/db_smoke.py`).
+(see `ci/db_smoke.py`).
 
 ## License
 

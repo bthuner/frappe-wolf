@@ -88,7 +88,7 @@ services:
     volumes:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
-      - ./db_smoke.py:/etc/wolf/db_smoke.py:ro
+      - ../../ci/db_smoke.py:/etc/wolf/db_smoke.py:ro
   scheduler:
     <<: *bench
     command: [bench, schedule]

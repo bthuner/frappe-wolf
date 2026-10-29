@@ -92,7 +92,7 @@ affects image previews.
 
 ## Database portability check
 
-`db_smoke.py` runs every Wolf SQL path on a site: ingest, dedupe, all rule kinds, correlation,
+[`ci/db_smoke.py`](../../ci/db_smoke.py) (mounted at `/etc/wolf/db_smoke.py`, also run by CI) runs every Wolf SQL path on a site: ingest, dedupe, all rule kinds, correlation,
 timeline, charts, purge and auto-resolve. It works the same on MariaDB and on Postgres:
 
 ```bash

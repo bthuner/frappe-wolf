@@ -9,7 +9,26 @@
   "digest",
   "recipients",
   "webhook_url",
-  "raven_channel"
+  "raven_channel",
+  "chat_webhook_url",
+  "matrix_homeserver",
+  "matrix_room_id",
+  "matrix_access_token",
+  "ntfy_server",
+  "ntfy_topic",
+  "ntfy_token",
+  "gotify_server",
+  "gotify_token",
+  "sms_numbers",
+  "sms_url",
+  "sms_method",
+  "sms_content_type",
+  "sms_body",
+  "sms_auth_header",
+  "sms_secret",
+  "sms_max_length",
+  "pagerduty_routing_key",
+  "pagerduty_url"
  ],
  "fields": [
   {
@@ -18,7 +37,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Channel Type",
-   "options": "Email\nWebhook\nRaven",
+   "options": "Email\nWebhook\nRaven\nSlack\nMattermost\nMatrix\nntfy\nGotify\nSMS\nPagerDuty",
    "reqd": 1
   },
   {
@@ -30,12 +49,13 @@
   },
   {
    "default": "none",
-   "description": "hourly: batch info/warning alerts into one message per hour. Critical alerts and escalations are always sent immediately.",
+   "description": "hourly: batch info/warning alerts into one message per hour. Critical alerts and escalations are always sent immediately. PagerDuty channels are never digested.",
    "fieldname": "digest",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Digest",
-   "options": "none\nhourly"
+   "options": "none\nhourly",
+   "depends_on": "eval:doc.channel_type!='PagerDuty'"
   },
   {
    "depends_on": "eval:doc.channel_type=='Email'",
@@ -47,7 +67,7 @@
   },
   {
    "depends_on": "eval:doc.channel_type=='Webhook'",
-   "description": "Receives a Slack/Mattermost compatible JSON body.",
+   "description": "Receives a generic JSON body ({text, incident}). Use the Slack or Mattermost types for their native formats.",
    "fieldname": "webhook_url",
    "fieldtype": "Data",
    "label": "Webhook URL",
@@ -59,12 +79,163 @@
    "fieldname": "raven_channel",
    "fieldtype": "Data",
    "label": "Raven Channel"
+  },
+  {
+   "fieldname": "chat_webhook_url",
+   "fieldtype": "Password",
+   "label": "Incoming Webhook URL",
+   "depends_on": "eval:doc.channel_type=='Slack' || doc.channel_type=='Mattermost'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Slack' || doc.channel_type=='Mattermost'",
+   "description": "Slack: app → Incoming Webhooks. Mattermost: Integrations → Incoming Webhooks. Stored encrypted: the URL is the credential."
+  },
+  {
+   "fieldname": "matrix_homeserver",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Homeserver URL",
+   "depends_on": "eval:doc.channel_type=='Matrix'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Matrix'",
+   "description": "Client-server API base, e.g. https://matrix.example.org"
+  },
+  {
+   "fieldname": "matrix_room_id",
+   "fieldtype": "Data",
+   "label": "Room ID",
+   "depends_on": "eval:doc.channel_type=='Matrix'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Matrix'",
+   "description": "Internal room ID such as !abcdef:example.org (Room settings → Advanced). The bot account must have joined the room."
+  },
+  {
+   "fieldname": "matrix_access_token",
+   "fieldtype": "Password",
+   "label": "Access Token",
+   "depends_on": "eval:doc.channel_type=='Matrix'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Matrix'",
+   "description": "Access token of the bot account that posts the alerts."
+  },
+  {
+   "fieldname": "ntfy_server",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "ntfy Server URL",
+   "default": "https://ntfy.sh",
+   "depends_on": "eval:doc.channel_type=='ntfy'"
+  },
+  {
+   "fieldname": "ntfy_topic",
+   "fieldtype": "Data",
+   "label": "Topic",
+   "depends_on": "eval:doc.channel_type=='ntfy'",
+   "mandatory_depends_on": "eval:doc.channel_type=='ntfy'",
+   "description": "On a public server anyone who knows the topic can read it: pick an unguessable name or protect it with an access token."
+  },
+  {
+   "fieldname": "ntfy_token",
+   "fieldtype": "Password",
+   "label": "ntfy Access Token",
+   "depends_on": "eval:doc.channel_type=='ntfy'",
+   "description": "Optional access token (tk_…) for protected topics."
+  },
+  {
+   "fieldname": "gotify_server",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Gotify Server URL",
+   "depends_on": "eval:doc.channel_type=='Gotify'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Gotify'"
+  },
+  {
+   "fieldname": "gotify_token",
+   "fieldtype": "Password",
+   "label": "Application Token",
+   "depends_on": "eval:doc.channel_type=='Gotify'",
+   "mandatory_depends_on": "eval:doc.channel_type=='Gotify'",
+   "description": "Token of a Gotify application (Apps → Create application)."
+  },
+  {
+   "fieldname": "sms_numbers",
+   "fieldtype": "Small Text",
+   "label": "Phone Numbers",
+   "depends_on": "eval:doc.channel_type=='SMS'",
+   "mandatory_depends_on": "eval:doc.channel_type=='SMS'",
+   "description": "One per line or comma-separated, in the format your gateway expects (usually +33612345678)."
+  },
+  {
+   "fieldname": "sms_url",
+   "fieldtype": "Data",
+   "label": "Gateway URL",
+   "depends_on": "eval:doc.channel_type=='SMS'",
+   "mandatory_depends_on": "eval:doc.channel_type=='SMS'",
+   "description": "Template with {to}, {text} and {secret}, e.g. https://sms.example.com/send?to={to}&msg={text}. Values are URL-encoded."
+  },
+  {
+   "fieldname": "sms_method",
+   "fieldtype": "Select",
+   "label": "HTTP Method",
+   "options": "POST\nGET",
+   "default": "POST",
+   "depends_on": "eval:doc.channel_type=='SMS'"
+  },
+  {
+   "fieldname": "sms_content_type",
+   "fieldtype": "Select",
+   "label": "Body Format",
+   "options": "form\njson",
+   "default": "form",
+   "depends_on": "eval:doc.channel_type=='SMS' && doc.sms_method!='GET'"
+  },
+  {
+   "fieldname": "sms_body",
+   "fieldtype": "Small Text",
+   "label": "Body Template",
+   "depends_on": "eval:doc.channel_type=='SMS' && doc.sms_method!='GET'",
+   "description": "Optional, with {to}, {text} and {secret}, e.g. {\"to\": \"{to}\", \"message\": \"{text}\"}. Empty: to=…&text=… (form) or {\"to\": …, \"text\": …} (json)."
+  },
+  {
+   "fieldname": "sms_auth_header",
+   "fieldtype": "Data",
+   "label": "Auth Header",
+   "depends_on": "eval:doc.channel_type=='SMS'",
+   "description": "Optional header line, e.g. Authorization: Bearer {secret} or X-API-Key: {secret}."
+  },
+  {
+   "fieldname": "sms_secret",
+   "fieldtype": "Password",
+   "label": "Secret",
+   "depends_on": "eval:doc.channel_type=='SMS'",
+   "description": "API key or password, inserted where {secret} appears. Stored encrypted."
+  },
+  {
+   "fieldname": "sms_max_length",
+   "fieldtype": "Select",
+   "label": "Max Length",
+   "options": "160\n320",
+   "default": "160",
+   "depends_on": "eval:doc.channel_type=='SMS'",
+   "description": "160: one SMS. 320: up to two concatenated SMS (306 characters). Text that needs Unicode (e.g. emoji) fits 70 / 134."
+  },
+  {
+   "fieldname": "pagerduty_routing_key",
+   "fieldtype": "Password",
+   "label": "Routing Key",
+   "depends_on": "eval:doc.channel_type=='PagerDuty'",
+   "mandatory_depends_on": "eval:doc.channel_type=='PagerDuty'",
+   "description": "Integration key of an Events API v2 integration."
+  },
+  {
+   "fieldname": "pagerduty_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Events API URL",
+   "default": "https://events.pagerduty.com/v2/enqueue",
+   "depends_on": "eval:doc.channel_type=='PagerDuty'",
+   "description": "Change it for the EU service region or an Events v2 compatible receiver (Grafana OnCall, Opsgenie …)."
   }
  ],
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-10-29 18:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Alert Channel",

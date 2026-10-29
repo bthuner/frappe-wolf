@@ -200,3 +200,30 @@ acknowledges or resolves, so link scanners cannot act on an incident. The incide
 Webhook bodies expose the same URLs as `incident.actions = {"ack": "...", "resolve": "..."}`
 (empty once resolved). Hourly digests are posted as
 `{"text": "...", "digest": [{"incident", "kind", "severity", "title", "at", "url"}]}`.
+
+Slack (Block Kit buttons), Mattermost (attachment links), ntfy (`Actions` header) carry the same
+links. Matrix, Gotify and SMS carry the incident URL only.
+
+## 6. Native channels (app → services)
+
+Each native channel is a pure builder in `frappe_wolf/wolf/channels/` that maps a notification to
+the documented format of the service (the module docstrings cite the reference pages):
+
+| Channel | Request |
+|---|---|
+| Slack | `POST <webhook>` `{"text", "attachments": [{"color", "fallback", "blocks": [section, actions]}]}` |
+| Mattermost | `POST <webhook>` `{"attachments": [{"fallback", "color", "pretext", "title", "title_link", "text", "fields", "footer"}]}` |
+| Matrix | `PUT <homeserver>/_matrix/client/v3/rooms/<room>/send/m.room.message/wolf-<attempt>` (Bearer token) `{"msgtype": "m.text", "body", "format": "org.matrix.custom.html", "formatted_body"}` |
+| ntfy | `POST <server>/<topic>`, body = text, headers `Title` (RFC 2047 when not ASCII), `Priority`, `Tags`, `Click`, `Actions`, optional `Authorization: Bearer` |
+| Gotify | `POST <server>/message` (`X-Gotify-Key`) `{"title", "message", "priority", "extras": {"client::display", "client::notification": {"click": {"url"}}}}` |
+| SMS | the configured template, one request per number |
+| PagerDuty | `POST <events url>` `{"routing_key", "event_action", "dedup_key": "<incident>", "payload": {"summary", "source", "severity", "component", "group", "class", "custom_details"}, "client", "client_url", "links"}` (payload on trigger only) |
+
+PagerDuty event actions: `fired`, `reopened`, `escalated` → `trigger`; acknowledgement →
+`acknowledge`; resolution → `resolve`; a test sends `trigger` then `resolve`.
+
+Every request is recorded as a **Wolf Delivery** `{incident, alert_rule, at, channel_type, target,
+kind, action, digest, ok, http_status, error}`. `target` names the destination without secrets
+(host, room, masked phone numbers); `error` has secrets and URL paths/queries removed. Digests of
+native channels are merged on a SHA-256 of the channel settings, and the digest item keeps a
+reference to the channel row rather than any secret.

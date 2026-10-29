@@ -46,6 +46,17 @@ class WolfIncident(Document):
 
 			sync_assignment(self, previous)
 
+		# Acknowledged / resolved by a person (Desk, form, signed link): tell the channels.
+		# Auto-resolution by the rule engine writes the status directly and notifies from
+		# rules.py, so it does not come through here.
+		if before and before.status != self.status and self.alert_rule and self.status in ("Acknowledged", "Resolved"):
+			from frappe_wolf.wolf import notify
+
+			notify.on_status_change(self.name, self.alert_rule, self.status)
+
+	def on_trash(self):
+		frappe.db.delete("Wolf Delivery", {"incident": self.name})
+
 	@frappe.whitelist()
 	def acknowledge(self):
 		self.status = "Acknowledged"

@@ -138,3 +138,17 @@ def get_incident_timeline(incident):
 		# comments, assignments and status changes, interleaved with events by render_timeline
 		"activity": get_activity(doc),
 	}
+
+
+@frappe.whitelist()
+def get_incident_deliveries(incident, limit=100):
+	"""Notification attempts for an incident, newest first (no secrets are ever stored)."""
+	frappe.get_doc("Wolf Incident", incident).check_permission("read")
+	return frappe.get_all(
+		"Wolf Delivery",
+		filters={"incident": incident},
+		fields=["at", "kind", "digest", "channel_type", "target", "action", "ok", "http_status", "error"],
+		order_by="at desc, creation desc",
+		limit_page_length=min(cint(limit) or 100, 500),
+		ignore_permissions=True,
+	)

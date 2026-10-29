@@ -338,7 +338,7 @@
   },
   {
    "default": "1",
-   "description": "Also notify the channels when the incident auto-resolves.",
+   "description": "Also notify the channels when the incident resolves, automatically or by hand. PagerDuty channels always hear it.",
    "fieldname": "notify_on_resolve",
    "fieldtype": "Check",
    "label": "Notify On Resolve"
@@ -403,7 +403,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 18:00:00.000000",
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Alert Rule",

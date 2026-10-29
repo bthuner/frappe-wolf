@@ -14,6 +14,8 @@ def ensure_roles():
 
 def ensure_settings():
 	settings = frappe.get_single("Wolf Settings")
+	if settings.action_link_hours is None:
+		settings.action_link_hours = 24
 	if not settings.get_password("registration_token", raise_exception=False):
 		settings.registration_token = frappe.generate_hash(length=32)
 		settings.flags.ignore_permissions = True

@@ -64,4 +64,17 @@ Mail shows up at <http://localhost:8025> within one email-queue flush, a few min
 Raven is installed without `blurhash-python`, which has no Python 3.14 wheel; that only
 affects image previews.
 
+## Database portability check
+
+`db_smoke.py` runs every Wolf SQL path on a site: ingest, dedupe, all rule kinds, correlation,
+timeline, charts, purge and auto-resolve. It works the same on MariaDB and on Postgres:
+
+```bash
+docker compose exec backend bash -c 'cd sites && ../env/bin/python /etc/wolf/db_smoke.py wolf.localhost'
+WOLF_DEMO_PG_IMAGE=postgres:16 docker compose --profile postgres up -d pgdb
+docker compose exec backend bench new-site pg.localhost --db-type postgres --db-host pgdb \
+  --db-root-username postgres --db-root-password admin --admin-password admin --install-app frappe_wolf
+docker compose exec backend bash -c 'cd sites && ../env/bin/python /etc/wolf/db_smoke.py pg.localhost'
+```
+
 Reset: `docker compose down -v`.

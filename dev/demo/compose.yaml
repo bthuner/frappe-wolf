@@ -85,6 +85,10 @@ services:
 
   backend:
     <<: *bench
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./db_smoke.py:/etc/wolf/db_smoke.py:ro
   scheduler:
     <<: *bench
     command: [bench, schedule]
@@ -125,6 +129,16 @@ services:
     entrypoint: [bash, /etc/wolf/agent-init.sh]
     depends_on: [frontend]
 
+  # Optional Postgres for portability checks: docker compose --profile postgres up -d pgdb
+  pgdb:
+    image: ${WOLF_DEMO_PG_IMAGE:-postgres:16}
+    profiles: [postgres]
+    restart: on-failure
+    environment:
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
   mailpit:
     image: axllent/mailpit:latest
     restart: on-failure
@@ -140,6 +154,7 @@ services:
 
 volumes:
   db-data:
+  pg-data:
   sites:
   logs:
   nginx-logs:

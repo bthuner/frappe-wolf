@@ -19,8 +19,9 @@ log = logging.getLogger(__name__)
 # supervisor states that mean "not serving". STARTING/STOPPING are transitions.
 SUPERVISOR_DOWN = {"STOPPED", "EXITED", "BACKOFF", "FATAL", "UNKNOWN"}
 SUPERVISOR_STATES = SUPERVISOR_DOWN | {"RUNNING", "STARTING", "STOPPING"}
-# states worth an event (STOPPED is usually someone running `bench stop` / a deploy)
-ALERT_STATES = {"EXITED", "BACKOFF", "FATAL", "UNKNOWN", "failed", "auto-restart"}
+# states worth an event: the manager gave up restarting it. BACKOFF / auto-restart are retries
+# and STOPPED is usually `bench stop` or a deploy: those only count in bench_processes_down.
+ALERT_STATES = {"FATAL", "UNKNOWN", "failed"}
 
 
 def parse_supervisor(text):

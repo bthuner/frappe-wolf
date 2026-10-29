@@ -297,7 +297,7 @@ frappe-bench-redis:frappe-bench-redis-cache            RUNNING   pid 101, uptime
 frappe-bench-web:frappe-bench-frappe-web               RUNNING   pid 102, uptime 2 days, 3:04:05
 frappe-bench-workers:frappe-bench-frappe-short-worker-0 FATAL     Exited too quickly (process log may have details)
 frappe-bench-workers:frappe-bench-frappe-long-worker-0 STOPPED   Oct 29 01:58 AM
-frappe-bench-2-web:frappe-bench-2-frappe-web           BACKOFF   Exited too quickly
+frappe-bench-2-web:frappe-bench-2-frappe-web           FATAL     Exited too quickly
 other-app                                              EXITED    Oct 29 01:00 AM
 """
 SYSTEMD_OUT = """\
@@ -330,7 +330,7 @@ class TestProcesses(unittest.TestCase):
 		self.assertEqual(
 			sorted((e["bench"], e["payload"]["process"], e["payload"]["state"]) for e in events),
 			[("frappe-bench", "frappe-bench-workers:frappe-bench-frappe-short-worker-0", "FATAL"),
-			 ("frappe-bench-2", "frappe-bench-2-web:frappe-bench-2-frappe-web", "BACKOFF")],
+			 ("frappe-bench-2", "frappe-bench-2-web:frappe-bench-2-frappe-web", "FATAL")],
 		)  # fmt: skip
 		self.assertEqual({(e["type"], e["category"], e["severity"]) for e in events}, {("worker_failure", "process_down", "critical")})
 		# still down on the next cycle: no new event, the metric keeps counting
@@ -344,7 +344,7 @@ class TestProcesses(unittest.TestCase):
 		metrics, events = w.collect([{"name": "pilot-erp"}], NOW)
 		self.assertEqual([(m["bench"], m["value"], m["labels"]) for m in metrics], [("pilot-erp", 2, {"manager": "systemd"})])
 		self.assertEqual(
-			sorted(e["payload"]["state"] for e in events), ["auto-restart", "failed"]
+			sorted(e["payload"]["state"] for e in events), ["failed"]
 		)
 
 	def test_nothing_found(self):

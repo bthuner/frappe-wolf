@@ -7,6 +7,13 @@ from frappe.utils import now_datetime
 
 
 class WolfIncident(Document):
+	def _validate_links(self):
+		# Retention may have purged the deployment event of an old incident; keep the incident
+		# saveable (ack/resolve) and keep deployment_at as the record of when it happened.
+		if self.deployment_event and not frappe.db.exists("Wolf Event", self.deployment_event):
+			self.deployment_event = None
+		super()._validate_links()
+
 	def validate(self):
 		if self.status == "Resolved" and not self.resolved_at:
 			self.resolved_at = now_datetime()

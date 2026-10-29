@@ -225,6 +225,9 @@ def main():
 					frappe.clear_messages()
 					limited += 1
 			assert limited, "push rate limit never triggered"
+		except Exception:
+			frappe.db.rollback()  # Postgres: the failed transaction must end before the cleanup below
+			raise
 		finally:
 			frappe.local.request = saved_request
 			settings.reload()

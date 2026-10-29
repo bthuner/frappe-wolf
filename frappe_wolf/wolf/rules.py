@@ -80,7 +80,7 @@ def evaluate(rule, now=None):
 		if action not in ("fire", "update"):
 			continue
 
-		scope = {f: row.get(f) or row.get(f"{f}_hint") for f in SCOPE_FIELDS}
+		scope = conditions.incident_scope(rule.group_by, row)
 		scope["label_key"] = row.get("label_key")
 		if rule.require_recent_deployment and not incidents.latest_deployment(
 			scope["host"], scope["bench"], scope["site"], minutes=cint(rule.deployment_window_minutes) or 30

@@ -25,9 +25,10 @@ Set `WOLF_BENCHES="/home/frappe/frappe-bench /srv/other-bench"` to skip auto-dis
 |---------|--------------|
 | `wolf-agent register --url URL --token TOKEN [--bench PATH]...` | register the host, discover benches, write the config |
 | `wolf-agent run` | the daemon loop (what systemd runs) |
-| `wolf-agent check [--from-start]` | collect once and print the JSON payload, nothing is sent |
+| `wolf-agent check [--from-start] [--status]` | collect once and print the JSON payload, nothing is sent; the watchdog state goes to stderr (`--status` also asks the site for its health) |
 | `wolf-agent discover [--bench PATH]` | show what bench discovery finds |
 | `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT] [--silence 15m]` | put a deployment marker on the Wolf timeline; `--silence` also opens a maintenance window that mutes notifications for that bench/site |
+| `wolf-agent test-fallback` | send a test message through the watchdog fallback channel(s) |
 
 Global options: `--config PATH` (or `$WOLF_AGENT_CONFIG`), `-v`.
 
@@ -73,13 +74,52 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
      "logs_dir": "/home/frappe/frappe-bench/logs", "nginx_access_log": "/var/log/nginx/access.log",
      "redis_queue": "redis://127.0.0.1:11000"}
   ],
-  "extra_logs": [{"path": "/var/log/myapp/error.log", "parser": "traceback", "bench": null, "site": null}]
+  "extra_logs": [{"path": "/var/log/myapp/error.log", "parser": "traceback", "bench": null, "site": null}],
+  "watchdog": {
+    "enabled": true,
+    "stale_minutes": 5,
+    "webhook_url": "https://chat.example.com/hooks/xxxx",
+    "smtp": {"host": "smtp.example.com", "port": 587, "starttls": true, "from": "wolf@example.com",
+             "to": ["ops@example.com"], "user": "wolf", "password": "…"}
+  }
 }
 ```
 
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
+
+## Watchdog
+
+Wolf alerts are sent by the Wolf site. When that site, its database or its scheduler
+is down, nobody would hear about it, so the agent watches the site and alerts through
+its own **fallback channel**, which does not go through the site:
+
+- every push response carries the site's `health` ([protocol §4](../docs/protocol.md));
+- the agent raises an outage when pushes have failed for `stale_minutes` (site, proxy or
+  database down), or when the site reports its alert rules (or, with no rule enabled, its
+  scheduled jobs) have not run for `stale_minutes`: scheduler stopped or paused, no
+  worker, Redis down, or stored times pushed into the future by a time-zone change;
+- one alert per outage, then one recovery notice when pushes work and rules run again.
+  The state lives in `<spool_dir>/watchdog-state.json`, so a restart neither repeats the
+  alert nor forgets the outage. A delivery that fails is retried every minute.
+- If the site rejects the agent's credentials, a last alert is sent before the agent exits.
+
+Channels (`watchdog` in the config, both optional, both used when set):
+
+- `webhook_url`: POSTs `{"text": "..."}`, which Slack, Mattermost and Rocket.Chat
+  incoming webhooks accept.
+- `smtp`: `host`, `port` (default 25, 587 with `starttls`, 465 with `ssl`), `from`, `to`
+  (list or comma-separated), `starttls` (default on for port 587), `ssl`, `user`,
+  `password`, `verify_tls`.
+
+With no channel configured the watchdog only logs (journal) at ERROR level. Set
+`"enabled": false` to turn it off. Run `wolf-agent test-fallback` after editing the config,
+and `wolf-agent check` to see the current watchdog state.
+
+While its rules are stale, the site also records a `scheduler_stalled` event on each push;
+the **Scheduler stalled** preset turns it into an incident once the scheduler runs again,
+so the outage shows up on the Wolf timeline afterwards.
 
 ## Tests
 

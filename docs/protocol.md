@@ -27,6 +27,19 @@ Response (`message` key, Frappe convention):
 The secret is returned once; the agent stores it in `/etc/wolf-agent/config.json` (mode 0600).
 Re-registering the same hostname rotates the secret.
 
+Optional `"kind"`: `"agent"` (default) or `"satellite"`. A satellite is another Frappe site
+running `frappe_wolf` in satellite mode; it registers with `hostname` set to its site name and
+one bench entry carrying its real `host`:
+
+```json
+{"registration_token": "...", "kind": "satellite", "hostname": "b.example.com", "agent_version": "0.1.0",
+ "os": "Linux-6.1...", "benches": [{"name": "frappe-bench", "path": "/home/frappe/frappe-bench",
+ "sites": ["b.example.com"], "host": "bench-01"}]}
+```
+
+A hostname already registered with the other kind is refused. A site in satellite mode refuses
+all registrations (register with its central site instead).
+
 ## 2. Telemetry push
 
 ```
@@ -52,10 +65,18 @@ X-Wolf-Agent-Secret: <secret>
 }
 ```
 
-Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "push_interval": 30}}`.
+Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "rejected": [...],
+"push_interval": 30, "health": {...}}}`. `health` is Wolf's own heartbeat (§4); it is `null`
+if the site could not compute it, and absent on older servers.
 HTTP 401/403 → bad credentials (agent stops and logs). HTTP 5xx or network error → agent
 keeps the batch in its on-disk spool and retries with backoff. Max 5000 metrics + 1000 events
 per request; the agent splits larger batches.
+
+Satellites use this same endpoint with their satellite credentials. They send no metrics, at
+most 100 events per request, every event with explicit `host`/`bench`/`site`, `fingerprint` and
+`count` (duplicates seen before forwarding are merged into one event). They push an empty body
+every minute as a heartbeat. 401/403 → retry in 15 minutes; other 4xx (except 408/429) → the
+batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minutes.
 
 ### Event types (`type`)
 
@@ -65,7 +86,7 @@ per request; the agent splits larger batches.
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`                       |
 | `security`        | `ssh_failed_login`, `ssh_root_login`, `frappe_failed_login`, `new_admin_ip`, `privileged_user` |
-| `host_metric_alert` | (created by the app when a metric rule fires)                     |
+| `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot`, `migrate`                                        |
 
 `severity`: `info` | `warning` | `critical`.
@@ -108,7 +129,49 @@ Response: `{"message": {"event": "<Wolf Event name>"}}`, plus
 was created. An agent that asked for a silence and gets no `silence` key back is talking to an app
 without silence support and should warn.
 
-## 4. Incident action links (alerts → app)
+## 4. Wolf health (heartbeat)
+
+```
+GET|POST /api/method/frappe_wolf.api.ingest.status
+X-Wolf-Agent-Id / X-Wolf-Agent-Secret headers
+```
+
+Response: `{"message": {"agent": "WAG-0001", "push_interval": 30, "health": {...}}}`. The same
+`health` object comes back with every push, so the agent does not need to poll `status`; it is
+for `wolf-agent check` and scripts. Read-only: it does not update the agent's last seen.
+
+```json
+{
+  "ok": false,
+  "problems": ["alert rules not evaluated for 12 min; scheduler disabled (pause_scheduler)"],
+  "checked_at": "2026-10-29T02:12:30Z",
+  "server_version": "0.1.0",
+  "rules": {"last_evaluated": "2026-10-29T02:00:01Z", "age_seconds": 749},
+  "scheduler": {"enabled": false, "reason": "pause_scheduler",
+                "last_job_run": "2026-10-29T02:00:00Z", "age_seconds": 750},
+  "queues": {"lengths": {"short": 0, "default": 3, "long": 0}, "workers": 2}
+}
+```
+
+| field | meaning |
+|-------|---------|
+| `rules.last_evaluated` | latest `last_evaluated` over enabled Wolf Alert Rules (the rule engine runs every minute on the scheduler); `null` if no rule ran yet |
+| `scheduler.enabled` / `reason` | `false` with `maintenance_mode`, `pause_scheduler`, `disable_scheduler` or `enable_scheduler unset in System Settings` |
+| `scheduler.last_job_run` | latest `Scheduled Job Type.last_execution` (stamped when a worker starts a job) |
+| `*.age_seconds` | server-side `now - timestamp`, so agent clock skew does not matter. **Negative** when the stored time lies in the future, which happens after a system time-zone change and stalls the scheduler until that time |
+| `queues` | RQ queue lengths and worker count for the bench, or `{"error": "..."}` if Redis is unreachable |
+| `ok` / `problems` | the server's own reading with a 5 minute threshold |
+
+Only staleness is a problem: `abs(age) >= stale threshold` on `rules` (or on `scheduler` when no
+rule is enabled). Scheduler and queue state are context appended to the problem text. The agent
+applies its own threshold (`watchdog.stale_minutes`) to the raw ages rather than trusting `ok`.
+
+While `ok` is false, each push also records a `host_metric_alert` / `scheduler_stalled` event on
+the site (bumped, not duplicated, for 15 minutes). The **Scheduler stalled** preset turns it into
+an incident once the scheduler runs again. A stalled site cannot alert about itself, so the live
+alert is raised by the agent watchdog through its own fallback channel (see `agent/README.md`).
+
+## 5. Incident action links (alerts → app)
 
 Email, Raven and webhook alerts for unresolved incidents carry signed links:
 

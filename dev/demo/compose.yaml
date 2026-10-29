@@ -73,6 +73,11 @@ services:
           bench --site wolf.localhost migrate
         fi
         bench --site wolf.localhost enable-scheduler
+        # Skip the setup wizard: the demo only needs Desk.
+        bench --site wolf.localhost execute frappe.db.set_single_value --args '["System Settings", "setup_complete", 1]'
+        bench --site wolf.localhost execute frappe.db.set_value \
+          --args '["Installed Application", {"app_name": ["in", ["frappe", "frappe_wolf"]]}, "is_setup_complete", 1]'
+        bench --site wolf.localhost execute frappe.db.set_default --args '["desktop:home_page", "workspace"]'
         # Hand the registration token to the demo agent (it never runs bench itself).
         bench --site wolf.localhost execute frappe.utils.password.get_decrypted_password \
           --args '["Wolf Settings", "Wolf Settings", "registration_token"]' | tail -1 | tr -d '"' > sites/.wolf-demo-token

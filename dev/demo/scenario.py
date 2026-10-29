@@ -121,7 +121,7 @@ def main():
 		"/api/resource/Wolf Incident?" + urllib.parse.urlencode({
 			"fields": json.dumps(["name", "title", "status", "severity", "event_count", "deployment_event"]),
 			"order_by": "creation asc", "limit_page_length": 50,
-		}),
+		}, quote_via=urllib.parse.quote),
 	)["data"]
 	for inc in incidents:
 		link = " (deployment linked)" if inc.get("deployment_event") else ""

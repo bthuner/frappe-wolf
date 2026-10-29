@@ -30,6 +30,8 @@ def find_recently_resolved(rule, key, minutes):
 			"group_key": key,
 			"status": "Resolved",
 			"resolved_at": (">=", add_to_date(now_datetime(), minutes=-cint(minutes))),
+			# a merged incident stays closed; breaches go to its merge target instead
+			"merged_into": ("is", "not set"),
 		},
 		"name",
 		order_by="resolved_at desc",
@@ -60,10 +62,17 @@ def open_incident(rule, key, scope, summary, started_at=None):
 	name = find_open(rule.name, key)
 	kind = None
 	if not name:
+		from frappe_wolf.wolf.workflow import merge_target_for
+
+		# Merged by hand into another open incident: keep feeding that one, notify nobody again.
+		target = merge_target_for(rule.name, key)
+		if target:
+			frappe.db.set_value("Wolf Incident", target, "last_event_at", now, update_modified=False)
+			return target, None
 		name = find_recently_resolved(rule.name, key, rule.cooldown_minutes)
 		if name:
 			kind = "reopened"
-			frappe.db.set_value("Wolf Incident", name, {"status": "Open", "resolved_at": None})
+			frappe.db.set_value("Wolf Incident", name, {"status": "Open", "resolved_at": None, "resolved_by": None})
 
 	if name:
 		frappe.db.set_value("Wolf Incident", name, {"last_event_at": now, "summary": summary})
@@ -103,7 +112,7 @@ def resolve(name, reason="Condition cleared"):
 	frappe.db.set_value(
 		"Wolf Incident",
 		name,
-		{"status": "Resolved", "resolved_at": now_datetime(), "summary": reason},
+		{"status": "Resolved", "resolved_at": now_datetime(), "resolved_by": None, "summary": reason},
 	)
 
 

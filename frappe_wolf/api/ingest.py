@@ -60,15 +60,19 @@ def push():
 			attach_to_open_incident(name, event)
 		accepted_events += 1
 
-	seen = {
-		"last_seen": now,
-		"last_ip": frappe.local.request_ip,
-		"agent_version": str(data.get("agent_version") or "")[:140] or None,
-		"silence_reported": 0,
-	}
-	if skew is not None:  # no sent_at (older agents): the Int column is NOT NULL on MariaDB
-		seen["clock_skew_seconds"] = skew
-	frappe.db.set_value("Wolf Agent", agent, seen, update_modified=False)
+	frappe.db.set_value(
+		"Wolf Agent",
+		agent,
+		{
+			"last_seen": now,
+			"last_ip": frappe.local.request_ip,
+			"agent_version": str(data.get("agent_version") or "")[:140] or None,
+			"silence_reported": 0,
+			# satellites and older agents send no sent_at: keep the last known skew
+			**({"clock_skew_seconds": skew} if skew is not None else {}),
+		},
+		update_modified=False,
+	)
 	frappe.db.commit()
 
 	# after the commit: a health failure must not cost the telemetry

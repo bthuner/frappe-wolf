@@ -7,6 +7,7 @@ from frappe_wolf import satellite
 from frappe_wolf.wolf import access
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
+from frappe_wolf.wolf.workflow import get_activity
 
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
 READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
@@ -137,4 +138,25 @@ def get_incident_timeline(incident):
 		r.payload = parse_payload(r)
 		r.linked = r.incident == doc.name
 		r.pop("incident", None)
-	return {"incident": doc.name, "started_at": doc.started_at, "resolved_at": doc.resolved_at, "events": rows}
+	return {
+		"incident": doc.name,
+		"started_at": doc.started_at,
+		"resolved_at": doc.resolved_at,
+		"events": rows,
+		# comments, assignments and status changes, interleaved with events by render_timeline
+		"activity": get_activity(doc),
+	}
+
+
+@frappe.whitelist()
+def get_incident_deliveries(incident, limit=100):
+	"""Notification attempts for an incident, newest first (no secrets are ever stored)."""
+	frappe.get_doc("Wolf Incident", incident).check_permission("read")
+	return frappe.get_all(
+		"Wolf Delivery",
+		filters={"incident": incident},
+		fields=["at", "kind", "digest", "channel_type", "target", "action", "ok", "http_status", "error"],
+		order_by="at desc, creation desc",
+		limit_page_length=min(cint(limit) or 100, 500),
+		ignore_permissions=True,
+	)

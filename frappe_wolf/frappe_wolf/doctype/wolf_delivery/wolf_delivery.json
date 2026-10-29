@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 12:00:00.000000",
+ "description": "One notification attempt to one channel: what was sent, whether it worked. Never holds a secret.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "incident",
+  "alert_rule",
+  "at",
+  "kind",
+  "action",
+  "digest",
+  "cb_1",
+  "channel_type",
+  "target",
+  "ok",
+  "http_status",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "incident",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Incident",
+   "options": "Wolf Incident",
+   "search_index": 1
+  },
+  {
+   "fieldname": "alert_rule",
+   "fieldtype": "Link",
+   "label": "Alert Rule",
+   "options": "Wolf Alert Rule"
+  },
+  {
+   "fieldname": "at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "At",
+   "search_index": 1
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kind"
+  },
+  {
+   "description": "Request sent, e.g. trigger / acknowledge / resolve for PagerDuty.",
+   "fieldname": "action",
+   "fieldtype": "Data",
+   "label": "Action"
+  },
+  {
+   "default": "0",
+   "fieldname": "digest",
+   "fieldtype": "Check",
+   "label": "Part of a Digest"
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "channel_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Channel Type"
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "label": "Target"
+  },
+  {
+   "default": "0",
+   "fieldname": "ok",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "OK"
+  },
+  {
+   "fieldname": "http_status",
+   "fieldtype": "Int",
+   "label": "HTTP Status"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error"
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Delivery",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "sort_field": "at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "incident"
+}

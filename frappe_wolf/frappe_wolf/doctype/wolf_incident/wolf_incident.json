@@ -37,8 +37,17 @@
   "timeline_section",
   "summary",
   "timeline_html",
+  "deliveries_section",
+  "deliveries_html",
   "notes_section",
-  "notes"
+  "notes",
+  "assigned_to",
+  "related_section",
+  "merged_into",
+  "split_from",
+  "cb_6",
+  "postmortem",
+  "public_title"
  ],
  "fields": [
   {
@@ -240,6 +249,16 @@
    "label": "Timeline"
   },
   {
+   "fieldname": "deliveries_section",
+   "fieldtype": "Section Break",
+   "label": "Deliveries"
+  },
+  {
+   "fieldname": "deliveries_html",
+   "fieldtype": "HTML",
+   "label": "Deliveries"
+  },
+  {
    "fieldname": "notes_section",
    "fieldtype": "Section Break",
    "label": "Notes"
@@ -248,11 +267,65 @@
    "fieldname": "notes",
    "fieldtype": "Text Editor",
    "label": "Notes"
+  },
+  {
+   "description": "Who is working on it. Assigning creates a ToDo and notifies them.",
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Assigned To",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.merged_into || doc.split_from || doc.postmortem || doc.public_title",
+   "fieldname": "related_section",
+   "fieldtype": "Section Break",
+   "label": "Related"
+  },
+  {
+   "fieldname": "merged_into",
+   "fieldtype": "Link",
+   "label": "Merged Into",
+   "options": "Wolf Incident",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "split_from",
+   "fieldtype": "Link",
+   "label": "Split From",
+   "options": "Wolf Incident",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_6",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "postmortem",
+   "fieldtype": "Link",
+   "label": "Postmortem",
+   "options": "Wolf Postmortem",
+   "read_only": 1
+  },
+  {
+   "description": "Shown on public status pages instead of a generic \"Degraded performance\" / \"Service disruption\". Never put host names or internal details here.",
+   "fieldname": "public_title",
+   "fieldtype": "Data",
+   "label": "Public Title",
+   "length": 140
   }
  ],
  "index_web_pages_for_search": 0,
- "links": [],
- "modified": "2026-10-29 18:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Wolf Delivery",
+   "link_fieldname": "incident"
+  }
+ ],
+ "modified": "2026-10-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Incident",

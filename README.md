@@ -73,8 +73,8 @@ python3 -m unittest discover -s agent/tests          # agent tests
 
 ## Status
 
-MVP. Not yet installed on a production bench. Some SQL is MariaDB-specific (`unix_timestamp`,
-multi-table `DELETE`).
+MVP, tested on a Dokos (Dodock 5.18) bench, on MariaDB 10.6 and on Postgres 17
+(see `dev/demo/db_smoke.py`).
 
 ## License
 

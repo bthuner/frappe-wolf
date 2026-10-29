@@ -57,7 +57,7 @@ def render(items):
 	html = f"<p><strong>{escape_html(subject)}</strong></p><ul>" + "".join(
 		f"<li>{escape_html(line.rsplit(' · ', 1)[0])} · "
 		f'<a href="{escape_html(notify.incident_url(i.incident))}">{escape_html(i.incident)}</a></li>'
-		for line, i in zip(lines, items)
+		for line, i in zip(lines, items, strict=True)
 	) + "</ul>"
 	return subject, text, html
 

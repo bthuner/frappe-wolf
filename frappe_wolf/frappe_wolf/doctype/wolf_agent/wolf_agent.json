@@ -7,6 +7,7 @@
  "field_order": [
   "hostname",
   "status",
+  "kind",
   "agent_secret",
   "cb_1",
   "last_seen",
@@ -35,6 +36,17 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nDisabled"
+  },
+  {
+   "default": "agent",
+   "description": "agent: a host daemon. satellite: another Frappe site forwarding its local signals (Hostname is its site name).",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Kind",
+   "options": "agent\nsatellite",
+   "read_only": 1
   },
   {
    "description": "Rotated each time the agent registers.",
@@ -94,7 +106,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 12:00:00.000000",
+ "modified": "2026-10-29 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Agent",

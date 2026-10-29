@@ -1,15 +1,26 @@
+import json
+
 import frappe
 from frappe.utils import add_days, add_to_date, cint, now_datetime
 
+from frappe_wolf import satellite
 from frappe_wolf.wolf import events, rules
 
 
 def evaluate_rules():
+	if satellite.is_satellite():
+		return
 	rules.evaluate_all()
 
 
+def forward_outbox():
+	satellite.flush()
+
+
 def check_agents():
-	"""Emit one `agent_silent` event per agent that stopped pushing."""
+	"""Emit one `agent_silent` event per agent (or satellite site) that stopped pushing."""
+	if satellite.is_satellite():
+		return
 	minutes = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
 	silent = frappe.get_all(
 		"Wolf Agent",
@@ -18,22 +29,38 @@ def check_agents():
 			"silence_reported": 0,
 			"last_seen": ("<", add_to_date(now_datetime(), minutes=-minutes)),
 		},
-		fields=["name", "hostname", "last_seen"],
+		fields=["name", "hostname", "last_seen", "kind", "benches"],
 	)
 	for agent in silent:
+		if agent.kind == "satellite":
+			# a satellite pushes a heartbeat every minute: silence means its scheduler stopped
+			title = f"Wolf satellite {agent.hostname} silent since {agent.last_seen}"
+			scope = {**satellite_scope(agent), "site": agent.hostname}
+		else:
+			title = f"Wolf agent on {agent.hostname} silent since {agent.last_seen}"
+			scope = {"host": agent.hostname, "bench": None, "site": None}
 		events.emit(
 			"host_metric_alert",
-			f"Wolf agent on {agent.hostname} silent since {agent.last_seen}",
+			title,
 			severity="warning",
 			category="agent_silent",
 			source="wolf",
-			payload={"agent": agent.name, "last_seen": str(agent.last_seen)},
-			host=agent.hostname,
-			bench=None,
-			site=None,
+			payload={"agent": agent.name, "kind": agent.kind or "agent", "last_seen": str(agent.last_seen)},
+			**scope,
 		)
 		frappe.db.set_value("Wolf Agent", agent.name, "silence_reported", 1, update_modified=False)
 	frappe.db.commit()
+
+
+def satellite_scope(agent):
+	"""Host and bench a satellite reported at registration."""
+	try:
+		bench = (json.loads(agent.benches or "[]") or [{}])[0]
+	except (ValueError, TypeError, KeyError):
+		bench = {}
+	if not isinstance(bench, dict):
+		bench = {}
+	return {"host": bench.get("host"), "bench": bench.get("name")}
 
 
 def purge_old_data():

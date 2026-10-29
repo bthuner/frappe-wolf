@@ -1,11 +1,22 @@
 import frappe
 from frappe.utils import add_days, add_to_date, cint, now_datetime
 
-from frappe_wolf.wolf import events, rules
+from frappe_wolf.wolf import digest, escalation, events, rules, silences
 
 
 def evaluate_rules():
 	rules.evaluate_all()
+
+
+def check_incidents():
+	"""Notify incidents whose maintenance window ended, then escalate unacknowledged ones."""
+	silences.release_expired()
+	escalation.run()
+	frappe.db.commit()
+
+
+def send_digests():
+	digest.send_all()
 
 
 def check_agents():
@@ -51,4 +62,5 @@ def purge_old_data():
 			)""",
 		{"before": add_days(now, -event_days)},
 	)
+	frappe.db.delete("Wolf Silence", {"ends_at": ("<", add_days(now, -event_days))})
 	frappe.db.commit()

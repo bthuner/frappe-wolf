@@ -214,6 +214,17 @@ class TestCli(unittest.TestCase):
 		code, _ = self.run_cli("mark-deployment", "--bench", "frappe-bench", "--note", "update")
 		self.assertEqual(code, 0)
 		self.assertTrue(self.server.requests[-1]["path"].endswith("ingest.deployment"))
+		self.assertNotIn("silence_minutes", self.server.requests[-1]["body"])
+
+		code, out = self.run_cli("mark-deployment", "--bench", "frappe-bench", "--silence", "1h")
+		self.assertEqual(code, 0)
+		self.assertEqual(self.server.requests[-1]["body"]["silence_minutes"], 60)
+
+		before = len(self.server.requests)
+		with self.assertRaises(SystemExit) as ctx:
+			self.run_cli("mark-deployment", "--bench", "frappe-bench", "--silence", "soon")
+		self.assertIn("invalid duration", str(ctx.exception.code))
+		self.assertEqual(len(self.server.requests), before)
 
 	def test_register_failure_exits(self):
 		self.server.status = 403

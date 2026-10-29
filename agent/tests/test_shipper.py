@@ -189,6 +189,13 @@ class TestShipper(unittest.TestCase):
 		self.assertEqual(req["body"]["bench"], "main")
 		self.assertEqual(req["body"]["source"], "manual")
 		self.assertEqual(req["headers"]["X-Wolf-Agent-Id"], "WAG-0001")
+		self.assertNotIn("silence_minutes", req["body"])
+
+	def test_mark_deployment_with_silence(self):
+		self.shipper.mark_deployment("main", site="a.example.com", silence_minutes=15)
+		body = self.server.requests[-1]["body"]
+		self.assertEqual(body["silence_minutes"], 15)
+		self.assertEqual(body["site"], "a.example.com")
 
 	def test_register(self):
 		resp = register(self.server.url, "tok", "bench-01", [{"name": "main", "path": "/b", "sites": ["a"], "logs_dir": "/b/logs"}], "Debian 12")

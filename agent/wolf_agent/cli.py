@@ -15,6 +15,7 @@ from .collector import Collector
 from .config import DEFAULTS, config_path, load_config, save_config
 from .discovery import discover_benches
 from .shipper import AuthError, RejectedError, Shipper, TransportError, register
+from .util import parse_duration_minutes
 
 log = logging.getLogger("wolf_agent")
 EXIT_AUTH = 2  # systemd unit sets RestartPreventExitStatus=2
@@ -94,13 +95,24 @@ def _ephemeral_config(args):
 
 
 def cmd_mark_deployment(args):
+	silence = None
+	if args.silence:
+		try:
+			silence = parse_duration_minutes(args.silence)
+		except ValueError as e:
+			sys.exit(str(e))
 	_, cfg = _load(args)
 	shipper = Shipper(cfg)
 	try:
-		shipper.mark_deployment(args.bench, args.site, args.note, args.source)
+		resp = shipper.mark_deployment(args.bench, args.site, args.note, args.source, silence_minutes=silence)
 	except (AuthError, RejectedError, TransportError) as e:
 		sys.exit(f"could not record deployment: {e}")
 	print(f"deployment recorded for bench {args.bench}")
+	if silence:
+		if resp.get("silence"):
+			print(f"notifications silenced until {resp.get('silence_until') or 'the window ends'} ({resp['silence']})")
+		else:
+			log.warning("the Wolf App did not create a silence (older version?): notifications are not muted")
 
 
 def cmd_run(args):
@@ -162,6 +174,7 @@ def build_parser():
 	m.add_argument("--site")
 	m.add_argument("--note")
 	m.add_argument("--source", default="manual", choices=["manual", "pilot", "migrate"])
+	m.add_argument("--silence", metavar="DURATION", help="mute notifications for this bench/site, e.g. 15m or 1h")
 	m.set_defaults(func=cmd_mark_deployment)
 	return p
 

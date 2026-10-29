@@ -27,7 +27,7 @@ Set `WOLF_BENCHES="/home/frappe/frappe-bench /srv/other-bench"` to skip auto-dis
 | `wolf-agent run` | the daemon loop (what systemd runs) |
 | `wolf-agent check [--from-start]` | collect once and print the JSON payload, nothing is sent |
 | `wolf-agent discover [--bench PATH]` | show what bench discovery finds |
-| `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT]` | put a deployment marker on the Wolf timeline |
+| `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT] [--silence 15m]` | put a deployment marker on the Wolf timeline; `--silence` also opens a maintenance window that mutes notifications for that bench/site |
 
 Global options: `--config PATH` (or `$WOLF_AGENT_CONFIG`), `-v`.
 

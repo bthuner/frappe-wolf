@@ -182,8 +182,13 @@ def main():
 		settings.save()
 		user = "Administrator"
 		for ip in ("81.2.69.10", "81.2.69.11", "89.160.20.7"):
+			# Activity Log takes a login's IP from the request, not from the document
+			frappe.local.request_ip = ip
 			frappe.get_doc({"doctype": "Activity Log", "operation": "Login", "status": "Success", "user": user,
 			                "subject": "smoke login", "ip_address": ip}).insert(ignore_permissions=True)
+		frappe.local.request_ip = None
+		new_ip = frappe.db.count("Wolf Event", {"category": "new_admin_ip"})
+		assert new_ip >= 2, f"new_admin_ip events: {new_ip}"
 		events_found = frappe.get_all("Wolf Event", filters={"category": "admin_login_new_country"},
 		                              fields=["title", "payload"])
 		settings.geoip_database = None

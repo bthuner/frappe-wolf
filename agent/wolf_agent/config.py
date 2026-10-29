@@ -38,23 +38,50 @@ DEFAULTS = {
 		"token": None,
 		"jwt_secret": None,
 	},
+	# RQ registries in each bench's queue Redis: a started job older than this is "long running"
+	"rq": {"long_job_minutes": 30},
+	# age of the newest sites/<site>/private/backups/*-database.sql* (Press benches: off,
+	# see docs/press.md); `dirs` maps a site to another backup directory
+	"backups": {"enabled": True, "interval": 600, "press": False, "dirs": {}},
+	# certificate expiry of every public site name and custom domain (SNI handshake)
+	"tls": {
+		"enabled": True, "interval": 3600, "port": 443, "timeout": 5,
+		"connect_host": None, "domains": [], "exclude": [],
+	},
+	# MariaDB via the mariadb/mysql CLI; credentials from the bench unless `user` or
+	# `defaults_file` is set (needed for replication status)
+	"mariadb": {
+		"enabled": True, "cli": None, "host": None, "port": None,
+		"user": None, "password": None, "defaults_file": None,
+	},
+	# bench process states: "auto" (supervisor, else systemd), "supervisor" or "systemd"
+	"processes": {"enabled": True, "manager": "auto"},
 	# alerts when the Wolf site itself stops working, sent without going through it
 	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
 	"watchdog": {"enabled": True, "stale_minutes": 5, "webhook_url": None, "smtp": None},
 }
 
 
-def pilot_settings(cfg):
-	merged = dict(DEFAULTS["pilot"])
-	merged.update(cfg.get("pilot") or {})
+def section(cfg, name):
+	"""A config section merged over its defaults (a partial section in the file is fine).
+
+	`"tls": false` is accepted as a shorthand for `{"enabled": false}`.
+	"""
+	merged = dict(DEFAULTS[name])
+	value = cfg.get(name)
+	if isinstance(value, dict):
+		merged.update(value)
+	elif value is False:
+		merged["enabled"] = False
 	return merged
+
+
+def pilot_settings(cfg):
+	return section(cfg, "pilot")
 
 
 def press_settings(cfg):
-	"""`press` section merged over the defaults (a partial section in the file is fine)."""
-	merged = dict(DEFAULTS["press"])
-	merged.update(cfg.get("press") or {})
-	return merged
+	return section(cfg, "press")
 
 
 def config_path(cli_value=None):

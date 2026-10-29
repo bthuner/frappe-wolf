@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 12:00:00.000000",
+ "description": "Restricts a Wolf User to some sites, benches or hosts. A user with no row sees everything; with rows, only records whose site, bench or host matches one of them. Wolf Managers and System Managers are never restricted.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "scope_type",
+  "value"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "site",
+   "fieldname": "scope_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Scope",
+   "options": "site\nbench\nhost",
+   "reqd": 1
+  },
+  {
+   "description": "Exact site name (a.example.com), bench name or hostname, as shown on Wolf events.",
+   "fieldname": "value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Value",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf User Scope",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "user"
+}

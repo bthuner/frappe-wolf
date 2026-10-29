@@ -25,7 +25,9 @@ Response (`message` key, Frappe convention):
 ```
 
 The secret is returned once; the agent stores it in `/etc/wolf-agent/config.json` (mode 0600).
-Re-registering the same hostname rotates the secret.
+The Wolf site keeps only a salted hash (`hmac-sha256$<salt>$<digest>` on Wolf Agent), so it
+cannot show the secret again. Re-registering the same hostname, or **Rotate secret** on the
+Wolf Agent form (which shows the new secret once), replaces it.
 
 Optional `"kind"`: `"agent"` (default) or `"satellite"`. A satellite is another Frappe site
 running `frappe_wolf` in satellite mode; it registers with `hostname` set to its site name and
@@ -69,6 +71,14 @@ Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "rejected":
 "push_interval": 30, "health": {...}, "clock_skew_seconds": 2, "clamped": 0}}`. `health` is
 Wolf's own heartbeat (§4); it is `null` if the site could not compute it, and absent on older
 servers.
+
+**Rate limit.** Pushes are counted per agent in one-minute windows (Wolf Settings → Max Pushes
+Per Minute, default 120, 0 = off). Over the limit the server answers HTTP 429; agents and
+satellites treat 429 like a network error: the batch stays spooled and is replayed after a backoff.
+
+**Scrubbing.** The agent removes e-mail addresses, credentials, card numbers and IBANs from
+event titles and payloads before sending (agent README, "Scrubbing"). The server stores what
+it receives as is.
 
 **Clock skew.** `sent_at` is stamped when the request is sent (also for replayed spool batches).
 The server records `sent_at - server time` as the agent's `clock_skew_seconds` (positive = agent

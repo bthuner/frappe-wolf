@@ -4,6 +4,7 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
+from frappe_wolf.wolf import access
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 from frappe_wolf.wolf.workflow import get_activity
@@ -26,7 +27,7 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 	since = _since(range)
 	scope = _filters(site, bench, host)
 
-	incidents = frappe.get_all(
+	incidents = frappe.get_list(
 		"Wolf Incident",
 		filters={**scope, "started_at": (">=", since)},
 		or_filters=None,
@@ -34,30 +35,31 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 		order_by="started_at desc",
 		limit=50,
 	)
-	open_incidents = frappe.get_all(
+	open_incidents = frappe.get_list(
 		"Wolf Incident",
 		filters={**scope, "status": ("in", ("Open", "Acknowledged"))},
 		fields=["name", "title", "status", "severity", "started_at", "site", "bench", "host", "event_count"],
 		order_by="started_at desc",
 		limit=50,
 	)
-	event_rows = frappe.get_all(
+	event_rows = frappe.get_list(
 		"Wolf Event",
 		filters={**scope, "timestamp": (">=", since)},
 		fields=["name", "title", "event_type", "category", "severity", "timestamp", "count", "site", "bench", "host", "incident", "source"],
 		order_by="timestamp desc",
 		limit=200,
 	)
+	allowed, allowed_params = access.sql_condition("Wolf Event")
 	counts = frappe.db.sql(
 		"""select event_type, severity, sum(`count`) as total from `tabWolf Event`
-		where `timestamp` >= %(since)s {scope} group by event_type, severity""".format(
-			scope="".join(f" and `{k}` = %({k})s" for k in scope)
+		where `timestamp` >= %(since)s {scope}{allowed} group by event_type, severity""".format(
+			scope="".join(f" and `{k}` = %({k})s" for k in scope), allowed=allowed
 		),
-		{"since": since, **scope},
+		{"since": since, **scope, **allowed_params},
 		as_dict=True,
 	)
 	silence = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
-	agents = frappe.get_all(
+	agents = frappe.get_list(
 		"Wolf Agent",
 		fields=["name", "hostname", "kind", "status", "last_seen", "agent_version"],
 		order_by="hostname asc",
@@ -79,15 +81,17 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 
 def _known_scopes():
 	since = add_to_date(now_datetime(), days=-7)
+	allowed, allowed_params = access.sql_condition("Wolf Event")
 	out = {}
 	for field in ("site", "bench", "host"):
 		out[field] = frappe.db.sql_list(
 			f"""select distinct `{field}` from `tabWolf Event`
-			where `timestamp` >= %(since)s and coalesce(`{field}`, '') != '' order by `{field}` limit 200""",
-			{"since": since},
+			where `timestamp` >= %(since)s and coalesce(`{field}`, '') != ''{allowed}
+			order by `{field}` limit 200""",
+			{"since": since, **allowed_params},
 		)
 	# a satellite's hostname is its site name, not a host
-	agents = frappe.get_all("Wolf Agent", filters={"kind": ("!=", "satellite")}, pluck="hostname")
+	agents = frappe.get_list("Wolf Agent", filters={"kind": ("!=", "satellite")}, pluck="hostname")
 	out["host"] = sorted(set(out["host"]) | set(agents))
 	return out
 
@@ -109,6 +113,9 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 	if site:
 		site_clause = " and site = %(site)s"
 		params["site"] = site
+	allowed, allowed_params = access.sql_condition("Wolf Metric Sample")
+	site_clause += allowed
+	params.update(allowed_params)
 	rows = frappe.db.sql(
 		f"""select metric_name, label_key, `timestamp`, `value`
 		from `tabWolf Metric Sample`
@@ -125,7 +132,8 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 def get_incident_timeline(incident):
 	doc = frappe.get_doc("Wolf Incident", incident)
 	doc.check_permission("read")
-	rows = get_timeline(doc)
+	# the incident is visible, but its time window may hold other scopes' events
+	rows = [r for r in get_timeline(doc) if r.incident == doc.name or access.visible("Wolf Event", r)]
 	for r in rows:
 		r.payload = parse_payload(r)
 		r.linked = r.incident == doc.name

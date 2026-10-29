@@ -215,6 +215,43 @@ site. Its push runs every minute even when there is nothing to send, so the **Ag
 preset also fires when a satellite's scheduler stops. Disable the Wolf Agent to stop accepting
 its events. Setting Mode back to `central` makes the site a standalone Wolf again.
 
+## Privacy and access
+
+**Who sees what.** Wolf Manager (and System Manager) see and configure everything. Wolf User
+is read-only. To limit a Wolf User to some sites, benches or hosts, add **Wolf User Scope**
+rows (`/app/wolf-user-scope`, Wolf Managers only): one row per grant, `scope` = `site`,
+`bench` or `host`, `value` = the name as it appears on Wolf events. For example:
+
+| User | Scope | Value |
+|---|---|---|
+| jane@client.com | site | erp.client.com |
+| jane@client.com | site | shop.client.com |
+| ops-team@dokos.io | host | bench-02 |
+
+A restricted user then sees only the Wolf Events, Metric Samples, Incidents, Silences and Agents
+whose site, bench or host matches one of their rows, in list views, reports, forms, link
+searches, the Wolf Overview page, charts and incident timelines. Rows are OR-ed. Host-wide
+records (CPU, disk, SSH logins: no site) need a `host` row. A Wolf User without any row is not
+restricted. Frappe's own User Permissions cannot do this, because site/bench/host are plain
+Data fields, so Wolf uses `permission_query_conditions` and `has_permission` hooks
+(`frappe_wolf/wolf/access.py`). Alert rule definitions stay readable by every Wolf User.
+
+**Agent secrets.** Wolf stores only a salted HMAC-SHA256 hash of each agent's secret; the
+secret is shown once, at registration or when you click **Rotate secret** on the Wolf Agent
+form. Nobody can read it back from the site, so to move an agent or recover a lost config,
+rotate the secret (or re-register the host) instead. Agents registered before this change
+keep working: `bench migrate` hashes their stored secret and deletes the encrypted copy. A
+satellite keeps its own secret encrypted in its Wolf Settings, since it has to send it; the
+central site stores only the hash.
+
+**Push rate limit.** Each agent may push at most **Max Pushes Per Minute** times (Wolf Settings,
+default 120, `0` = no limit). Excess pushes get HTTP 429 and stay in the agent's spool.
+
+**Scrubbing.** The agent strips e-mail addresses, credentials (Authorization/Cookie headers,
+tokens, `password=` values, `sid`), card numbers and IBANs from events before they leave the
+host. IP addresses are kept by default for the security rules. See
+[`agent/README.md`](agent/README.md#scrubbing-pii-and-secrets).
+
 ## Development
 
 ```bash

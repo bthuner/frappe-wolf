@@ -90,3 +90,21 @@ class TestEvent(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestClockSkew(unittest.TestCase):
+	def test_clamp_future(self):
+		from datetime import timedelta
+
+		self.assertEqual(schema.clamp_future(NOW + timedelta(seconds=299), NOW, 300), (NOW + timedelta(seconds=299), False))
+		self.assertEqual(schema.clamp_future(NOW + timedelta(hours=11), NOW, 300), (NOW, True))
+		self.assertEqual(schema.clamp_future(NOW - timedelta(days=1), NOW, 300), (NOW - timedelta(days=1), False))
+		# 0 disables clamping
+		self.assertEqual(schema.clamp_future(NOW + timedelta(hours=11), NOW, 0), (NOW + timedelta(hours=11), False))
+
+	def test_skew(self):
+		# NOW is 03:00 in Europe/Paris on 2026-10-29 (UTC+1) -> 02:00Z
+		self.assertEqual(schema.clock_skew_seconds("2026-10-29T02:02:00Z", "Europe/Paris", NOW), 120)
+		self.assertEqual(schema.clock_skew_seconds("2026-10-29T01:59:30Z", "Europe/Paris", NOW), -30)
+		self.assertIsNone(schema.clock_skew_seconds(None, "UTC", NOW))
+		self.assertIsNone(schema.clock_skew_seconds("garbage", "UTC", NOW))

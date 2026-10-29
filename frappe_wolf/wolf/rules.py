@@ -145,12 +145,22 @@ def _select_group(group_by):
 	return ", ".join(select), group
 
 
+def _until():
+	# Upper bound for rule windows: rows stamped in the future (older data, clock skew) are
+	# ignored instead of keeping every window breached until real time catches up.
+	return add_to_date(now_datetime(), minutes=1)
+
+
 def query_metric(rule, since):
 	agg = rule.aggregation or "avg"
 	if agg not in conditions.AGGREGATIONS:
 		frappe.throw(f"Unknown aggregation {agg}")
-	params = {"metric": rule.metric_name, "since": since}
-	where = ["metric_name = %(metric)s", "`timestamp` >= %(since)s", *_scope_filters(rule, params)]
+	params = {"metric": rule.metric_name, "since": since, "until": _until()}
+	where = [
+		"metric_name = %(metric)s",
+		"`timestamp` between %(since)s and %(until)s",
+		*_scope_filters(rule, params),
+	]
 	select, group = _select_group(rule.group_by)
 
 	if agg == "last":
@@ -181,8 +191,12 @@ def query_metric(rule, since):
 
 
 def _event_where(rule, since, params):
-	params.update(event_type=rule.event_type, since=since)
-	where = ["event_type = %(event_type)s", "last_seen >= %(since)s", *_scope_filters(rule, params)]
+	params.update(event_type=rule.event_type, since=since, until=_until())
+	where = [
+		"event_type = %(event_type)s",
+		"last_seen between %(since)s and %(until)s",
+		*_scope_filters(rule, params),
+	]
 	if rule.event_category:
 		where.append("category = %(category)s")
 		params["category"] = rule.event_category

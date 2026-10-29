@@ -25,6 +25,9 @@ def push():
 		frappe.throw(_("Batch too large, split it"), frappe.ValidationError)
 
 	tz, now = events.system_tz(), now_datetime()
+	max_skew = cint(settings.max_clock_skew_seconds)
+	skew = schema.clock_skew_seconds(data.get("sent_at"), tz, now)
+	clamped = 0
 	correlate = not satellite.is_satellite()  # a satellite opens no incidents
 	hostname = (data.get("hostname") or "").strip()[:140] or None
 	rejected = []
@@ -32,9 +35,13 @@ def push():
 	metrics = []
 	for raw in metrics_in:
 		try:
-			metrics.append(schema.normalize_metric(raw, tz, now, default_host=hostname))
+			metric = schema.normalize_metric(raw, tz, now, default_host=hostname)
 		except schema.PayloadError as e:
 			rejected.append(str(e))
+			continue
+		metric["timestamp"], was_clamped = schema.clamp_future(metric["timestamp"], now, max_skew)
+		clamped += was_clamped
+		metrics.append(metric)
 	accepted_metrics = events.insert_metrics(metrics, agent=agent)
 
 	accepted_events = 0
@@ -44,6 +51,9 @@ def push():
 		except schema.PayloadError as e:
 			rejected.append(str(e))
 			continue
+		event["timestamp"], was_clamped = schema.clamp_future(event["timestamp"], now, max_skew)
+		event["last_seen"] = event["timestamp"]
+		clamped += was_clamped
 		name = events.insert_event(event, agent=agent)
 		if correlate:
 			attach_to_open_incident(name, event)
@@ -57,6 +67,7 @@ def push():
 			"last_ip": frappe.local.request_ip,
 			"agent_version": str(data.get("agent_version") or "")[:140] or None,
 			"silence_reported": 0,
+			"clock_skew_seconds": skew,
 		},
 		update_modified=False,
 	)
@@ -73,6 +84,8 @@ def push():
 		"rejected": rejected[:20],
 		"push_interval": push_interval(),
 		"health": wolf_health,
+		"clock_skew_seconds": skew,
+		"clamped": clamped,
 	}
 
 

@@ -1,5 +1,6 @@
 import frappe
 
+from frappe_wolf.patches import default_storage_settings
 from frappe_wolf.wolf.local_signals import after_migrate_marker
 from frappe_wolf.wolf.presets import install_presets
 
@@ -18,6 +19,9 @@ def ensure_settings():
 		settings.action_link_hours = 24
 	if settings.max_clock_skew_seconds is None:
 		settings.max_clock_skew_seconds = 300
+	for field, value in default_storage_settings.DEFAULTS.items():
+		if settings.get(field) in (None, ""):
+			settings.set(field, value)
 	if not settings.get_password("registration_token", raise_exception=False):
 		settings.registration_token = frappe.generate_hash(length=32)
 		settings.flags.ignore_permissions = True

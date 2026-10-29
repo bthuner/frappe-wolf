@@ -24,6 +24,7 @@
   "cb_agents",
   "max_events_per_push",
   "max_metrics_per_push",
+  "ingest_mode",
   "correlation_section",
   "deployment_window_minutes",
   "timeline_padding_minutes",
@@ -36,8 +37,10 @@
   "capture_privileged_users",
   "privileged_roles",
   "retention_section",
-  "metric_retention_days",
+  "raw_retention_hours",
+  "minute_retention_days",
   "cb_retention",
+  "hour_retention_days",
   "event_retention_days",
   "links_section",
   "public_url",
@@ -176,6 +179,14 @@
    "label": "Max Metrics Per Push"
   },
   {
+   "default": "async",
+   "description": "async: a push is validated, queued on the short queue and stored by a worker (inline when the queue is unreachable). sync: stored during the request.",
+   "fieldname": "ingest_mode",
+   "fieldtype": "Select",
+   "label": "Ingest Mode",
+   "options": "async\nsync"
+  },
+  {
    "fieldname": "correlation_section",
    "fieldtype": "Section Break",
    "label": "Correlation"
@@ -246,14 +257,32 @@
    "label": "Retention"
   },
   {
-   "default": "14",
-   "fieldname": "metric_retention_days",
+   "default": "48",
+   "description": "Raw metric samples are kept this long, then only their 1-minute and 1-hour rollups. Samples not rolled up yet are never purged.",
+   "fieldname": "raw_retention_hours",
    "fieldtype": "Int",
-   "label": "Metric Retention Days"
+   "label": "Raw Metric Retention (hours)",
+   "non_negative": 1
+  },
+  {
+   "default": "30",
+   "description": "1-minute rollups (charts up to 2 days, long rule windows).",
+   "fieldname": "minute_retention_days",
+   "fieldtype": "Int",
+   "label": "1-Minute Rollup Retention (days)",
+   "non_negative": 1
   },
   {
    "fieldname": "cb_retention",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "365",
+   "description": "1-hour rollups (7-day charts and longer).",
+   "fieldname": "hour_retention_days",
+   "fieldtype": "Int",
+   "label": "1-Hour Rollup Retention (days)",
+   "non_negative": 1
   },
   {
    "default": "90",

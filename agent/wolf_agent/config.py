@@ -21,7 +21,23 @@ DEFAULTS = {
 	# null = auto-detect, a path, "journal", or false to disable
 	"auth_log": None,
 	"collect_host_metrics": True,
+	# null = auto-detect (Press agent config.json present → "press"), "press" or "generic"
+	"platform": None,
+	# Press servers only (docs/press.md)
+	"press": {
+		"agent_dir": "/home/frappe/agent",
+		"nginx_access_log": "/var/log/nginx/access.log",
+		"rediscover_interval": 60,
+		"deployments": True,
+	},
 }
+
+
+def press_settings(cfg):
+	"""`press` section merged over the defaults (a partial section in the file is fine)."""
+	merged = dict(DEFAULTS["press"])
+	merged.update(cfg.get("press") or {})
+	return merged
 
 
 def config_path(cli_value=None):

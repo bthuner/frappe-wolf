@@ -12,12 +12,13 @@ import threading
 
 from . import __version__
 from .collector import Collector
-from .config import DEFAULTS, config_path, load_config, save_config
+from .config import DEFAULTS, config_path, load_config, press_settings, save_config
 from .discovery import discover_benches
 from .shipper import AuthError, RejectedError, Shipper, TransportError, register
 
 log = logging.getLogger("wolf_agent")
-EXIT_AUTH = 2  # systemd unit sets RestartPreventExitStatus=2
+EXIT_AUTH = 2
+PLATFORMS = ("auto", "press", "generic")  # systemd unit sets RestartPreventExitStatus=2
 
 
 def _os_name():
@@ -41,8 +42,25 @@ def _load(args):
 		sys.exit(f"invalid config {path}: {e}")
 
 
+def _platform(args, cfg=None):
+	"""--platform wins, then the config's `platform`; None means auto-detect."""
+	value = getattr(args, "platform", None)
+	if value and value != "auto":
+		return value
+	return (cfg or {}).get("platform")
+
+
+def _discover(args, cfg=None):
+	press_cfg = press_settings(cfg or {})
+	return discover_benches(
+		args.bench or None,
+		platform=_platform(args, cfg),
+		press_agent_dir=press_cfg["agent_dir"],
+	)
+
+
 def cmd_discover(args):
-	print(json.dumps(discover_benches(args.bench or None), indent=2))
+	print(json.dumps(_discover(args), indent=2))
 
 
 def cmd_register(args):
@@ -54,7 +72,9 @@ def cmd_register(args):
 	cfg["url"] = args.url.rstrip("/")
 	cfg["hostname"] = args.hostname or cfg.get("hostname") or socket.getfqdn() or socket.gethostname()
 	cfg["verify_tls"] = not args.insecure
-	cfg["benches"] = discover_benches(args.bench or None)
+	if args.platform and args.platform != "auto":
+		cfg["platform"] = args.platform
+	cfg["benches"] = _discover(args, cfg)
 	if not cfg["benches"]:
 		log.warning("no bench found; only host metrics and auth logs will be collected")
 
@@ -78,7 +98,9 @@ def cmd_check(args):
 	path = config_path(args.config)
 	cfg = _load(args)[1] if os.path.exists(path) else _ephemeral_config(args)
 	if args.bench:
-		cfg["benches"] = discover_benches(args.bench)
+		cfg["benches"] = _discover(args, cfg)
+	if args.platform and args.platform != "auto":
+		cfg["platform"] = args.platform
 	collector = Collector(cfg, state_path=None, from_start=args.from_start)
 	metrics, events = collector.collect()
 	collector.close()
@@ -89,7 +111,7 @@ def cmd_check(args):
 def _ephemeral_config(args):
 	cfg = dict(DEFAULTS)
 	cfg["hostname"] = socket.gethostname()
-	cfg["benches"] = discover_benches(args.bench or None)
+	cfg["benches"] = _discover(args, cfg)
 	return cfg
 
 
@@ -144,6 +166,7 @@ def build_parser():
 	r.add_argument("--bench", action="append", help="bench path (repeatable; default: auto-discover)")
 	r.add_argument("--hostname", help="override the reported hostname")
 	r.add_argument("--insecure", action="store_true", help="do not verify TLS certificates")
+	r.add_argument("--platform", choices=PLATFORMS, default="auto", help="bench layout (default: auto-detect)")
 	r.set_defaults(func=cmd_register)
 
 	sub.add_parser("run", help="run the agent loop").set_defaults(func=cmd_run)
@@ -151,17 +174,19 @@ def build_parser():
 	c = sub.add_parser("check", help="collect once and print the payload without sending")
 	c.add_argument("--from-start", action="store_true", help="parse logs from the beginning instead of EOF")
 	c.add_argument("--bench", action="append", help="bench path when no config exists")
+	c.add_argument("--platform", choices=PLATFORMS, default="auto", help="bench layout (default: config or auto)")
 	c.set_defaults(func=cmd_check)
 
 	d = sub.add_parser("discover", help="print benches found on this host")
 	d.add_argument("--bench", action="append", help="bench path to inspect")
+	d.add_argument("--platform", choices=PLATFORMS, default="auto", help="bench layout (default: auto-detect)")
 	d.set_defaults(func=cmd_discover)
 
 	m = sub.add_parser("mark-deployment", help="record a deployment on the Wolf timeline")
 	m.add_argument("--bench", required=True)
 	m.add_argument("--site")
 	m.add_argument("--note")
-	m.add_argument("--source", default="manual", choices=["manual", "pilot", "migrate"])
+	m.add_argument("--source", default="manual", choices=["manual", "pilot", "press", "migrate"])
 	m.set_defaults(func=cmd_mark_deployment)
 	return p
 

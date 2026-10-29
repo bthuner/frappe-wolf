@@ -26,10 +26,21 @@ Set `WOLF_BENCHES="/home/frappe/frappe-bench /srv/other-bench"` to skip auto-dis
 | `wolf-agent register --url URL --token TOKEN [--bench PATH]...` | register the host, discover benches, write the config |
 | `wolf-agent run` | the daemon loop (what systemd runs) |
 | `wolf-agent check [--from-start]` | collect once and print the JSON payload, nothing is sent |
-| `wolf-agent discover [--bench PATH]` | show what bench discovery finds |
+| `wolf-agent discover [--bench PATH] [--platform auto\|press\|generic]` | show what bench discovery finds |
 | `wolf-agent mark-deployment --bench NAME [--site S] [--note TEXT]` | put a deployment marker on the Wolf timeline |
 
 Global options: `--config PATH` (or `$WOLF_AGENT_CONFIG`), `-v`.
+
+## Press servers
+
+On a server managed by Press (the Frappe Cloud stack), the agent detects
+`/home/frappe/agent/config.json` and switches to Press mode. It lists benches under
+the Press `benches_directory` and rescans them every minute, since each deploy creates
+a new bench. It maps custom domains in the shared `/var/log/nginx/access.log` to sites,
+and it reads queue lengths on each bench's `rq_port`. It also turns the Press agent's
+deploy/update/migrate jobs (`jobs.sqlite3`, read-only) into `deployment` events, plus an
+`error` event when one fails. Details, source references and limitations are in
+[`../docs/press.md`](../docs/press.md).
 
 ## What is collected
 
@@ -68,6 +79,9 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "verify_tls": true,
   "auth_log": null,
   "collect_host_metrics": true,
+  "platform": null,
+  "press": {"agent_dir": "/home/frappe/agent", "nginx_access_log": "/var/log/nginx/access.log",
+            "rediscover_interval": 60, "deployments": true},
   "benches": [
     {"name": "frappe-bench", "path": "/home/frappe/frappe-bench", "sites": ["a.example.com"],
      "logs_dir": "/home/frappe/frappe-bench/logs", "nginx_access_log": "/var/log/nginx/access.log",
@@ -77,6 +91,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 }
 ```
 
+`platform`: `null` auto-detects Press, `"press"` forces it, `"generic"` disables it.
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.

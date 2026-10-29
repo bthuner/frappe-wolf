@@ -50,13 +50,17 @@ class NginxParser:
 	"""Counts requests per site and aggregates 5xx responses per (site, status, route).
 
 	`site_benches` maps known site names to their bench; the site of a line is
-	taken from `$host` when logged, else from a per-site log file name, else
+	taken from `$host` when logged (custom domains resolved through
+	`site_aliases`, domain → site), else from a per-site log file name, else
 	`default_site` (a bench serving a single site).
 	"""
 
-	def __init__(self, host, site_benches=None, default_site=None, default_bench=None, log_file=None, **_):
+	def __init__(
+		self, host, site_benches=None, default_site=None, default_bench=None, log_file=None, site_aliases=None, **_
+	):
 		self.host = host
 		self.site_benches = dict(site_benches or {})
+		self.site_aliases = dict(site_aliases or {})
 		self.default_site = default_site
 		self.default_bench = default_bench
 		self.log_file = log_file
@@ -81,6 +85,9 @@ class NginxParser:
 		for c in candidates:
 			if c and c in self.site_benches:
 				return c
+		for c in candidates:
+			if c and self.site_aliases.get(c) in self.site_benches:
+				return self.site_aliases[c]
 		if self.file_site:
 			return self.file_site
 		if self.default_site:

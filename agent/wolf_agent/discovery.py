@@ -1,4 +1,4 @@
-"""Bench discovery from the filesystem and (optionally) Pilot's bench.toml.
+"""Bench discovery from the filesystem, Pilot's bench.toml, or a Press server's layout.
 
 bench.toml's schema isn't pinned down yet, so every key is read defensively
 from a few plausible locations; anything missing falls back to what the
@@ -9,6 +9,8 @@ import glob
 import json
 import logging
 import os
+
+from . import press
 
 log = logging.getLogger(__name__)
 
@@ -125,22 +127,43 @@ def describe_bench(path, nginx_default=DEFAULT_NGINX_ACCESS_LOG):
 	}
 
 
-def discover_benches(paths=None, search_globs=DEFAULT_SEARCH_GLOBS, nginx_default=DEFAULT_NGINX_ACCESS_LOG):
+def resolve_platform(platform=None, press_agent_dir=press.DEFAULT_AGENT_DIR):
+	"""`press` when configured so or when the Press agent's config.json is present, else `generic`."""
+	if platform in ("press", "generic"):
+		return platform
+	return "press" if press.detect(press_agent_dir) else "generic"
+
+
+def discover_benches(
+	paths=None,
+	search_globs=DEFAULT_SEARCH_GLOBS,
+	nginx_default=DEFAULT_NGINX_ACCESS_LOG,
+	platform="generic",
+	press_agent_dir=press.DEFAULT_AGENT_DIR,
+):
+	"""Benches on this host. `platform` is `generic`, `press`, or None to auto-detect."""
+	platform = resolve_platform(platform, press_agent_dir)
+	benches, seen = [], set()
+	if platform == "press" and not paths:
+		for bench in press.discover_press_benches(press_agent_dir, nginx_access_log=nginx_default):
+			seen.add(os.path.realpath(bench["path"]))
+			benches.append(bench)
 	if paths:
 		candidates = list(paths)
 	else:
 		candidates = []
 		for pattern in search_globs:
 			candidates += sorted(glob.glob(pattern))
-	benches, seen = [], set()
 	for candidate in candidates:
 		real = os.path.realpath(candidate)
 		if real in seen or not os.path.isdir(real):
 			continue
-		if not is_bench(real):
-			if paths:
-				log.warning("%s does not look like a bench (no bench.toml, sites/ or apps/frappe)", candidate)
-			continue
-		seen.add(real)
-		benches.append(describe_bench(real, nginx_default=nginx_default))
+		if is_bench(real):
+			seen.add(real)
+			benches.append(describe_bench(real, nginx_default=nginx_default))
+		elif press.is_press_bench(real):
+			seen.add(real)
+			benches.append(press.describe_press_bench(real, nginx_access_log=nginx_default))
+		elif paths:
+			log.warning("%s does not look like a bench (no bench.toml, sites/ or apps/frappe)", candidate)
 	return benches

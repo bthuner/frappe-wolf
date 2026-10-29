@@ -55,6 +55,17 @@ class TestHostMetrics(unittest.TestCase):
 		self.assertEqual(metrics.memory_percentages({"MemTotal": 100, "MemFree": 10, "Buffers": 10, "Cached": 30}), {"memory_used_percent": 50.0})
 		self.assertEqual(metrics.real_mounts(self.proc), ["/", "/devdata"])
 
+	def test_bind_mounted_files_are_skipped(self):
+		bind_file = os.path.join(self.tmp.name, "resolv.conf")
+		bind_dir = os.path.join(self.tmp.name, "data")
+		write(bind_file, "nameserver 127.0.0.11\n")
+		os.makedirs(bind_dir)
+		write(
+			os.path.join(self.proc, "mounts"),
+			f"overlay / overlay rw 0 0\n/dev/nvme0n1p3 {bind_file} ext4 rw 0 0\n/dev/nvme0n1p3 {bind_dir} ext4 rw 0 0\n",
+		)
+		self.assertEqual(metrics.real_mounts(self.proc), [bind_dir])
+
 	def test_collect(self):
 		hm = metrics.HostMetrics("h1", proc=self.proc)
 		with mock.patch.object(metrics, "disk_used_percent", return_value=42.0), mock.patch.object(metrics.time, "sleep"):

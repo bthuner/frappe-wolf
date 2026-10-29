@@ -21,6 +21,9 @@ DEFAULTS = {
 	# null = auto-detect, a path, "journal", or false to disable
 	"auth_log": None,
 	"collect_host_metrics": True,
+	# alerts when the Wolf site itself stops working, sent without going through it
+	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
+	"watchdog": {"enabled": True, "stale_minutes": 5, "webhook_url": None, "smtp": None},
 }
 
 

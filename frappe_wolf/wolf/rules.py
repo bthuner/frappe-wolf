@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime
 
-from frappe_wolf.wolf import conditions, events, incidents, notify
+from frappe_wolf.wolf import conditions, events, incidents, notify, rollups
 
 SCOPE_FIELDS = ("host", "bench", "site")
 
@@ -152,42 +152,17 @@ def _until():
 
 
 def query_metric(rule, since):
+	"""Aggregate the rule's metric per group over [since, now], at the resolution of the window."""
 	agg = rule.aggregation or "avg"
 	if agg not in conditions.AGGREGATIONS:
 		frappe.throw(f"Unknown aggregation {agg}")
-	params = {"metric": rule.metric_name, "since": since, "until": _until()}
-	where = [
-		"metric_name = %(metric)s",
-		"`timestamp` between %(since)s and %(until)s",
-		*_scope_filters(rule, params),
-	]
-	select, group = _select_group(rule.group_by)
-
-	if agg == "last":
-		cols = conditions.group_columns(rule.group_by)
-		raw = frappe.db.sql(
-			f"""select host, bench, site, label_key, `value`, `timestamp` from `tabWolf Metric Sample`
-			where {' and '.join(where)} order by `timestamp` desc""",
-			params,
-			as_dict=True,
-		)
-		latest = {}
-		for r in raw:
-			key = tuple(r.get(c) for c in cols)
-			if key not in latest:
-				latest[key] = dict(r, samples=0, first_at=r.timestamp, **{f"{f}_hint": r[f] for f in SCOPE_FIELDS})
-			latest[key]["samples"] += 1
-			latest[key]["first_at"] = r.timestamp
-		return list(latest.values())
-
-	expr = "count(*)" if agg == "count" else f"{agg}(`value`)"
-	return frappe.db.sql(
-		f"""select {select}, {expr} as value, count(*) as samples, min(`timestamp`) as first_at
-		from `tabWolf Metric Sample`
-		where {' and '.join(where)} {group}""",
-		params,
-		as_dict=True,
-	)
+	until = _until()
+	params = {"metric": rule.metric_name}
+	where = ["metric_name = %(metric)s", *_scope_filters(rule, params)]
+	cols = conditions.group_columns(rule.group_by)
+	hints = [f for f in SCOPE_FIELDS if f not in cols]
+	resolution = rollups.resolution_for((now_datetime() - since).total_seconds())
+	return rollups.aggregate(where, params, cols, hints, agg, resolution, since, until)
 
 
 def _event_where(rule, since, params):

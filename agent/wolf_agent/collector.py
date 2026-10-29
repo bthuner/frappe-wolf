@@ -11,6 +11,7 @@ from .discovery import discover_benches, read_bench_toml, resolve_platform
 from .metrics import HostMetrics
 from .parsers import PARSERS, NginxParser
 from .redis_queue import RedisError, queue_metrics
+from .scrub import Scrubber
 from .tailer import FileTailer, JournalTailer, TailState
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ class Collector:
 		self.press_jobs = None
 		self.press_fs = None
 		self.benches = list(cfg.get("benches") or [])
+		self.scrubber = Scrubber.from_config(cfg)
 
 		press_cfg = press_settings(cfg)
 		if resolve_platform(cfg.get("platform"), press_cfg["agent_dir"]) == "press":
@@ -228,7 +230,8 @@ class Collector:
 				log.warning("queue length for bench %s (%s): %s", bench["name"], url, e)
 
 		self.state.save()
-		return metrics, events
+		# before anything is spooled or sent; fingerprints were computed from the raw lines
+		return metrics, self.scrubber.events(events)
 
 	def _press_deployments(self, now):
 		if not self.press_jobs:

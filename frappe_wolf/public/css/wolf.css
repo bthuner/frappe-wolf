@@ -1,0 +1,25 @@
+.wolf-overview { padding-bottom: var(--padding-xl); }
+.wolf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--margin-md); margin-bottom: var(--margin-md); }
+.wolf-stat, .wolf-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--padding-md); }
+.wolf-stat-value { font-size: 1.75rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wolf-stat-label { color: var(--text-muted); font-size: var(--text-sm); }
+.wolf-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--margin-md); }
+@media (max-width: 768px) { .wolf-grid { grid-template-columns: 1fr; } }
+.wolf-card { margin-bottom: var(--margin-md); }
+.wolf-card h4 { font-size: var(--text-md); margin: 0 0 var(--margin-sm); }
+.wolf-list { list-style: none; padding: 0; margin: 0; }
+.wolf-list li { padding: var(--padding-sm) 0; border-bottom: 1px solid var(--border-color); }
+.wolf-list li:last-child { border-bottom: 0; }
+.wolf-sev { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; flex: none; background: var(--gray-400); }
+.wolf-sev-info { background: var(--blue-500); }
+.wolf-sev-warning { background: var(--orange-500); }
+.wolf-sev-critical { background: var(--red-500); box-shadow: 0 0 0 3px var(--red-100); }
+.wolf-timeline { list-style: none; padding: 0; margin: 0; max-height: 640px; overflow-y: auto; }
+.wolf-timeline-day { font-weight: 600; color: var(--text-muted); font-size: var(--text-sm); padding: var(--padding-sm) 0 4px; position: sticky; top: 0; background: var(--card-bg); }
+.wolf-timeline-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 6px 8px; border-left: 2px solid var(--border-color); }
+.wolf-timeline-item.wolf-linked { border-left-color: var(--primary); }
+.wolf-type-deployment { border-left-color: var(--blue-500); background: var(--blue-50, transparent); }
+.wolf-time { font-variant-numeric: tabular-nums; color: var(--text-muted); width: 3.2em; flex: none; }
+.wolf-timeline-body { min-width: 0; overflow-wrap: anywhere; }
+.wolf-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--margin-md); }
+.wolf-chart-title { font-size: var(--text-sm); color: var(--text-muted); }

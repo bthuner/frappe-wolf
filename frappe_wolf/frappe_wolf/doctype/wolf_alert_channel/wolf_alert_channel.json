@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "channel_type",
+  "enabled",
+  "recipients",
+  "webhook_url",
+  "raven_channel"
+ ],
+ "fields": [
+  {
+   "default": "Email",
+   "fieldname": "channel_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Channel Type",
+   "options": "Email\nWebhook\nRaven",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "depends_on": "eval:doc.channel_type=='Email'",
+   "description": "Email addresses, one per line or comma-separated.",
+   "fieldname": "recipients",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Recipients"
+  },
+  {
+   "depends_on": "eval:doc.channel_type=='Webhook'",
+   "description": "Receives a Slack/Mattermost compatible JSON body.",
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "label": "Webhook URL",
+   "options": "URL"
+  },
+  {
+   "depends_on": "eval:doc.channel_type=='Raven'",
+   "description": "Raven Channel ID (name of the Raven Channel document).",
+   "fieldname": "raven_channel",
+   "fieldtype": "Data",
+   "label": "Raven Channel"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Alert Channel",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

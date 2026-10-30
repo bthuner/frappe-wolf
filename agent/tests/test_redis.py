@@ -211,6 +211,9 @@ class TestRedisProbe(unittest.TestCase):
 		self.assertIn(("rq_long_running_jobs", "b1:long"), got)
 		# a queue never seen is not invented
 		self.assertNotIn(("queue_length", "b1:default"), got)
+		# a queue gone for a day (removed from the bench) is no longer reported
+		later = {(m["metric_name"], m["labels"].get("queue")): m for m in probe.collect(self.NOW + timedelta(hours=25))}
+		self.assertNotIn(("queue_length", "b1:long"), later)
 
 	def test_long_job_threshold(self):
 		got = self.collect(RedisProbe(self.server.url, "h1", "b1", long_job_minutes=60))

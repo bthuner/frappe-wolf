@@ -64,8 +64,10 @@ def get_signals(site=None, bench=None, host=None):
 	where, params = _where(scope, metrics)
 
 	recent = rollups.aggregate(where, params, list(SERIES_KEY), [], "last", storage.MINUTE, now - RECENT, now)
-	series = {tuple(r.get(k) for k in SERIES_KEY): {**{k: r.get(k) for k in SERIES_KEY}, "value": r.value, "last_at": get_datetime(r.last_at)}
-			  for r in recent}  # fmt: skip
+	series = {
+		tuple(r.get(k) for k in SERIES_KEY): {**{k: r.get(k) for k in SERIES_KEY}, "value": r.value, "last_at": get_datetime(r.last_at), "recent": True}
+		for r in recent
+	}
 	# quieter series: when they were last seen, from the hourly rollups (no value: it is old)
 	older = frappe.db.sql(
 		f"""select metric_name, host, bench, site, label_key, max(last_ts) as last_at from `tabWolf Metric Rollup`
@@ -77,13 +79,14 @@ def get_signals(site=None, bench=None, host=None):
 	for r in older:
 		key = tuple(r.get(k) for k in SERIES_KEY)
 		if key not in series:
-			series[key] = {**{k: r.get(k) for k in SERIES_KEY}, "value": None, "last_at": get_datetime(r.last_at)}
+			# nothing in the recent read: stale whatever its cadence says
+			series[key] = {**{k: r.get(k) for k in SERIES_KEY}, "value": None, "last_at": get_datetime(r.last_at), "recent": False}
 
 	rules = _rules(metrics, restricted)
 	incidents = frappe.get_list(
 		"Wolf Incident",
 		filters={"status": ("in", ("Open", "Acknowledged")), "alert_rule": ("in", [r["name"] for r, _ in rules] or [""])},
-		fields=["name", "alert_rule", "host", "bench", "site", "severity"],
+		fields=["name", "alert_rule", "host", "bench", "site", "severity", "group_key"],
 		limit_page_length=0,
 	)
 	out, counts = [], defaultdict(lambda: defaultdict(int))
@@ -96,6 +99,7 @@ def get_signals(site=None, bench=None, host=None):
 			**{k: s[k] for k in SERIES_KEY},
 			"group": spec["group"], "label": spec["label"], "unit": spec["unit"], "kind": spec["kind"],
 			"value": s["value"], "last_at": window.to_utc(s["last_at"], tz), "state": st,
+			"stale": s["last_at"] is not None and catalog.is_stale(s, now),
 			"rules": [shown for r, shown in rules if r["name"] in names],
 			"incidents": [i.name for i in incidents if i.alert_rule in names and catalog.incident_matches(i, s)],
 		})  # fmt: skip
@@ -133,6 +137,30 @@ def _email(scope, now, tz):
 	return {r.category: {"records": cint(r.records), "last_at": window.to_utc(get_datetime(r.last_at), tz)} for r in rows}
 
 
+def _deployment_scope(scope):
+	"""(" and ..." SQL, params) for deployments that concern the scope.
+
+	A deployment is often recorded for a whole bench (Pilot or Press updating several sites, a
+	bench migrate): no site. On a site's dashboard, those of the benches the site runs on
+	count too, as incidents.latest_deployment links them (events.scope_clause).
+	"""
+	if "site" not in scope or "bench" in scope or "host" in scope:
+		return "".join(f" and `{k}` = %({k})s" for k in scope), dict(scope)
+	homes = frappe.db.sql(
+		"""select distinct host, bench from `tabWolf Metric Rollup`
+		where resolution = 3600 and site = %(site)s and bucket_start >= %(since)s and coalesce(bench, '') != ''
+		union select distinct host, bench from `tabWolf Event`
+		where site = %(site)s and `timestamp` >= %(since)s and coalesce(bench, '') != ''""",
+		{"site": scope["site"], "since": now_datetime() - timedelta(days=LOOKBACK_DAYS)},
+		as_dict=True,
+	)
+	params, parts = {"site": scope["site"]}, ["`site` = %(site)s"]
+	for i, h in enumerate(homes[:20]):
+		params.update({f"dh{i}": h.host, f"db{i}": h.bench})
+		parts.append(f"(coalesce(`site`, '') = '' and `host` = %(dh{i})s and `bench` = %(db{i})s)")
+	return f" and ({' or '.join(parts)})", params
+
+
 @frappe.whitelist()
 def get_http(range=None, since=None, until=None, site=None, bench=None, host=None):
 	"""Requests, 5xx and 502 per bucket over the window, with the deployments in it."""
@@ -143,7 +171,10 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	resolution = rollups.resolution_for(seconds)
 	bucket = storage.chart_bucket(seconds, resolution)
 	where, params = _where(scope, HTTP_METRICS)
-	rows = rollups.series_rows(where, params, resolution, win.since, win.until)
+	# whole buckets only: a bucket cut by the window start, or the one still filling, would draw
+	# as a drop in traffic. The newest data shows once its bucket closes.
+	first, end = storage.floor(win.since, bucket), storage.floor(win.until, bucket)
+	rows = [r for r in rollups.series_rows(where, params, resolution, first, end) if get_datetime(r["timestamp"]) < end]
 
 	# interval counts: the sum per bucket, every label together. A bucket without samples is a
 	# gap (None), not a zero.
@@ -151,26 +182,27 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	for r in rows:
 		start = storage.floor(get_datetime(r["timestamp"]), bucket)
 		sums[r["metric_name"]][start] = sums[r["metric_name"]].get(start, 0) + float(r["value"])
-	first = storage.floor(win.since, bucket)
 	buckets, t = [], first
-	while t <= win.until:
+	while t < end:
 		buckets.append(t)
 		t += timedelta(seconds=bucket)
 	series = {
 		m: [[window.to_utc(b, tz), round(sums[m][b], 2) if b in sums[m] else None] for b in buckets] for m in HTTP_METRICS
 	}
 
-	ev_where = "".join(f" and `{k}` = %({k})s" for k in scope)
+	ev_where, ev_scope = _deployment_scope(scope)
 	allowed, ev_params = access.sql_condition("Wolf Event")
 	deployments = frappe.db.sql(
 		f"""select name, title, `timestamp`, host, bench, site, incident from `tabWolf Event`
 		where event_type = 'deployment' and `timestamp` between %(since)s and %(until)s{ev_where}{allowed}
 		order by `timestamp` desc limit 50""",
-		{**ev_params, **scope, "since": win.since, "until": win.until},
+		{**ev_params, **ev_scope, "since": win.since, "until": win.until},
 		as_dict=True,
 	)
 	return {
-		"window": window.describe(win),
+		# what the chart read: whole buckets; deployments cover the whole window
+		"window": window.describe(window.Window(first, end, win.relative, win.time_zone)),
+		"requested_window": window.describe(win),
 		"scope": scope,
 		"bucket_seconds": bucket,
 		"resolution": storage.LABELS[resolution],

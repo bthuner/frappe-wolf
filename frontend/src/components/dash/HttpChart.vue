@@ -12,8 +12,12 @@ const props = defineProps({
 })
 
 const LABELS = { http_requests: 'Requests', http_5xx: '5xx', http_502: '502 (part of 5xx)' }
-// windows over a day need the date on each label
-const long = computed(() => new Date(props.http.window.until) - new Date(props.http.window.since) > 86400000)
+// a category axis needs one label per bucket: add the date when the clock alone repeats
+// (windows of a day or more)
+const long = computed(() => {
+  const clocks = props.http.series.http_requests.map(([at]) => axisLabel(at, props.timeZone, false))
+  return new Set(clocks).size < clocks.length
+})
 const label = (iso) => axisLabel(iso, props.timeZone, long.value)
 
 const rows = computed(() =>
@@ -34,7 +38,8 @@ const markers = computed(() => {
   return props.http.deployments.flatMap((d) => {
     const t = new Date(d.at).getTime()
     const i = starts.findLastIndex((s) => s <= t)
-    if (i < 0 || seen.has(i)) return [] // one line per bucket
+    // outside the drawn buckets (the one still filling): in the list only
+    if (i < 0 || t >= starts[i] + props.http.bucket_seconds * 1000 || seen.has(i)) return []
     seen.add(i)
     return [{ axis: 'x', value: rows.value[i].at, label: labelled ? `deploy ${clock(d.at, props.timeZone)}` : undefined, dashed: true }]
   })

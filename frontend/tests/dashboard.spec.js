@@ -65,6 +65,27 @@ async function open(path = '/') {
 
 afterEach(() => vi.unstubAllGlobals())
 
+describe('HttpChart labels', () => {
+  it('stay unique over a whole day, so a deployment lands in its own bucket', async () => {
+    const { default: HttpChart } = await import('@/components/dash/HttpChart.vue')
+    const start = Date.parse('2026-10-29T10:36:00Z')
+    const points = Array.from({ length: 121 }, (_, i) => [new Date(start + i * 720000).toISOString(), i])
+    const http = { ...HTTP, bucket_seconds: 720, series: { http_requests: points, http_5xx: points, http_502: points },
+      window: { since: points[0][0], until: points[120][0] },
+      deployments: [{ name: 'D1', at: new Date(start + 120 * 720000 + 60000).toISOString() }] }
+    let captured
+    const page = mount(HttpChart, {
+      props: { http, timeZone: 'UTC' },
+      global: { stubs: { LineChart: { props: ['data', 'referenceLines'], setup(p) { captured = p; return () => null } } } },
+    })
+    await flushPromises()
+    const labels = captured.data.map((r) => r.at)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(captured.referenceLines.map((l) => l.value)).toEqual([labels[120]])
+    page.unmount()
+  })
+})
+
 describe('DashboardPage', () => {
   it('shows exact counts, not the length of a list', async () => {
     server()

@@ -54,10 +54,12 @@ const email = computed(() => Object.entries(props.signals.email || {}))
             <span aria-hidden="true">{{ STATE[s.state].glyph }}</span>{{ STATE[s.state].label }}
           </span>
           <span class="text-ink-gray-9">{{ label(s) }}</span>
-          <span v-if="s.value != null && s.state !== 'stale'" class="wolf-data text-ink-gray-9">{{ value(s) }}</span>
+          <span v-if="s.value != null && !s.stale" class="wolf-data text-ink-gray-9">{{ value(s) }}</span>
           <span class="text-ink-gray-6">{{ where(s) }}</span>
           <span class="text-ink-gray-6">
-            <template v-if="s.state === 'stale'">last sample <time :title="full(s.last_at, timeZone)">{{ ago(s.last_at) }} ago</time></template>
+            <template v-if="s.state === 'stale' || s.stale">
+              {{ s.state === 'firing' ? 'and no new data: ' : '' }}last sample <time :title="full(s.last_at, timeZone)">{{ ago(s.last_at) }} ago</time>
+            </template>
           </span>
           <span v-for="r in s.rules" :key="r.name" class="text-ink-gray-6">{{ rule(r) }}</span>
           <RouterLink v-for="i in s.incidents" :key="i" class="wolf-link" :to="{ name: 'incident', params: { incident: i } }">{{ i }}</RouterLink>

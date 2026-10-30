@@ -76,6 +76,12 @@ const hosts = computed(() => {
 })
 const SOURCES = { agent: 'agent', satellite: 'satellite', events: 'events', metrics: 'metrics', incidents: 'incidents' }
 
+// another scope: drop the previous one's panels at once, so its numbers never sit under the
+// new title while the new ones load
+watch(scope, () => {
+  data.value = {}
+  errors.value = {}
+})
 watch([scope, range], load, { immediate: true })
 </script>
 

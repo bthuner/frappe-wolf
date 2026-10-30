@@ -2,7 +2,7 @@
 
 import logging
 import socket
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote, urlparse
 
 from .util import metric, utc_iso
@@ -15,6 +15,7 @@ STARTED_PREFIX = "rq:wip:"  # StartedJobRegistry (sorted set; RQ 2 stores "<job_
 JOB_PREFIX = "rq:job:"
 WORKERS_KEY = "rq:workers"
 DEFAULT_LONG_JOB_MINUTES = 30
+FORGET_QUEUE_AFTER = timedelta(hours=24)
 
 
 class RedisError(Exception):
@@ -178,8 +179,9 @@ class RedisProbe:
 		self.prev_failed = None
 		self.prev_evicted = None
 		# Redis deletes a list once it is empty: a queue seen before and gone now has 0 jobs,
-		# which is reported, so the site sees "0" instead of a series that stopped
-		self.known_queues = set()
+		# which is reported, so the site sees "0" instead of a series that stopped. A queue
+		# gone for FORGET_QUEUE_AFTER (removed from the bench) is no longer reported.
+		self.known_queues = {}  # name -> last time its list existed
 
 	def collect(self, now=None):
 		now = now or datetime.now(timezone.utc)
@@ -191,9 +193,13 @@ class RedisProbe:
 
 		with RedisClient(self.url) as r:
 			lengths = _queue_lengths(r)
-			for name in self.known_queues - set(lengths):
-				lengths[name] = 0
-			self.known_queues |= set(lengths)
+			for name in lengths:
+				self.known_queues[name] = now
+			for name, seen in list(self.known_queues.items()):
+				if now - seen > FORGET_QUEUE_AFTER:
+					del self.known_queues[name]
+				elif name not in lengths:
+					lengths[name] = 0
 			for name, length in sorted(lengths.items()):
 				add("queue_length", length, {"queue": name})
 			try:

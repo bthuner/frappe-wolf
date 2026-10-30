@@ -13,6 +13,8 @@ value no rule watches, a value its rules accept, and a value a rule has opened a
 
 from datetime import timedelta
 
+# Default agent cadences. An agent configured with a longer `tls.interval` or
+# `backups.interval` will look stale sooner than it is: the server does not know the setting.
 PUSH_SECONDS = 30
 MIN_STALE = timedelta(minutes=5)
 
@@ -69,25 +71,38 @@ def rule_applies(rule, series):
 
 
 def incident_matches(incident, series):
-	"""An open incident is about a series when every scope field it names is the series'."""
-	return all(not incident.get(k) or incident.get(k) == series.get(k) for k in ("host", "bench", "site"))
+	"""An open incident is about a series when every scope field it names is the series'.
+
+	A rule grouped by label (host_label) opens one incident per label: its group_key ends with
+	"label_key=<label>", and only that series is concerned, not every disk or queue of the host.
+	"""
+	if not all(not incident.get(k) or incident.get(k) == series.get(k) for k in ("host", "bench", "site")):
+		return False
+	key = incident.get("group_key") or ""
+	return "label_key=" not in key or key.endswith(f"label_key={series.get('label_key') or '-'}")
+
+
+def is_stale(series, now):
+	"""Samples stopped: none for `stale_after`, or none in the recent read (`recent` False)."""
+	return series.get("recent") is False or now - series["last_at"] > stale_after(series["metric_name"])
 
 
 def state(series, now, rules=(), incidents=()):
 	"""The state of one series: last sample (`last_at`, may be None), rules and open incidents.
 
 	- missing: no sample in the lookback (not collected here, not configured, or unsupported);
+	- firing: a rule on it has an open incident for this scope, whether or not samples still
+	  arrive (a host that went silent mid-incident stays on top; see is_stale for the rest);
 	- stale: samples stopped arriving;
-	- firing: a rule on it has an open incident for this scope;
 	- watched: rules apply and none has an open incident;
 	- unwatched: a value, but no rule on it (the dashboard does not invent a threshold).
 	"""
 	if series.get("last_at") is None:
 		return "missing"
-	if now - series["last_at"] > stale_after(series["metric_name"]):
-		return "stale"
 	applicable = [r for r in rules if rule_applies(r, series)]
 	names = {r["name"] for r in applicable}
 	if any(i.get("alert_rule") in names and incident_matches(i, series) for i in incidents):
 		return "firing"
+	if is_stale(series, now):
+		return "stale"
 	return "watched" if applicable else "unwatched"

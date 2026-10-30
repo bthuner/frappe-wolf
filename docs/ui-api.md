@@ -174,8 +174,8 @@ series per metric, host, bench, site and label. Each series has a `state`:
 
 | State | Meaning |
 |---|---|
-| `firing` | An enabled rule on this metric applies to the series and has an open incident for its scope (`incidents`). |
-| `stale` | Samples stopped: none for three collection intervals, at least 5 minutes (backups: 30 min, TLS: 3 h). The old value is not presented as current. |
+| `firing` | An enabled rule on this metric applies to the series and has an open incident for its scope and, for rules grouped by label, its label (`incidents`). A firing series whose samples stopped stays firing, with `stale: true`. |
+| `stale` | Samples stopped: none in the last 2 hours, or none for three collection intervals, at least 5 minutes (backups: 30 min). The old value is not presented as current. The cadences are the agent's defaults: an agent set to probe TLS or backups less often looks stale sooner. |
 | `watched` | Rules apply (`rules`: aggregation, operator, threshold, window) and none has an open incident. |
 | `unwatched` | A value, but no rule watches it. The dashboard does not invent a threshold. |
 
@@ -189,10 +189,13 @@ are in `wolf/catalog.py`.
 ### `frappe_wolf.api.dashboard.get_http`
 
 Requests, 5xx and 502 per bucket over the window (the common window and scope arguments),
-summed across labels and read at the resolution of the window (`resolution`). 502 is part of
-5xx and is never added to it. A bucket without samples is `null`: a gap, not a zero.
-`has_data` tells "no data" from "zero". `deployments` lists the deployments in the window, for
-markers and a change list.
+summed across labels and read at the resolution of the window (`resolution`). Only whole
+buckets are read (`window`; `requested_window` is what was asked): the bucket still filling
+shows once it closes, instead of drawing a drop in traffic. 502 is part of 5xx and is never
+added to it. A bucket without samples is `null`: a gap, not a zero. `has_data` tells "no
+data" from "zero". `deployments` lists the deployments in the requested window. On a site's
+dashboard that includes deployments recorded for its whole bench (no site), as incidents link
+them.
 
 ### `frappe_wolf.api.dashboard.get_monitoring`
 

@@ -50,10 +50,25 @@ class TestState(unittest.TestCase):
 		self.assertEqual(catalog.state(series(), NOW, [only_h2]), "unwatched")
 		self.assertFalse(catalog.rule_applies({**self.RULE, "metric_name": "cpu_usage"}, series()))
 
-	def test_stale_wins_over_an_open_incident(self):
-		# an incident opened on old data does not make a silent series look current
+	def test_firing_stays_firing_when_samples_stop(self):
+		# a host that went silent mid-incident stays on top, and says its data stopped
 		incident = {"alert_rule": "R1", "host": "h1"}
-		self.assertEqual(catalog.state(series(ago=timedelta(hours=1)), NOW, [self.RULE], [incident]), "stale")
+		silent = series(ago=timedelta(hours=1))
+		self.assertEqual(catalog.state(silent, NOW, [self.RULE], [incident]), "firing")
+		self.assertTrue(catalog.is_stale(silent, NOW))
+
+	def test_no_recent_value_is_stale(self):
+		# TLS last seen 2.5 h ago: under its 3 h cadence, but no value to show as current
+		tls = series("tls_days_left", timedelta(hours=2, minutes=30), site="a", recent=False)
+		self.assertEqual(catalog.state(tls, NOW), "stale")
+
+	def test_label_incident_concerns_its_label_only(self):
+		incident = {"alert_rule": "R1", "host": "h1", "group_key": "host=h1,label_key=mount=/"}
+		root, data = series(label_key="mount=/"), series(label_key="mount=/data")
+		self.assertEqual(catalog.state(root, NOW, [self.RULE], [incident]), "firing")
+		self.assertEqual(catalog.state(data, NOW, [self.RULE], [incident]), "watched")
+		host_wide = {"alert_rule": "R1", "host": "h1", "group_key": "host=h1"}
+		self.assertEqual(catalog.state(data, NOW, [self.RULE], [host_wide]), "firing")
 
 
 if __name__ == "__main__":

@@ -972,6 +972,7 @@ def main():
 
 		events.insert_metrics([
 			sample("disk_used_percent", 93, 0.2, labels={"mount": "/"}),
+			sample("disk_used_percent", 40, 0.2, labels={"mount": "/data"}),
 			sample("cpu_usage", 12, 20),  # stopped 20 min ago: stale
 			sample("tls_days_left", 40, 30, site=dsite, bench="b1", labels={"domain": dsite}),  # hourly: fresh
 			*[sample("http_requests", 100, m, site=dsite, bench="b1") for m in (50, 49, 5)],
@@ -983,14 +984,21 @@ def main():
 		                       "operator": ">", "threshold": 90, "window_minutes": 5, "group_by": "host_label",
 		                       "filter_host": dash, "severity": "warning"}).insert(ignore_permissions=True)
 		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke dash disk", "alert_rule": rule.name, "host": dash,
-		                      "severity": "warning", "status": "Open", "started_at": now}).insert(ignore_permissions=True)
+		                      "group_key": f"host={dash},label_key=mount=/", "severity": "warning", "status": "Open",
+		                      "started_at": now}).insert(ignore_permissions=True)
 		deploy = events.insert_event(schema.normalize_event(
 			{"type": "deployment", "host": dash, "bench": "b1", "site": dsite, "title": "smoke dash deploy"}, tz,
 			now - timedelta(minutes=30)))
+		# a bench-wide deployment (several sites updated at once): no site
+		bench_deploy = events.insert_event(schema.normalize_event(
+			{"type": "deployment", "host": dash, "bench": "b1", "title": "smoke dash bench update"}, tz,
+			now - timedelta(minutes=20)))
 		frappe.db.commit()
 
 		sig = dashboard.get_signals(host=dash)
-		by_metric = {s["metric_name"]: s for s in sig["series"]}
+		by_metric = {s["metric_name"]: s for s in sig["series"] if s["label_key"] != "mount=/data"}
+		data_disk = next(s for s in sig["series"] if s["label_key"] == "mount=/data")
+		assert data_disk["state"] == "watched" and not data_disk["incidents"], data_disk  # / is full, /data is not
 		assert by_metric["disk_used_percent"]["state"] == "firing", by_metric["disk_used_percent"]
 		assert by_metric["disk_used_percent"]["incidents"] == [inc.name], by_metric["disk_used_percent"]
 		assert by_metric["disk_used_percent"]["value"] == 93, by_metric["disk_used_percent"]
@@ -1007,6 +1015,8 @@ def main():
 		assert None in points["http_5xx"], "an empty bucket became a zero"
 		assert len(points["http_requests"]) == len(points["http_502"]), "series of different lengths"
 		assert [d["name"] for d in http["deployments"]] == [deploy], http["deployments"]
+		site_only = dashboard.get_http(range="1h", site=dsite)
+		assert {d["name"] for d in site_only["deployments"]} == {deploy, bench_deploy}, site_only["deployments"]
 		assert http["window"]["relative"] == "1h" and http["resolution"] == "raw", http["window"]
 
 		mon = dashboard.get_monitoring()
@@ -1029,9 +1039,10 @@ def main():
 			access.clear_cache()
 		frappe.delete_doc("Wolf Incident", inc.name, force=True)
 		frappe.delete_doc("Wolf Alert Rule", rule.name, force=True)
-		frappe.db.delete("Wolf Event", {"name": deploy})
+		frappe.db.delete("Wolf Event", {"name": ("in", [deploy, bench_deploy])})
 		frappe.db.commit()
-		return (f"disk firing ({inc.name}), cpu stale, tls fresh at 30 min, {len(missing)} signals missing; "
+		return (f"disk / firing ({inc.name}), /data not, cpu stale, tls fresh at 30 min, {len(missing)} signals missing; "
+		        f"site dashboard has the bench-wide deployment; "
 		        f"5xx 12 with 502 4 inside it, gaps kept; restricted user sees no rule filters")
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),

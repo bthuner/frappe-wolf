@@ -7,11 +7,10 @@ const Pending = () => import('@/pages/PendingPage.vue')
 export const routes = [
   { path: '/', name: 'overview', component: Pending,
     meta: { title: 'Overview', fallback: 'overview', planned: 'Open incidents, unacknowledged and critical counts, sites with problems and monitoring freshness.' } },
-  { path: '/incidents', name: 'incidents', component: Pending,
-    meta: { title: 'Incidents', fallback: 'incidents', capability: 'incidents', planned: 'Incidents you can see, by status, severity and scope.' } },
-  { path: '/incidents/:incident', name: 'incident', component: Pending,
-    meta: { title: 'Incident', fallback: 'incidents', capability: 'incidents', deskDoc: { doctype: 'wolf-incident', param: 'incident' },
-      planned: 'The incident timeline: evidence, context, operator activity and notifications on one rail.' } },
+  { path: '/incidents', name: 'incidents', component: () => import('@/pages/IncidentsPage.vue'),
+    meta: { title: 'Incidents', capability: 'incidents' } },
+  { path: '/incidents/:incident', name: 'incident', component: () => import('@/pages/IncidentPage.vue'),
+    meta: { title: 'Incident', capability: 'incidents' } },
   { path: '/events', name: 'events', component: Pending,
     meta: { title: 'Events', fallback: 'events', planned: 'Every recorded event, filtered by type, severity, scope and time.' } },
   { path: '/errors', name: 'errors', component: Pending,
@@ -30,11 +29,21 @@ export const routes = [
     meta: { title: 'Bench', fallback: 'overview', planned: 'One bench on one host: workers, queues, Redis, scheduler and its sites.' } },
   { path: '/monitoring', name: 'monitoring', component: Pending,
     meta: { title: 'Monitoring', fallback: 'monitoring', planned: 'Is Wolf itself working: agents, satellites, clock skew, rule and scheduler freshness.' } },
+  // where a view this site cannot have leads (incidents on a satellite); ?from= keeps the link
+  { path: '/unavailable/:path(.*)*', name: 'unavailable', component: Pending,
+    meta: { title: 'Incidents', capability: 'incidents', noSubject: true } },
   { path: '/:path(.*)*', name: 'not-found', component: () => import('@/pages/NotFoundPage.vue'), meta: { title: 'Not found' } },
 ]
 
-export function makeRouter(history = createWebHistory('/wolf')) {
+export function makeRouter(history = createWebHistory('/wolf'), boot = null) {
   const router = createRouter({ history, routes })
+  // a view that needs a backend this site lacks (incidents on a satellite) explains instead
+  router.beforeEach((to) => {
+    const cap = to.meta.capability
+    if (cap && boot && to.name !== 'unavailable' && !boot.capabilities?.[cap]?.available) {
+      return { name: 'unavailable', params: { path: to.path.split('/').filter(Boolean) }, query: { from: to.fullPath } }
+    }
+  })
   router.afterEach((to) => {
     document.title = to.meta.title ? `${to.meta.title} · Frappe Wolf` : 'Frappe Wolf'
   })

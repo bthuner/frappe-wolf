@@ -75,3 +75,90 @@ a.wolf-link {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* incident page */
+.wolf-card {
+  background: var(--wolf-surface);
+  border: 1px solid var(--wolf-line);
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.wolf-badge {
+  border: 1px solid var(--wolf-line);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+  color: var(--wolf-muted);
+  white-space: nowrap;
+}
+
+.wolf-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 16px;
+}
+.wolf-facts dt {
+  color: var(--wolf-muted);
+}
+
+/* the rail: readable spacing per row, not proportional to time */
+.wolf-rail {
+  border-left: 2px solid var(--wolf-line);
+  margin-left: 4px;
+}
+.wolf-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 12px;
+}
+.wolf-row:target,
+.wolf-row-targeted {
+  background: var(--wolf-surface);
+  outline: 2px solid var(--wolf-brand-text);
+}
+.wolf-row-context .wolf-row-time,
+.wolf-row-context .wolf-row-icon {
+  opacity: 0.65;
+}
+.wolf-row-time {
+  min-width: 3.2rem;
+  color: var(--wolf-muted);
+}
+.wolf-row-icon {
+  margin-top: 3px;
+  color: var(--wolf-muted);
+  flex-shrink: 0;
+}
+.wolf-row-anchor {
+  color: var(--wolf-muted);
+  opacity: 0;
+}
+.wolf-row:hover .wolf-row-anchor,
+.wolf-row-anchor:focus-visible {
+  opacity: 1;
+}
+.wolf-day {
+  padding: 12px 12px 4px;
+  font-weight: 600;
+  color: var(--wolf-ink);
+}
+.wolf-gap {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--wolf-muted);
+}
+.wolf-details {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  background: var(--wolf-bg);
+  border: 1px solid var(--wolf-line);
+  border-radius: 6px;
+  padding: 8px;
+  margin-top: 4px;
+  max-height: 24rem;
+  overflow: auto;
+}

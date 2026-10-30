@@ -370,6 +370,7 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 		partial = entry.pop("partial")
 		entry.value = storage.finalize(partial, aggregation)
 		entry.samples = partial["count"]
+		entry.last_at = partial["last_ts"]  # time of the newest sample read
 		if aggregation == "last" and "label_key" not in group_cols:
 			entry.label_key = partial.get("last_label")
 		out.append(entry)

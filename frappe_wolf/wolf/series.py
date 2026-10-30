@@ -1,12 +1,6 @@
 """Time bucketing for metric charts, done in Python so the SQL stays portable."""
 
-from datetime import datetime, timezone
-
-
-def bucket_start(ts, seconds):
-	"""Floor a naive datetime to a multiple of `seconds` (wall-clock arithmetic, no tz shift)."""
-	epoch = int(ts.replace(tzinfo=timezone.utc).timestamp())
-	return datetime.fromtimestamp(epoch - epoch % seconds, tz=timezone.utc).replace(tzinfo=None)
+from frappe_wolf.wolf.storage import floor as bucket_start  # charts and rollups share one floor
 
 
 def bucket_series(rows, seconds, counter=lambda name: name.startswith("http_")):

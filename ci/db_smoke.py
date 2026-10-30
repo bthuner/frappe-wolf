@@ -475,6 +475,11 @@ def main():
 		assert marks[MINUTE] and marks[MINUTE] >= storage.floor(now, MINUTE) - timedelta(minutes=3), marks
 		assert marks[HOUR] and marks[HOUR] >= roll_end, marks
 		truth = compare_rollups("first run")
+		# `last` per host keeps the label of its sample (which mount); both mounts share each
+		# timestamp, so the larger value wins: /data
+		for res in (MINUTE, HOUR):
+			(row,) = rollups.aggregate(roll_where, roll_params, ["host"], [], "last", res, base, roll_end)
+			assert row.label_key == "mount=/data", f"last per host at {storage.LABELS[res]}: label {row.label_key}"
 
 		rollups.run()  # nothing new: no-op
 		# force a full recompute: must replace, not add

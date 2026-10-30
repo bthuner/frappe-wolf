@@ -82,11 +82,13 @@ def note_samples(timestamps, now=None):
 	"""
 	now = now or now_datetime()
 	recent = now - GRACE + timedelta(seconds=30)
-	if not any(t is not None and t < recent for t in timestamps):
+	marks = watermarks()
+	behind = [marks[res] for res in (MINUTE, HOUR) if marks[res]]
+	if not any(t is not None and (t < recent or any(t < m for m in behind)) for t in timestamps):
 		return
-	oldest = now - timedelta(hours=retention()[0]) + timedelta(hours=1)
+	oldest = storage.late_horizon(now, retention()[0])
 	for res in (MINUTE, HOUR):
-		new = storage.late_restart(timestamps, recent, oldest, res)
+		new = storage.late_restart(timestamps, recent, oldest, res, marks[res])
 		if new is None:
 			return
 		frappe.db.sql(
@@ -309,7 +311,8 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 
 	`where` is a list of SQL conditions on columns shared by samples and rollups (metric_name,
 	host, bench, site, label_key). Returns frappe._dict rows like a SQL group-by would:
-	group columns, `<field>_hint` for each hint field, value, samples, first_at.
+	group columns, `<field>_hint` for each hint field, value, samples, first_at. For `last`,
+	also `label_key` of the latest sample when the groups do not split by label (which disk).
 	"""
 	merged = {}
 	for res, start, end in segments(resolution, since, until):
@@ -339,13 +342,15 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 			lasts = _last_values(table, value_col, last_col, conds, {**params, **seg_params}, group_cols, min(r.lt for r in rows))
 		for r in rows:
 			key = tuple(r.get(c) for c in group_cols)
+			last, last_label = lasts.get(key, (0.0, None))
 			part = {
 				"count": int(r.c),
 				"sum": float(r.s or 0),
 				"min": float(r.mn),
 				"max": float(r.mx),
-				"last": lasts.get(key, 0.0),
+				"last": last,
 				"last_ts": get_datetime(r.lt),
+				"last_label": last_label,
 			}
 			entry = merged.get(key)
 			if entry is None:
@@ -365,13 +370,15 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 		partial = entry.pop("partial")
 		entry.value = storage.finalize(partial, aggregation)
 		entry.samples = partial["count"]
+		if aggregation == "last" and "label_key" not in group_cols:
+			entry.label_key = partial.get("last_label")
 		out.append(entry)
 	return out
 
 
 def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_last):
 	rows = frappe.db.sql(
-		f"""select {', '.join([*(f'`{c}`' for c in group_cols), f'{value_col} as v', f'{last_col} as t'])}
+		f"""select {', '.join([*(f'`{c}`' for c in group_cols), f'{value_col} as v', f'{last_col} as t', 'label_key as l'])}
 		from `{table}` where {conds} and {last_col} >= %(oldest_last)s""",
 		{**params, "oldest_last": oldest_last},
 		as_dict=True,
@@ -379,10 +386,10 @@ def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_l
 	best = {}
 	for r in rows:
 		key = tuple(r.get(c) for c in group_cols)
-		cand = (get_datetime(r.t), float(r.v))
+		cand = (get_datetime(r.t), float(r.v), r.l or "")
 		if key not in best or cand > best[key]:
 			best[key] = cand
-	return {key: value for key, (_, value) in best.items()}
+	return {key: (value, label or None) for key, (_, value, label) in best.items()}
 
 
 def series_rows(where, params, resolution, since, until):

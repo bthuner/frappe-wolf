@@ -104,6 +104,8 @@ def merge(a, b):
 	}
 	latest = b if (b["last_ts"], b["last"]) > (a["last_ts"], a["last"]) else a
 	out["last"], out["last_ts"] = latest["last"], latest["last_ts"]
+	if "last_label" in latest:  # aggregate() reads: label of the latest sample
+		out["last_label"] = latest["last_label"]
 	return out
 
 
@@ -172,13 +174,29 @@ def finalize(partial, aggregation):
 	raise ValueError(f"unknown aggregation {aggregation!r}")
 
 
-def late_restart(timestamps, recent, oldest_allowed, seconds):
+def late_restart(timestamps, recent, oldest_allowed, seconds, watermark=None):
 	"""Watermark to restart rolling from after inserting samples with these timestamps, or None.
 
 	Samples older than `recent` may belong to a bucket that is rolled already (agent spool
-	replay, a slow queue): rolling restarts from the bucket of the oldest of them. Samples older
-	than `oldest_allowed` are ignored: raw samples that old may be purged already, and re-rolling
-	their buckets from what is left would lose data.
+	replay, a slow queue), and so do samples behind the current `watermark` however recent
+	they are (the wall clock going back, as at the DST fall-back hour): rolling restarts from
+	the bucket of the oldest of them. Samples older than `oldest_allowed` are ignored: raw
+	samples that old may be purged already, and re-rolling their buckets from what is left
+	would lose data.
 	"""
-	late = [t for t in timestamps if t is not None and oldest_allowed <= t < recent]
+	late = [
+		t
+		for t in timestamps
+		if t is not None and oldest_allowed <= t and (t < recent or (watermark is not None and t < watermark))
+	]
 	return floor(min(late), seconds) if late else None
+
+
+def late_horizon(now, raw_hours):
+	"""Oldest sample time that may still be re-rolled: raw retention, less a margin for the purge.
+
+	The margin is an hour, or a quarter of the retention when that is shorter, so a short raw
+	retention does not turn late re-rolling off.
+	"""
+	retention = timedelta(hours=raw_hours)
+	return now - retention + min(timedelta(hours=1), retention / 4)

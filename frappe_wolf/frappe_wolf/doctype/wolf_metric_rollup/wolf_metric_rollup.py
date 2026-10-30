@@ -13,3 +13,5 @@ def on_doctype_update():
 	# Reads filter one resolution and a bucket range, per metric (rules) or per host (charts).
 	frappe.db.add_index("Wolf Metric Rollup", ["resolution", "metric_name", "bucket_start"])
 	frappe.db.add_index("Wolf Metric Rollup", ["resolution", "host", "bucket_start"])
+	# The rollup job and the purge read and delete one resolution's bucket range.
+	frappe.db.add_index("Wolf Metric Rollup", ["resolution", "bucket_start"])

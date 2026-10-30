@@ -212,6 +212,10 @@ h3 { font: 600 1.05rem/1.3 var(--sans); margin: 0 0 8px; letter-spacing: -0.005e
 .strip { border: 1px solid var(--line); background: var(--surface); padding: 20px 16px 8px; }
 .strip text { font-family: var(--mono); }
 .strip figcaption { font: 400 0.78rem/1.5 var(--mono); color: var(--muted); padding: 12px 4px 8px; }
+.shot { margin: 0; border: 1px solid var(--line); background: var(--surface); }
+.shot img { display: block; width: 100%; height: auto; }
+.shot figcaption { font: 400 0.78rem/1.5 var(--mono); color: var(--muted); padding: 12px 16px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 24px; }
 
 /* Incident timeline: the hero object */
 .incident { border: 1px solid var(--line); background: var(--surface); }
@@ -519,7 +523,11 @@ Deployment shortly before: 2026-10-29 01:47:12
             <li><time>08:55</time><svg class="glyph sev-ok" aria-label="resolved"><use href="#moon-ok"/></svg><div class="what"><b>Acknowledged</b> by the morning team, before the first customer email<span class="src">status Open → Acknowledged</span></div></li>
           </ol>
         </article>
-        <p class="aside">Status: the timeline <em>query</em> (<code>incidents.get_timeline</code>) and correlation are written. The Desk rendering of this rail on the Wolf Incident form is <span class="status wip">◐ in progress</span>.</p>
+        <p class="aside">Status: <span class="status done">● built</span>, in Desk and in the Wolf UI. The Wolf UI's rail interleaves linked evidence, context from the same scope, operator activity and notification attempts. Rows have stable ids and are paged with a cursor, so a page comes back the same whatever its size. A deployment before the incident is a <em>preceding change</em>, never its cause. A deduplicated event is one row with its count. A notification is <em>accepted by the endpoint</em>, not read by someone. A long silence is <em>no recorded activity</em>, never "healthy".</p>
+        <figure class="shot">
+          <img src="assets/wolf-ui-incident.jpg" width="1280" height="800" loading="lazy" alt="The Wolf UI incident page: a warning incident for scheduler failures on wolf.localhost, acknowledged, with its scope, start time, owner and rule, the assign and resolve actions, and the timeline below with context rows marked as same scope">
+          <figcaption>The incident page of the Wolf UI, light theme, from the demo stack.</figcaption>
+        </figure>
       </div>
     </div>
   </section>
@@ -533,12 +541,25 @@ Deployment shortly before: 2026-10-29 01:47:12
       </div>
       <div class="body">
         <div class="prose">
-          <p>The UI lives inside Frappe Desk on purpose. Operators already live there, and permissions, list views, filters and the awesome bar come for free. We drew only three rooms on top.</p>
+          <p>The rooms began inside Frappe Desk, where operators already live and permissions come for free. The daily views have since moved to the <em>Wolf UI</em> at <code>/wolf</code> (#19). It's a frappe-ui app on the same session and permissions. Desk keeps configuration.</p>
         </div>
         <div class="cards" role="list">
-          <div class="card" role="listitem"><span class="k">Room 1 · Overview <span class="status wip">◐ wip</span></span><h3>“Is anyone howling?”</h3><p>Open incidents, critical events over a time range, agents online or silent, and host metric charts (CPU, RAM, disk, load), filterable by site, bench and host.</p></div>
-          <div class="card" role="listitem"><span class="k">Room 2 · Incident <span class="status wip">◐ wip</span></span><h3>“What happened?”</h3><p>The timeline above, with scope, linked deployment, event count, and acknowledge/resolve actions. Notes stay with the incident.</p></div>
-          <div class="card" role="listitem"><span class="k">Room 3 · Rules <span class="status done">● data model done</span></span><h3>“When should it wake me?”</h3><p>One form that reads like a sentence: <em>when</em> a metric or event, <em>is</em> an operator and threshold, <em>over</em> a window, <em>per</em> a group, <em>between</em> two hours, <em>tell</em> these channels.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 1 · Overview <span class="status done">● built</span></span><h3>“Is anyone howling?”</h3><p>Exact counts, never the length of a list. Then the newest unresolved incidents, HTTP responses with deployments marked, and every signal (workers, Redis, database, backups, TLS, host) in one of five states that are never merged: missing, stale, unwatched, within its rules, firing. The same page serves each site, host and bench.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 2 · Incident <span class="status done">● built</span></span><h3>“What happened?”</h3><p>The timeline above, scope first, with acknowledge, assign and resolve when the server allows them. Merge, split and the postmortem stay in Desk.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 3 · Rules <span class="status done">● built, in Desk</span></span><h3>“When should it wake me?”</h3><p>One form that reads like a sentence: <em>when</em> a metric or event, <em>is</em> an operator and threshold, <em>over</em> a window, <em>per</em> a group, <em>between</em> two hours, <em>tell</em> these channels.</p></div>
+        </div>
+        <div class="prose">
+          <p>Explorers came after the rooms. <strong>Events</strong> lists deduplicated records with their counts, and <strong>Errors</strong> groups them by fingerprint. In <strong>Metrics</strong>, the catalog decides how a metric may be read: a disk level is averaged, a count of 5xx responses is summed, and a sum of disk levels is refused. Every page says what it read: window, resolution, buckets, retention, what was left out. <strong>Logs</strong> explains why there is no log search yet: Wolf stores parsed events, not raw lines.</p>
+        </div>
+        <div class="shots">
+          <figure class="shot">
+            <img src="assets/wolf-ui-overview.jpg" width="1280" height="800" loading="lazy" alt="A site dashboard in the dark theme: counts of unresolved, unacknowledged and critical incidents, the four unresolved incidents of wolf.localhost, and HTTP responses over 24 hours with dashed lines at each deployment">
+            <figcaption>A site dashboard, dark theme.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img src="assets/wolf-ui-metrics.jpg" width="1280" height="800" loading="lazy" alt="The metrics explorer: memory used, maximum per host over 6 hours, read from minute rollups in 3-minute buckets, with a gap before the data starts">
+            <figcaption>The metrics explorer: what it read is stated above the chart.</figcaption>
+          </figure>
         </div>
         <div class="prose">
           <p>The rule form is the IA decision we're proudest of. The brief asked for "when X &gt; Y for Z minutes, send alert", and the DocType is laid out in that order: signal, aggregation, operator, threshold, window, group, timing, channels. "For Z minutes" is not a hidden state machine. It is the <code>min</code> aggregation: if the minimum over the window is above the threshold, the value stayed above it the whole time. The field description says so in one line.</p>
@@ -655,11 +676,17 @@ X-Wolf-Agent-Secret: ••••••••
           <li class="done"><time>2026-10-29 · Data model</time><b>Seven DocTypes from one spec.</b><p>Wolf Settings, Wolf Agent, Wolf Event, Wolf Metric Sample, Wolf Alert Rule, Wolf Alert Channel and Wolf Incident are generated from a single field list, so naming stays consistent. High-volume tables use hash names and indexed scope fields.</p></li>
           <li class="done"><time>2026-10-29 · Core</time><b>Pure logic kept out of Frappe.</b><p><code>schema.py</code> (payload normalisation, UTC→system time) and <code>conditions.py</code> (operators, midnight-wrapping windows, grouping) import nothing from Frappe, so they can be tested without a bench.</p></li>
           <li class="done"><time>2026-10-29 · Engine</time><b>Ingest, rules, incidents, notifications.</b><p>Agent registration and push API; a rule engine with metric and event signals, deployment gating, cooldown re-open and auto-resolve; scope-based correlation; email, webhook and Raven delivery.</p></li>
-          <li class="wip"><time>2026-10-29 · Agent</time><b>Wolf Agent: stdlib-only Python daemon.</b><p>Collector, rotation-aware tailer, parsers (nginx, traceback, scheduler, worker, auth), a minimal Redis RESP client and a spooling shipper. Tests, <code>install.sh</code> and a systemd unit are in the tree and being finalised. It reads Pilot's <code>bench.toml</code> defensively when one is present.</p></li>
-          <li class="wip"><time>2026-10-29 · Desk</time><b>Overview page, incident timeline, workspace, presets.</b><p>The three rooms of chapter 06, the Dokos preset rules and local signals from the Wolf site itself (failed scheduled jobs, error logs, logins, privileged roles).</p></li>
+          <li class="done"><time>2026-10-29 · Agent</time><b>Wolf Agent: stdlib-only Python daemon.</b><p>Collector, rotation-aware tailer, parsers (nginx, traceback, scheduler, worker, auth), a minimal Redis RESP client and a spooling shipper. Tests, <code>install.sh</code> and a systemd unit ship with it. It reads Pilot's <code>bench.toml</code> defensively when one is present.</p></li>
+          <li class="done"><time>2026-10-29 · Desk</time><b>Overview page, incident timeline, workspace, presets.</b><p>The three rooms of chapter 06, the Dokos preset rules and local signals from the Wolf site itself (failed scheduled jobs, error logs, logins, privileged roles).</p></li>
           <li class="done"><time>2026-10-29 · Identity</time><b>Official logo adopted.</b><p>The founder's mark replaces the placeholder drawn for the first draft of this page: a single-line wolf head with an angular eye slit on a <code>#035AEC</code> rounded square. The palette was rebuilt around that blue. Info moved to lilac so it can't read as the brand, and amber now means only warning.</p></li>
           <li class="done"><time>2026-10-29 · Publishing</time><b>Making-of published on GitHub Pages.</b><p>This page and its <code>assets/</code> ship as a static site, with Open Graph image and favicons. Relative paths keep it portable.</p></li>
-          <li class="wip"><time>2026-10-30 · Wolf UI</time><b>A frappe-ui app at <code>/wolf</code>.</b><p>The daily operator views move out of Desk (#19). The shell, routes, light and dark themes and access checks are in; each view replaces its Desk page as it lands, and a view not built yet says so.</p></li>
+          <li class="done"><time>2026-10-29 · Alerting</time><b>Alerting that holds up at night.</b><p>An agent watchdog alerts through its own channel when the site itself stops working. Alert quality covers flapping, cooldowns and digests. Native channels: Slack, Mattermost, Matrix, ntfy, Gotify, SMS and PagerDuty. The incident workflow adds an assignee, comments, merge and split, postmortems, MTTA and MTTR.</p></li>
+          <li class="done"><time>2026-10-29 · Press &amp; Pilot</time><b>Benches found where they live.</b><p>Benches are discovered on Press servers and from Pilot's <code>bench.toml</code>. Their deploys and migrations become deployment events.</p></li>
+          <li class="done"><time>2026-10-29 · Privacy</time><b>Privacy and access.</b><p>PII is scrubbed on the host. Wolf Users get site, bench and host grants. Agent secrets are hashed, pushes are rate-limited, and a clock-skew guard keeps late or early samples in their place.</p></li>
+          <li class="done"><time>2026-10-29 · Signals</time><b>The signals operators asked for.</b><p>RQ registries, queue Redis, backups, TLS expiry, MariaDB, bench processes, the email queue, and GeoIP for logins.</p></li>
+          <li class="done"><time>2026-10-30 · Storage</time><b>Storage that scales.</b><p>Minute and hour rollups with retention per resolution. Reads pick the resolution of their window and stay exact across raw and rolled data. Ingest is async: a queued push that fails is retried and logged, and a backlog shows in Wolf's health.</p></li>
+          <li class="done"><time>2026-10-30 · Wolf UI</time><b>A frappe-ui app at <code>/wolf</code>.</b><p>The daily views move out of Desk (#19), on the Frappe session, with light and dark themes on the brand tokens. Exact counts use the reader's access rules. Then came the incident page, the overview and the site, host and bench dashboards, and the events, errors and metrics explorers. Every page says what it read.</p></li>
+          <li class="wip"><time>2026-10-30 · Wolf UI</time><b>Still to do.</b><p>Live updates, and accessibility and browser tests in CI. Log search waits for raw-line storage.</p></li>
         </ol>
       </div>
     </div>
@@ -677,11 +704,12 @@ X-Wolf-Agent-Secret: ••••••••
           <div><h3>Python, not Rust, for the agent</h3><p>The brief recommends it, and we agree: Frappe contributors can read it on day one. The protocol is generic enough that a Rust agent can replace it later without touching the app.</p></div>
           <div><h3>DocTypes, not ClickHouse</h3><p>Storage you already back up, with retention settings to keep it lean. That is the right size for an MVP on Dokos stacks. A columnar store is a later conversation, not a launch requirement.</p></div>
           <div><h3>Thresholds, not anomaly ML</h3><p>A rule you can read is a rule you can trust at 2AM. Datadog and SigNoz inspired the <em>shape</em> of alerting, not its opacity.</p></div>
-          <div><h3>Desk, not a separate SPA (superseded)</h3><p>We first gave up some art direction for zero new logins, native permissions and familiar list views. #19 moves the daily views to a frappe-ui app at <code>/wolf</code> that keeps the Frappe session and permissions; Desk keeps configuration.</p></div>
+          <div><h3>Desk, not a separate SPA (superseded)</h3><p>We first gave up some art direction for zero new logins, native permissions and familiar list views. #19 moved the daily views to a frappe-ui app at <code>/wolf</code> that keeps the Frappe session and permissions; Desk keeps configuration.</p></div>
+          <div><h3>Honest numbers over pretty ones</h3><p>A gap stays a gap, and a missing signal is not a zero. A repeat count is not a count for the window, and a past window is not "stale". A chart that looks calm because it hides what it doesn't know would wake no one at 2AM.</p></div>
         </div>
         <div class="prose" style="margin-top:32px">
           <h3>Next</h3>
-          <p>Finish the Desk rooms. Ship the Dokos presets: 502 after a deployment, cron failures between 01:00 and 04:00, queue backlog, and failed or unusual logins. Harden <code>bench.toml</code> discovery once Pilot's schema is pinned down. The agent reads it defensively today. Then run the first demo end to end, a deployment and nginx reload causing a short 502 window followed by a failing 2AM job, and add the real screenshots to this page.</p>
+          <p>Live updates in the Wolf UI, and accessibility and browser tests in CI. Log search once raw-line storage exists, which Wolf deliberately doesn't have yet. A run on a real Press server and a real Pilot host. And a load test at 100 hosts, to put numbers on the storage's promises.</p>
         </div>
       </div>
     </div>
@@ -690,7 +718,7 @@ X-Wolf-Agent-Secret: ••••••••
 
 <footer>
   <div class="wrap">
-    <span>Frappe Wolf · MIT · Making-of, edition 0.1</span>
+    <span>Frappe Wolf · MIT · Making-of, edition 0.2</span>
     <span>Type: Instrument Serif, Inter Tight, JetBrains Mono · Palette: Bleu Wolf #035AEC, Nuit, Os · Logo © the founder</span>
   </div>
 </footer>

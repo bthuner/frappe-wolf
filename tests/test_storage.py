@@ -262,5 +262,20 @@ class TestWeightedSeries(unittest.TestCase):
 		self.assertEqual(out["http_502"], [["2026-10-29 02:00:00", 12.0]])
 
 
+class TestWholeBuckets(unittest.TestCase):
+	def test_cut_and_filling_buckets_are_left_out(self):
+		since, until = datetime(2026, 10, 30, 10, 3, 20), datetime(2026, 10, 30, 10, 31, 5)
+		first, end, starts = storage.whole_buckets(since, until, 600)
+		self.assertEqual((first, end), (datetime(2026, 10, 30, 10, 0), datetime(2026, 10, 30, 10, 30)))
+		self.assertEqual(starts, [datetime(2026, 10, 30, 10, 0), datetime(2026, 10, 30, 10, 10), datetime(2026, 10, 30, 10, 20)])
+
+	def test_resolution_reaches_back_to_the_start(self):
+		kept = {RAW: T0 - timedelta(hours=48), MINUTE: T0 - timedelta(days=30), HOUR: T0 - timedelta(days=365)}
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(hours=2), kept), RAW)
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(days=5), kept), MINUTE)  # zoom into last week
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(days=40), kept), HOUR)
+		self.assertEqual(storage.resolution_covering(HOUR, T0 - timedelta(days=500), kept), HOUR)  # nothing coarser
+
+
 if __name__ == "__main__":
 	unittest.main()

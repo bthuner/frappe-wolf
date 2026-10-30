@@ -257,22 +257,28 @@ def _delete_before(table, column, cutoff, step, extra="", params=None):
 	return deleted_until
 
 
-def purge(now=None, rolled=True):
-	"""Apply raw / 1-minute / 1-hour retention. Never deletes data that is not rolled up yet.
+def kept_from(now=None, rolled=True):
+	"""{RAW, MINUTE, HOUR: time} before which purge deletes that resolution's data.
 
+	Never data that is not rolled up yet: raw samples stay until the 1-minute watermark (up to
+	the 1-minute retention if rollups never ran), minute rollups until the hour watermark.
 	`rolled` is False where rollups do not run (satellites): raw retention then applies as is.
 	"""
 	now = now or now_datetime()
 	raw_hours, minute_days, hour_days = retention()
 	marks = watermarks()
-
-	raw_cutoff = now - timedelta(hours=raw_hours)
+	raw = now - timedelta(hours=raw_hours)
 	if rolled:
-		# Unrolled raw samples are kept (up to the 1-minute retention, if rollups never ran).
-		raw_cutoff = min(raw_cutoff, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
-	minute_cutoff = now - timedelta(days=minute_days)
-	minute_cutoff = min(minute_cutoff, marks[HOUR]) if marks[HOUR] else now - timedelta(days=hour_days)
-	hour_cutoff = now - timedelta(days=hour_days)
+		raw = min(raw, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
+	minute = now - timedelta(days=minute_days)
+	minute = min(minute, marks[HOUR]) if marks[HOUR] else now - timedelta(days=hour_days)
+	return {RAW: raw, MINUTE: minute, HOUR: now - timedelta(days=hour_days)}
+
+
+def purge(now=None, rolled=True):
+	"""Apply raw / 1-minute / 1-hour retention (kept_from)."""
+	cut = kept_from(now, rolled)
+	raw_cutoff, minute_cutoff, hour_cutoff = cut[RAW], cut[MINUTE], cut[HOUR]
 
 	_delete_before(RAW_TABLE, "`timestamp`", raw_cutoff, timedelta(hours=1))
 	rollup_table = f"tab{ROLLUP_DOCTYPE}"

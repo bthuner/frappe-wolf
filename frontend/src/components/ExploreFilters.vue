@@ -2,6 +2,7 @@
 import { Select, TabButtons, TextInput } from 'frappe-ui'
 import { onBeforeUnmount, ref, watch } from 'vue'
 
+import ScopeInputs from '@/components/ScopeInputs.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { EVENT_TYPES, RANGES, SEVERITIES } from '@/services/filters'
 
@@ -10,9 +11,6 @@ defineProps({ types: { type: Boolean, default: false } })
 
 const range = useQueryParam('range', '24h', RANGES)
 const q = useQueryParam('q')
-const site = useQueryParam('site')
-const host = useQueryParam('host')
-const bench = useQueryParam('bench')
 const type = useQueryParam('type', 'any', EVENT_TYPES)
 const severity = useQueryParam('severity', 'any', SEVERITIES)
 
@@ -37,9 +35,7 @@ const SEVERITY_OPTIONS = ['any', ...SEVERITIES].map((v) => ({ value: v, label: v
   <div class="flex flex-wrap items-center gap-2">
     <TabButtons v-model="range" :options="RANGES.map((r) => ({ value: r, label: r }))" />
     <TextInput v-model="draft" type="search" placeholder="Title contains" class="w-52" aria-label="Title contains" />
-    <TextInput :model-value="site" placeholder="Site" class="w-40" aria-label="Site" @change="site = $event.target.value.trim()" />
-    <TextInput :model-value="host" placeholder="Host" class="w-36" aria-label="Host" @change="host = $event.target.value.trim()" />
-    <TextInput v-if="host" :model-value="bench" placeholder="Bench" class="w-36" aria-label="Bench" @change="bench = $event.target.value.trim()" />
+    <ScopeInputs />
     <template v-if="types">
       <Select v-model="type" :options="TYPES" class="w-44" aria-label="Event type" />
       <Select v-model="severity" :options="SEVERITY_OPTIONS" class="w-40" aria-label="Severity" />

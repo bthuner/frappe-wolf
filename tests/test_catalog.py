@@ -93,6 +93,14 @@ class TestExplore(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			catalog.validate("my_custom_gauge", "sum", None)
 
+	def test_every_metric_the_agent_sends_is_catalogued(self):
+		import pathlib
+		import re
+
+		src = "".join(p.read_text() for p in pathlib.Path(__file__).parents[1].joinpath("agent/wolf_agent").rglob("*.py"))
+		sent = set(re.findall(r'(?:metric|add)\("([a-z0-9_]+)"', src)) | {"memory_used_percent", "swap_used_percent"}
+		self.assertEqual(sent - set(catalog.CATALOG), set())
+
 	def test_every_catalog_metric_describes(self):
 		for m in catalog.CATALOG:
 			d = catalog.describe(m)

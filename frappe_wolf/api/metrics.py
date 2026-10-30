@@ -1,10 +1,10 @@
 """The metric explorer of the Wolf UI (docs/ui-api.md).
 
 The catalog (wolf/catalog.py) decides how a metric may be read: a gauge is averaged or taken at
-its extremes, an interval count is summed. A query reads whole buckets at the resolution of its
-window, exactly across raw samples and rollups, keeps empty buckets as gaps, and says what it
-read: bucket size, resolution, where retention cut the window, which groups it left out and how
-fresh each group is.
+its extremes, an interval count is summed. A query reads whole buckets at a resolution that
+fits the window's length and still reaches back to its start, exactly across raw samples and
+rollups, keeps empty buckets as gaps, and says what it read: bucket size, resolution, where
+retention cut the window, which groups it left out and how fresh each group is.
 """
 
 from datetime import timedelta
@@ -20,11 +20,21 @@ from frappe_wolf.wolf import access, catalog, conditions, events, rollups, stora
 MAX_GROUPS = 20
 MAX_LABELS = 100
 SEEN_DAYS = 7
+RECENT = timedelta(hours=2)  # freshness reads the newest sample here, whatever the window's buckets
 
 
-def _allowed(table="Wolf Metric Rollup"):
-	allowed, params = access.sql_condition(table)
-	return allowed, params
+def _recently_seen(select, extra, params):
+	"""Values from hourly rollups of the last 7 days and minute rollups of the last 2 hours: a
+	metric or label that appeared in the last hour is there before its first hourly rollup."""
+	allowed, allowed_params = access.sql_condition("Wolf Metric Rollup")
+	now = now_datetime()
+	return frappe.db.sql_list(
+		f"""select distinct {select} from `tabWolf Metric Rollup`
+		where resolution = 3600 and bucket_start >= %(since)s{extra}{allowed}
+		union select distinct {select} from `tabWolf Metric Rollup`
+		where resolution = 60 and bucket_start >= %(recent)s{extra}{allowed}""",
+		{**params, **allowed_params, "since": now - timedelta(days=SEEN_DAYS), "recent": now - RECENT},
+	)
 
 
 @frappe.whitelist()
@@ -32,16 +42,7 @@ def get_metric_catalog():
 	"""Every catalogued metric, and the custom ones seen lately, with what may be done with each
 	and whether the caller has data for it in the last 7 days."""
 	frappe.only_for(READ_ROLES)
-	allowed, params = _allowed()
-	seen = set(
-		frappe.db.sql_list(
-			f"""select distinct metric_name from `tabWolf Metric Rollup`
-			where resolution = 3600 and bucket_start >= %(since)s{allowed}
-			union select distinct metric_name from `tabWolf Metric Rollup`
-			where resolution = 60 and bucket_start >= %(recent)s{allowed}""",
-			{**params, "since": now_datetime() - timedelta(days=SEEN_DAYS), "recent": now_datetime() - timedelta(hours=2)},
-		)
-	)
+	seen = set(_recently_seen("metric_name", "", {}))
 	metrics = [{**catalog.describe(m), "seen": m in seen} for m in catalog.CATALOG]
 	metrics += [{**catalog.describe(m), "seen": True} for m in sorted(seen - set(catalog.CATALOG))]
 	return {"metrics": metrics, "seen_days": SEEN_DAYS, "max_groups": MAX_GROUPS}
@@ -49,28 +50,24 @@ def get_metric_catalog():
 
 @frappe.whitelist()
 def get_labels(metric, site=None, bench=None, host=None):
-	"""The label values (mount, queue, domain...) a metric has in scope, last 7 days."""
+	"""The label values (mount, queue, domain...) a metric has in scope, recently."""
 	frappe.only_for(READ_ROLES)
 	scope = _scope(site, bench, host)
-	allowed, params = _allowed()
-	where = "".join(f" and `{k}` = %({k})s" for k in scope)
-	values = frappe.db.sql_list(
-		f"""select distinct label_key from `tabWolf Metric Rollup`
-		where resolution = 3600 and metric_name = %(metric)s and bucket_start >= %(since)s
-			and coalesce(label_key, '') != ''{where}{allowed}
-		order by label_key limit %(limit)s""",
-		{**params, **scope, "metric": metric, "since": now_datetime() - timedelta(days=SEEN_DAYS), "limit": MAX_LABELS + 1},
-	)
+	extra = " and metric_name = %(metric)s and coalesce(label_key, '') != ''" + "".join(f" and `{k}` = %({k})s" for k in scope)
+	values = sorted(_recently_seen("label_key", extra, {**scope, "metric": metric}))
 	return {"metric": metric, "labels": values[:MAX_LABELS], "truncated": len(values) > MAX_LABELS}
 
 
-def _retention_start(resolution, now):
-	raw_hours, minute_days, hour_days = rollups.retention()
-	return {
-		storage.RAW: now - timedelta(hours=raw_hours),
-		storage.MINUTE: now - timedelta(days=minute_days),
-		storage.HOUR: now - timedelta(days=hour_days),
-	}[resolution]
+def _group_condition(group_cols, groups, params):
+	"""SQL selecting the rows of these groups only (NULL-safe on both databases)."""
+	parts = []
+	for i, group in enumerate(groups):
+		cond = []
+		for c, v in zip(group_cols, group, strict=True):
+			params[f"g{i}_{c}"] = v or ""
+			cond.append(f"coalesce(`{c}`, '') = %(g{i}_{c})s")
+		parts.append("(" + " and ".join(cond) + ")")
+	return "(" + " or ".join(parts) + ")"
 
 
 @frappe.whitelist()
@@ -88,42 +85,46 @@ def query_metric(metric, aggregation=None, group_by=None, label=None, range=None
 	tz = events.system_tz()
 	now = now_datetime()
 	seconds = (win.until - win.since).total_seconds()
-	resolution = rollups.resolution_for(seconds)
+	kept = rollups.kept_from(now)
+	# fine enough for the window's length, and still reaching back to its start
+	resolution = storage.resolution_covering(rollups.resolution_for(seconds), win.since, kept)
 	bucket = storage.chart_bucket(seconds, resolution)
-	# whole buckets: the one still filling would draw as a drop, a cut first one as a dip
-	first, end = storage.floor(win.since, bucket), storage.floor(win.until, bucket)
+	first, end, starts = storage.whole_buckets(win.since, win.until, bucket)
 
 	where = ["metric_name = %(metric)s", *(f"`{k}` = %({k})s" for k in scope)]
 	params = {"metric": metric, **scope}
 	if label:
 		where.append("label_key = %(label)s")
 		params["label"] = str(label)[:140]
-	allowed, allowed_params = _allowed()
+	allowed, allowed_params = access.sql_condition("Wolf Metric Rollup")  # same columns as samples
 	if allowed:
 		where.append(allowed.removeprefix(" and "))
 		params.update(allowed_params)
 	group_cols = list(conditions.group_columns(group_by))
 
-	rows = rollups.bucket_rows(where, params, group_cols, resolution, first, end)
-	cells = storage.bucket_partials(rows, bucket)
-	# per group: the window-wide figure (to rank groups) and the newest sample (freshness)
-	whole = {}
-	for (group, _start), part in cells.items():
-		whole[group] = storage.merge(whole.get(group), part)
+	# rank the groups in SQL over the whole window, then read bucket rows of the shown ones only
+	totals = rollups.aggregate(where, params, group_cols, [], aggregation, resolution, first, end)
 	reverse = aggregation != "min"  # the highest values first, the lowest for min
-	ranked = sorted(whole, key=lambda g: (storage.finalize(whole[g], aggregation) or 0, str(g)), reverse=reverse)
-	shown = ranked[:MAX_GROUPS]
+	missing = float("-inf") if reverse else float("inf")
+	totals.sort(key=lambda r: (r.value if r.value is not None else missing, str([r.get(c) for c in group_cols])), reverse=reverse)
+	shown = totals[:MAX_GROUPS]
+	keys = [tuple(r.get(c) for c in group_cols) for r in shown]
+	only_shown = [*where, _group_condition(group_cols, keys, params)] if group_cols and keys else where
+	cells = {}
+	if keys:
+		cells = storage.bucket_partials(rollups.bucket_rows(only_shown, params, group_cols, resolution, first, end), bucket)
 
-	# freshness means something only when the window reaches now; in a past window an old last
-	# sample is just where the window ends
+	# freshness only means something when the window reaches now; it is read from the newest
+	# sample, not from the last whole bucket (which lags up to a bucket behind)
 	live = win.until >= now - timedelta(minutes=1)
-	starts, t = [], first
-	while t < end:
-		starts.append(t)
-		t += timedelta(seconds=bucket)
+	newest = {}
+	if live and keys:
+		for r in rollups.aggregate(only_shown, params, group_cols, [], "last", storage.MINUTE, now - RECENT, now):
+			newest[tuple(r.get(c) for c in group_cols)] = r.last_at
+
 	series = []
-	for group in shown:
-		last = whole[group]["last_ts"]
+	for row, group in zip(shown, keys, strict=True):
+		last = newest.get(group) or row.last_at
 		series.append({
 			"group": dict(zip(group_cols, group, strict=True)),
 			"name": " · ".join(str(v) for v in group if v) or metric,
@@ -131,13 +132,12 @@ def query_metric(metric, aggregation=None, group_by=None, label=None, range=None
 				[window.to_utc(s, tz), storage.finalize(cells[(group, s)], aggregation) if (group, s) in cells else None]
 				for s in starts
 			],
-			"value": storage.finalize(whole[group], aggregation),
-			"samples": whole[group]["count"],
+			"value": row.value,
+			"samples": row.samples,
 			"last_sample": window.to_utc(last, tz),
 			"stale": live and now - last > catalog.stale_after(metric),
 		})  # fmt: skip
 
-	kept_from = _retention_start(resolution, now)
 	return {
 		"metric": catalog.describe(metric),
 		"aggregation": aggregation,
@@ -149,9 +149,9 @@ def query_metric(metric, aggregation=None, group_by=None, label=None, range=None
 		"resolution": storage.LABELS[resolution],
 		"bucket_seconds": bucket,
 		"series": series,
-		"groups": {"shown": len(shown), "total": len(ranked), "ranked_by": f"{aggregation} over the window, {'highest' if reverse else 'lowest'} first"},
-		# data older than this is gone at this resolution: those buckets are gaps, not zeros
-		"retention": {"kept_from": window.to_utc(kept_from, tz), "clipped": first < kept_from},
+		"groups": {"shown": len(shown), "total": len(totals), "ranked_by": f"{aggregation} over the window, {'highest' if reverse else 'lowest'} first"},
+		# data older than this is deleted at this resolution (rollups.purge): those buckets are gaps
+		"retention": {"kept_from": window.to_utc(kept[resolution], tz), "clipped": first < kept[resolution]},
 		"live": live,
 		"time_zone": tz,
 	}

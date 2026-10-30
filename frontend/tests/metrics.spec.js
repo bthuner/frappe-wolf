@@ -55,6 +55,26 @@ const queries = (fetchFn) => fetchFn.mock.calls.map(([u]) => u).filter((u) => u.
 afterEach(() => vi.unstubAllGlobals())
 
 describe('MetricsPage', () => {
+  it('changes metric in one step: no query with the previous metric label', async () => {
+    const fetchFn = server()
+    const { page, router } = await open('/metrics?metric=disk_used_percent&label=mount%3D%2Fdata&agg=max')
+    const before = queries(fetchFn).length
+    await page.findComponent({ name: 'Select' }).vm.$emit('update:modelValue', 'http_5xx')
+    await flushPromises()
+    const after = queries(fetchFn).slice(before)
+    expect(after).toHaveLength(1)
+    expect(after[0]).toContain('metric=http_5xx')
+    expect(after[0]).not.toContain('label=')
+    expect(router.currentRoute.value.query).toMatchObject({ metric: 'http_5xx' })
+  })
+
+  it('still queries a metric the catalog does not list, and says so', async () => {
+    const fetchFn = server()
+    const { page } = await open('/metrics?metric=my_gone_gauge')
+    expect(page.text()).toContain('my_gone_gauge is not in the catalog')
+    expect(queries(fetchFn).at(-1)).toContain('metric=my_gone_gauge')
+  })
+
   it('does not call a past window stale', async () => {
     server({ 'frappe_wolf.api.metrics.query_metric': () => ({ ...RESULT, live: false, series: [{ ...RESULT.series[0], stale: false }] }) })
     const { page } = await open(`/metrics?metric=disk_used_percent&since=${T[0]}&until=${T[2]}`)

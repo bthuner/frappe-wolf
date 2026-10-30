@@ -1175,8 +1175,12 @@ def main():
 		past = metrics.query_metric("disk_used_percent", host=mhost, since=win_mod.to_utc(now - timedelta(minutes=40), tz),
 		                            until=win_mod.to_utc(now - timedelta(minutes=20), tz))
 		assert not past["live"] and not any(s["stale"] for s in past["series"]), "a past window called stale"
-		labels = metrics.get_labels("disk_used_percent", host=mhost)  # hourly rollups: none closed yet for these
-		assert isinstance(labels["labels"], list), labels
+		# minute rollups of the last hours count: the mounts are listed before any hourly rollup closes
+		labels = metrics.get_labels("disk_used_percent", host=mhost)
+		assert {"mount=/", "mount=/data", "mount=/boot"} <= set(labels["labels"]), labels
+		day = metrics.query_metric("disk_used_percent", "max", "host_label", range="24h", host=mhost)
+		assert day["live"] and not any(s["stale"] for s in day["series"]), "fresh series called stale on a 24h window"
+		assert day["bucket_seconds"] == 720 and day["resolution"] == "1m", day["resolution"]
 
 		user = "smoke-scoped@example.com"
 		frappe.db.delete("Wolf User Scope", {"user": user})

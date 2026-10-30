@@ -261,8 +261,10 @@ Each one has:
 Gauges are read as `avg`, `min`, `max` or `last`. Interval counts are read as `sum` (the total
 per bucket), `avg` or `max` (per push interval). A custom metric is read as a level. Grouping
 follows the metric's level: a host metric has no bench or site. Metrics with a label also
-group by `host_label`. `get_labels(metric, scope)` lists a metric's label values (at most
-100).
+group by `host_label`, and so may a custom metric, whose labels the catalog cannot name. The
+catalog lists every metric the agent sends, which a unit test checks against the agent's
+source. `get_labels(metric, scope)` lists a metric's label values (at most 100), including those
+first seen in the last hour.
 
 ### `frappe_wolf.api.metrics.query_metric`
 
@@ -273,15 +275,20 @@ Arguments:
 A combination the catalog does not allow is refused: a sum of disk levels, the last value of
 an interval count, a host metric grouped by site.
 
-The answer reads whole buckets at the resolution of the window (`resolution`,
-`bucket_seconds`; `window` is what was read, `requested_window` what was asked). It is exact
-across raw samples and rollups. Each of `series` has:
+The answer reads whole buckets (`bucket_seconds`; `window` is what was read,
+`requested_window` what was asked) at a resolution fine enough for the window's length that
+still reaches back to its start (`resolution`). A two-hour zoom into last week reads minute
+rollups, because raw samples that old are purged. It is exact across raw samples and rollups.
+Groups are ranked in SQL first, and only the shown ones are read per bucket. Each of `series`
+has:
 - `points` per bucket, with `null` for a bucket without samples (a gap, not a zero);
 - `value`, the aggregation over the whole window;
 - `samples` and `last_sample`;
-- `stale`, judged only when the window reaches now (`live`); in a past window the last sample
-  is just where the window ends.
+- `stale`, judged only when the window reaches now (`live`), and from the newest sample, not
+  the last whole bucket (which lags by up to a bucket). In a past window the last sample is
+  just where the window ends.
 
 `groups` says how many groups exist and which `MAX_GROUPS` (20) are shown, ranked by the
 aggregation, highest first (lowest for `min`). `retention.clipped` is true when the window
-starts before the data kept at this resolution (`kept_from`): those buckets are gaps.
+starts before the data kept at this resolution (`kept_from`, the cutoff purge applies): those
+buckets are gaps.

@@ -1,9 +1,10 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, Select, TabButtons, TextInput } from 'frappe-ui'
+import { Button, PageHeader, PageHeaderTitle, Select, TabButtons } from 'frappe-ui'
 import { LineChart } from 'frappe-ui/charts'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import ScopeInputs from '@/components/ScopeInputs.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
 import { RANGES } from '@/services/filters'
@@ -24,6 +25,7 @@ const loading = ref(false)
 const showTable = ref(false)
 const pending = ref(null) // first point of a range being selected
 let ticket = 0
+let labelTicket = 0
 
 const metric = useQueryParam('metric', 'cpu_usage')
 const range = useQueryParam('range', '24h', RANGES)
@@ -31,7 +33,15 @@ const site = useQueryParam('site')
 const host = useQueryParam('host')
 const bench = useQueryParam('bench')
 const label = useQueryParam('label')
-const spec = computed(() => catalog.value.find((m) => m.metric === metric.value))
+// a metric the catalog does not list (not seen lately): read as a custom level, and said so,
+// rather than leaving an empty page
+const listed = computed(() => catalog.value.find((m) => m.metric === metric.value))
+const spec = computed(() =>
+  listed.value || (metric.value && catalog.value.length
+    ? { metric: metric.value, label: metric.value, unit: '', kind: 'unknown', seen: false, label_key: 'label', unlisted: true,
+        aggregations: ['avg', 'min', 'max', 'last'], default_aggregation: 'avg', group_bys: ['none', 'host', 'bench', 'site', 'host_label'] }
+    : null),
+)
 const aggregation = useQueryParam('agg', '')
 const groupBy = useQueryParam('group', '')
 const explicit = computed(() => (route.query.since ? { since: route.query.since, until: route.query.until } : null))
@@ -56,10 +66,12 @@ async function loadCatalog() {
 }
 
 async function loadLabels() {
+  const mine = ++labelTicket // a slower answer for the previous metric must not land here
   labels.value = []
   if (!spec.value?.label_key) return
   try {
-    labels.value = (await call('frappe_wolf.api.metrics.get_labels', { metric: metric.value, site: site.value, host: host.value, bench: host.value ? bench.value : undefined })).labels
+    const answer = await call('frappe_wolf.api.metrics.get_labels', { metric: metric.value, site: site.value, host: host.value, bench: host.value ? bench.value : undefined })
+    if (mine === labelTicket) labels.value = answer.labels
   } catch {
     // the filter stays usable with "any"
   }
@@ -133,12 +145,12 @@ onMounted(async () => {
   await loadCatalog()
   await Promise.all([loadLabels(), query()])
 })
-// another metric: its label, aggregation and grouping choices no longer apply
-watch(metric, (now, before) => {
-  if (before && now !== before) {
-    router.replace({ query: { ...route.query, label: undefined, agg: undefined, group: undefined } })
-  }
-})
+// another metric: its label, aggregation and grouping choices go in the same navigation, so
+// no query runs with the previous metric's label
+function chooseMetric(value) {
+  if (value === metric.value) return
+  router.replace({ query: { ...route.query, metric: value, label: undefined, agg: undefined, group: undefined } })
+}
 watch(() => route.query, query)
 watch([metric, site, host, bench], loadLabels)
 </script>
@@ -150,7 +162,7 @@ watch([metric, site, host, bench], loadLabels)
   </PageHeader>
   <div class="mx-auto max-w-6xl space-y-4 p-5">
     <div class="flex flex-wrap items-center gap-2">
-      <Select v-model="metric" :options="metricOptions" class="w-72" aria-label="Metric" />
+      <Select :model-value="metric" :options="metricOptions" class="w-72" aria-label="Metric" @update:model-value="chooseMetric" />
       <Select v-if="aggOptions.length" :model-value="spec && spec.aggregations.includes(aggregation) ? aggregation : spec?.default_aggregation"
         :options="aggOptions" class="w-28" aria-label="Aggregation" @update:model-value="aggregation = $event" />
       <Select v-if="groupOptions.length" :model-value="spec && spec.group_bys.includes(groupBy) ? groupBy : 'none'"
@@ -160,12 +172,13 @@ watch([metric, site, host, bench], loadLabels)
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <TabButtons :model-value="explicit ? null : range" :options="RANGES.map((r) => ({ value: r, label: r }))" @update:model-value="chooseRange" />
-      <TextInput :model-value="site" placeholder="Site" class="w-40" aria-label="Site" @change="site = $event.target.value.trim()" />
-      <TextInput :model-value="host" placeholder="Host" class="w-36" aria-label="Host" @change="host = $event.target.value.trim()" />
-      <TextInput v-if="host" :model-value="bench" placeholder="Bench" class="w-36" aria-label="Bench" @change="bench = $event.target.value.trim()" />
+      <ScopeInputs />
       <Button v-if="explicit" label="Back to a relative window" @click="resetRange" />
     </div>
 
+    <p v-if="spec?.unlisted" class="text-sm" style="color: var(--wolf-warning)">
+      {{ metric }} is not in the catalog and had no data you can see in the last 7 days. It is read as a custom metric.
+    </p>
     <p v-if="spec" class="text-sm text-ink-gray-6">
       {{ spec.label }}: {{ spec.kind === 'interval_count' ? 'counted per push interval, summed per bucket for a total' : spec.kind === 'gauge' ? 'a level at each sample' : 'a custom metric, read as a level' }}<template v-if="spec.unit">, in {{ spec.unit }}</template>.
       <template v-if="spec.caveat"> {{ spec.caveat }}</template>

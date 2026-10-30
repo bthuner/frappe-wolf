@@ -3,4 +3,7 @@
 [post_model_sync]
 frappe_wolf.patches.default_action_link_hours
 frappe_wolf.patches.default_max_clock_skew
+frappe_wolf.patches.default_signal_settings
+frappe_wolf.patches.hash_agent_secrets
+frappe_wolf.patches.default_max_pushes_per_minute
 frappe_wolf.patches.default_storage_settings

@@ -120,6 +120,9 @@ class TestCollectorEndToEnd(unittest.TestCase):
 			"extra_logs": [],
 			"auth_log": self.auth,
 			"collect_host_metrics": False,
+			"tls": False,
+			"mariadb": False,
+			"processes": False,
 		}
 
 	def tearDown(self):

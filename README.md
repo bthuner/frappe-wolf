@@ -57,8 +57,8 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 | Cooldown | re-fire into the just-resolved incident instead of opening a new one |
 | Fire / resolve after evaluations | consecutive breached (or clear) one-minute evaluations before an incident opens (or auto-resolves). Default 1 |
 | Separate resolve threshold | hysteresis: e.g. fire above 90, resolve only once at or below 80 |
-| Channels | Email, Webhook (Slack/Mattermost-compatible JSON), Raven channel. Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
-| Notify on resolve | also tell the channels when the incident auto-resolves (default on) |
+| Channels | Email, Webhook, Raven, Slack, Mattermost, Matrix, ntfy, Gotify, SMS, PagerDuty (see [Channels](#channels)). Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
+| Notify on resolve | also tell the channels when the incident resolves, automatically or by hand (default on). PagerDuty channels always hear it |
 | Escalate after minutes | if still Open (not acknowledged) this long after the first alert, notify the escalation channels once |
 
 Alerts for unresolved incidents carry signed **Acknowledge / Resolve** links (valid 24 h, see Wolf
@@ -75,9 +75,127 @@ Presets installed on install/migrate (edit or disable freely, they are never ove
 502 spike after deployment · 5xx spike · Nightly cron failure (01:00–04:00) · Scheduler failure ·
 Worker crash · Worker queue backlog · SSH brute force · Repeated failed Frappe logins ·
 Admin login from new IP · Privileged role granted · Disk almost full · High CPU · High memory ·
-High load · Agent silent · Scheduler stalled.
+High load · Agent silent · Scheduler stalled · Background jobs failing · Long-running background
+job · No background workers · Queue Redis memory high · Queue Redis evicting keys · No backup for
+26 h · Backup failed · TLS certificate expiring within 14 days · TLS certificate expiring within 3
+days · Database connections high · Slow queries · Replication lag · Replication stopped · Bench
+process down · Email queue backlog · Email sending errors · Admin login from new country.
+
+| Preset | Signal (source) | Fires when |
+|---|---|---|
+| Background jobs failing | `rq_failed_jobs_added` (agent) | 5+ jobs added to RQ's failed registry in 10 min, per bench (warning) |
+| Long-running background job | `rq_long_running_jobs` (agent) | a job has been running longer than `rq.long_job_minutes` (30) for 15 min, per queue (warning) |
+| No background workers | `rq_workers` (agent) | no live RQ worker for 5 min, per bench (critical) |
+| Queue Redis memory high | `redis_used_memory_percent` (agent) | above 90% for 10 min (warning) |
+| Queue Redis evicting keys | `redis_evicted_keys` (agent) | any eviction in 10 min: queued jobs are being lost (critical) |
+| No backup for 26 h | `backup_age_hours` (agent) | the site's newest database backup is older than 26 h (warning) |
+| Backup failed | `error` / `backup_failed` (site) | a backup Error Log (critical) |
+| TLS certificate expiring within 14 / 3 days | `tls_days_left` (agent) | latest sample below 14 (warning) / 3 (critical), per domain |
+| Database connections high | `db_connections_used_percent` (agent) | above 85% of `max_connections` for 5 min (warning) |
+| Slow queries | `db_slow_queries` (agent) | 20+ slow queries in 10 min (warning) |
+| Replication lag / stopped | `db_replication_lag_seconds`, `db_replication_running` (agent) | more than 300 s behind for 10 min / a replica thread stopped for 5 min (critical) |
+| Bench process down | `bench_processes_down` (agent) | a supervisor/systemd process of the bench down for 3 min (critical) |
+| Email queue backlog / sending errors | `error` / `email_queue_backlog`, `email_queue_error` (site) | emails waiting longer than Email Queue Stale Minutes (30) / emails in Error in the last 15 min (warning) |
+| Admin login from new country | `security` / `admin_login_new_country` (site) | a privileged login from a country none of the user's earlier logins came from (critical, needs a GeoIP database) |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
+
+## Channels
+
+Each row of a rule's **Channels** (or **Escalation Channels**) table is one destination. Secrets
+(tokens, keys, webhook URLs) are Password fields: stored encrypted, never logged, and scrubbed from
+every recorded error. **Send test notification** on the rule form sends a TEST to every enabled
+row and shows what each one answered.
+
+| Type | Sends | Settings |
+|---|---|---|
+| Email | one email per recipient, with signed Acknowledge / Resolve links | Recipients |
+| Webhook | generic JSON `{text, incident}` ([protocol](docs/protocol.md#5-incident-action-links-alerts--app)) | Webhook URL |
+| Raven | a message in a Raven channel | Raven Channel |
+| Slack | Block Kit message with a severity colour bar and Open / Acknowledge / Resolve buttons | Incoming Webhook URL* |
+| Mattermost | message attachment with colour, fields and Acknowledge / Resolve links | Incoming Webhook URL* |
+| Matrix | `m.room.message` with an HTML body (`PUT /_matrix/client/v3/rooms/{room}/send/…`) | Homeserver URL, Room ID, Access Token* |
+| ntfy | push with Title, Priority, Tags, Click and action buttons | Server URL (default ntfy.sh), Topic, Access Token* (optional) |
+| Gotify | push with priority mapped from severity and a click URL | Server URL, Application Token* |
+| SMS | short text (one or two SMS) through any HTTP gateway | Phone Numbers, Gateway URL template, Method, Body, Auth Header, Secret*, Max Length |
+| PagerDuty | Events API v2: trigger, acknowledge, resolve, `dedup_key` = incident name | Routing Key*, Events API URL |
+
+\* Password field: stored encrypted, shown as asterisks.
+
+**Which channel hears what.** Firing and re-opened incidents go to the Channels, escalations to the
+Escalation Channels. When someone acknowledges or resolves an incident (Desk or a signed link),
+**PagerDuty** channels always get the matching `acknowledge` / `resolve` event so the alert closes on
+call too; the other channels hear a resolution only when the rule has *Notify on resolve*. A test from
+the rule form triggers then resolves on PagerDuty, so it never leaves an alert open.
+
+**Delivery status.** Every attempt is recorded as a **Wolf Delivery** (channel, target without
+secrets, kind, PagerDuty action, ok or error, HTTP status) and listed under *Deliveries* on the
+incident. Deliveries follow the event retention.
+
+Setup notes:
+
+- **Slack**: create an app → *Incoming Webhooks* → *Add New Webhook to Workspace*, paste the
+  `https://hooks.slack.com/services/…` URL. Buttons open the incident or the signed action page
+  (no Slack interactivity endpoint is needed; Slack may show a warning icon on link buttons of
+  apps without one).
+- **Mattermost**: *Integrations → Incoming Webhooks → Add*, paste the `https://…/hooks/…` URL.
+- **Matrix**: create a bot account, invite it to the room and join, get its access token
+  (Element: *Settings → Help & About → Access Token*, or `POST /_matrix/client/v3/login`). The Room
+  ID is the internal `!…:server` one (*Room settings → Advanced*), not an alias.
+- **ntfy**: any topic on ntfy.sh or your own server. On a public server pick an unguessable topic or
+  protect it and paste an access token (`tk_…`). Priority: critical 5, warning 4, info 3, resolved 2;
+  escalations one step higher.
+- **Gotify**: *Apps → Create application*, paste its token. Priority: critical 8, warning 5, info 3,
+  resolved 2; escalations two steps higher.
+- **SMS**: provider agnostic. The Gateway URL and the optional Body Template take `{to}`, `{text}` and
+  `{secret}` placeholders (URL-encoded in the URL and form bodies, JSON-escaped in JSON bodies); the
+  Auth Header is a header line such as `Authorization: Bearer {secret}`. Put API keys in *Secret*,
+  never in the URL. One request per phone number. The text (kind, severity, title, scope and the
+  incident URL when it fits) is folded to the GSM-7 alphabet and cut on a word boundary to 160
+  characters (one SMS) or 306 (two); text that needs Unicode fits 70 / 134. Example (a gateway that
+  takes JSON):
+
+  ```
+  Gateway URL:   https://sms.example.com/api/send
+  Method / Body: POST, json, {"to": "{to}", "message": "{text}"}
+  Auth Header:   Authorization: Bearer {secret}
+  ```
+
+- **PagerDuty**: add an *Events API v2* integration to a service and paste its integration key as
+  the Routing Key. Change the Events API URL for the EU region
+  (`https://events.eu.pagerduty.com/v2/enqueue`) or for an Events-v2 compatible receiver (Grafana
+  OnCall, Opsgenie and others accept the same body). PagerDuty channels are never digested.
+
+## Incident workflow
+
+On a **Wolf Incident** (Wolf Manager):
+
+- **Assign to me**, or set **Assigned To**: Frappe's assignment runs (ToDo, sidebar, notification to
+  the assignee). The sidebar's own assign/unassign keeps the field in step.
+- **Add comment** on the timeline. Comments, assignments and status changes (who acknowledged or
+  resolved, from Version history; auto-resolves from the incident's own fields) are interleaved
+  with the events. Wolf Users can comment too.
+- **Manual incidents**: create one in Desk, or **Open incident from this event** on a Wolf Event.
+  They have no rule, so the rules engine never auto-resolves them.
+- **Actions → Merge into…** moves events and comments to the target, resolves the source with
+  **Merged Into** set. If the source came from a rule, further breaches of that rule feed the
+  target instead of opening a duplicate. **Actions → Split…** moves the events you tick to a new
+  incident (no rule, **Split From** set).
+- **Write postmortem** on a resolved incident creates a **Wolf Postmortem**: summary, impact
+  (scope, duration, event count), root cause, lessons, action items (owner, due date, status) and
+  a frozen, escaped timeline snapshot.
+
+**Wolf Incident Metrics** (script report): incidents, MTTA (acknowledged − started) and MTTR
+(resolved − started) average, p50 and p90 in minutes, per site, bench, host, rule or severity over
+a date range. Merged incidents are left out so an outage counts once.
+
+**Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
+history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
+ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the
+resolved ones of the last N days, with only a title, severity, public status (Investigating /
+Identified / Resolved) and times. Hosts, rules, summaries and payloads never leave the server.
+Internal titles often name hosts, so an incident is shown as "Degraded performance" or "Service
+disruption" unless you fill its **Public Title**.
 
 ## Metric storage
 
@@ -125,8 +243,23 @@ a few hundred hosts, the Frappe tables above are enough and keep Wolf a plain Fr
 ## Signals captured on the Wolf site itself
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),
-Error Logs, failed desk logins, privileged logins from a new IP, privileged role grants and each
+Error Logs (failed backups as `backup_failed`), failed desk logins, privileged logins from a new IP
+or a new country, privileged role grants, Email Queue backlogs and sending errors, and each
 `bench migrate` (as a deployment). Each signal can be turned off in Wolf Settings.
+
+**Admin login from a new country** needs an offline GeoIP database on the server; Wolf never calls
+an online lookup service. Set **Wolf Settings → GeoIP Database** to the path of either:
+
+- a MaxMind-format `.mmdb` file: GeoLite2-Country or GeoLite2-City (free MaxMind account),
+  DB-IP "IP to Country Lite" (`dbip-country-lite-*.mmdb`, CC BY 4.0) or IPinfo Lite. Wolf reads it
+  with its own minimal reader, so no extra Python package is needed;
+- or a CSV of ranges, one per line: `start_ip,end_ip,CC` (DB-IP / IPinfo "country lite" CSV),
+  integer `start,end,CC,...` (IP2Location LITE DB1) or `network/prefix,CC`. Header lines are skipped.
+
+Relative paths are read from the site directory (for example `private/files/dbip-country.mmdb`).
+Refresh the file monthly; Wolf reloads it when it changes. Private and loopback addresses have no
+country, and a user whose earlier logins all came from such addresses has no baseline yet, so
+nothing is flagged until a first public login is known.
 
 ## Every site on a bench
 
@@ -146,8 +279,9 @@ The same is available in Desk: **Wolf Settings → Register with central site**.
 
 A satellite:
 
-- keeps capturing its local signals (failed scheduled jobs, Error Logs, logins, privileged role
-  grants, `bench migrate`), with the same Wolf Settings switches;
+- keeps capturing its local signals (failed scheduled jobs, Error Logs and failed backups, logins
+  incl. new IPs/countries, privileged role grants, Email Queue backlog/errors, `bench migrate`),
+  with the same Wolf Settings switches;
 - stores them in **Wolf Outbox** and pushes them every minute to the central site through the
   agent ingest API, with the same host/bench/site scope, so central rules and incidents see them
   like any other event;
@@ -160,6 +294,43 @@ On the central site the satellite is a **Wolf Agent** with kind `satellite`, nam
 site. Its push runs every minute even when there is nothing to send, so the **Agent silent**
 preset also fires when a satellite's scheduler stops. Disable the Wolf Agent to stop accepting
 its events. Setting Mode back to `central` makes the site a standalone Wolf again.
+
+## Privacy and access
+
+**Who sees what.** Wolf Manager (and System Manager) see and configure everything. Wolf User
+is read-only. To limit a Wolf User to some sites, benches or hosts, add **Wolf User Scope**
+rows (`/app/wolf-user-scope`, Wolf Managers only): one row per grant, `scope` = `site`,
+`bench` or `host`, `value` = the name as it appears on Wolf events. For example:
+
+| User | Scope | Value |
+|---|---|---|
+| jane@client.com | site | erp.client.com |
+| jane@client.com | site | shop.client.com |
+| ops-team@dokos.io | host | bench-02 |
+
+A restricted user then sees only the Wolf Events, Metric Samples and Rollups, Incidents, Silences and Agents
+whose site, bench or host matches one of their rows, in list views, reports, forms, link
+searches, the Wolf Overview page, charts and incident timelines. Rows are OR-ed. Host-wide
+records (CPU, disk, SSH logins: no site) need a `host` row. A Wolf User without any row is not
+restricted. Frappe's own User Permissions cannot do this, because site/bench/host are plain
+Data fields, so Wolf uses `permission_query_conditions` and `has_permission` hooks
+(`frappe_wolf/wolf/access.py`). Alert rule definitions stay readable by every Wolf User.
+
+**Agent secrets.** Wolf stores only a salted HMAC-SHA256 hash of each agent's secret; the
+secret is shown once, at registration or when you click **Rotate secret** on the Wolf Agent
+form. Nobody can read it back from the site, so to move an agent or recover a lost config,
+rotate the secret (or re-register the host) instead. Agents registered before this change
+keep working: `bench migrate` hashes their stored secret and deletes the encrypted copy. A
+satellite keeps its own secret encrypted in its Wolf Settings, since it has to send it; the
+central site stores only the hash.
+
+**Push rate limit.** Each agent may push at most **Max Pushes Per Minute** times (Wolf Settings,
+default 120, `0` = no limit). Excess pushes get HTTP 429 and stay in the agent's spool.
+
+**Scrubbing.** The agent strips e-mail addresses, credentials (Authorization/Cookie headers,
+tokens, `password=` values, `sid`), card numbers and IBANs from events before they leave the
+host. IP addresses are kept by default for the security rules. See
+[`agent/README.md`](agent/README.md#scrubbing-pii-and-secrets).
 
 ## Development
 

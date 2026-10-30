@@ -4,7 +4,7 @@ import frappe
 from frappe.utils import add_days, add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import digest, escalation, events, rollups, rules, silences
+from frappe_wolf.wolf import digest, email_queue, escalation, events, rollups, rules, silences
 
 
 def evaluate_rules():
@@ -42,6 +42,12 @@ def send_digests():
 	if satellite.is_satellite():
 		return
 	digest.send_all()
+
+
+def check_email_queue():
+	"""Email Queue backlog/errors; runs on satellites too (their events are forwarded)."""
+	email_queue.check()
+	frappe.db.commit()
 
 
 def check_agents():
@@ -109,4 +115,5 @@ def purge_old_data():
 		{"before": add_days(now, -event_days)},
 	)
 	frappe.db.delete("Wolf Silence", {"ends_at": ("<", add_days(now, -event_days))})
+	frappe.db.delete("Wolf Delivery", {"at": ("<", add_days(now, -event_days))})
 	frappe.db.commit()

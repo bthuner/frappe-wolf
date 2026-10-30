@@ -104,7 +104,7 @@ def cmd_check(args):
 		cfg["benches"] = _discover(args, cfg)
 	if args.platform and args.platform != "auto":
 		cfg["platform"] = args.platform
-	collector = Collector(cfg, state_path=None, from_start=args.from_start)
+	collector = Collector(cfg, state_path=None, from_start=args.from_start, sync_checks=True)
 	metrics, events = collector.collect()
 	collector.close()
 	body = {"hostname": cfg["hostname"], "agent_version": __version__, "metrics": metrics, "events": events}

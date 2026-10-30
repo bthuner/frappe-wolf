@@ -24,9 +24,27 @@ frappe.ui.form.on("Wolf Alert Rule", {
 				});
 			})
 		);
-		if (!frm.is_new() && (frm.doc.channels || []).length) {
+		if (!frm.is_new() && (frm.doc.channels || []).concat(frm.doc.escalation_channels || []).length) {
 			frm.add_custom_button(__("Send test notification"), () =>
-				frm.call("send_test_notification").then(() => frappe.show_alert(__("Test sent")))
+				frm.call("send_test_notification").then(({ message }) => {
+					const esc = frappe.wolf.esc;
+					const rows = (message.results || [])
+						.map(
+							(r) =>
+								`<tr><td>${esc(r.channel_type)}</td><td>${esc(r.target)}</td><td>${esc(r.action || "")}</td>
+								<td>${r.ok ? `<span class="indicator-pill green">${__("sent")}</span>` : `<span class="indicator-pill red">${__("failed")}</span>`}</td>
+								<td>${esc(r.http_status || "")}</td><td>${esc(r.error || "")}</td></tr>`
+						)
+						.join("");
+					frappe.msgprint({
+						title: __("Test notification"),
+						message: rows
+							? `<table class="table table-sm"><thead><tr><th>${__("Channel")}</th><th>${__("Target")}</th><th>${__("Action")}</th><th></th><th>${__("HTTP")}</th><th>${__("Error")}</th></tr></thead><tbody>${rows}</tbody></table>
+							<p class="text-muted">${__("Recorded on incident {0}.", [`<a href="/app/wolf-incident/${encodeURIComponent(message.incident)}">${esc(message.incident)}</a>`])}</p>`
+							: __("No enabled channel to test."),
+						wide: true,
+					});
+				})
 			);
 		}
 	},

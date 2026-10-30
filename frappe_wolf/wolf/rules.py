@@ -76,6 +76,9 @@ def evaluate(rule, now=None):
 			result["resolved"].append(name)
 			if _flag(rule, "notify_on_resolve"):
 				notify.enqueue(name, "resolved")
+			elif notify.has_stateful(rule.name):
+				# Close the alert on PagerDuty-style channels even when the others stay quiet.
+				notify.enqueue(name, "resolved", only_stateful=True)
 			continue
 		if action not in ("fire", "update"):
 			continue

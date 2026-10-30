@@ -21,7 +21,11 @@ Sources were read at these commits. Every link below is pinned to them:
 | Rediscovery | Rescans every `press.rediscover_interval` seconds (default 60), because each deploy creates a new bench directory | done, unit tested |
 | Bench logs | Tails `<bench>/logs/*` (bind-mounted from the container) and `sites/<site>/logs/*`, using the same parsers as other benches | done |
 | nginx | Tails `/var/log/nginx/access.log` (Press's `main` format, which logs `$host`) and maps custom domains to sites | done, unit tested |
-| Redis queue | Reads `queue_length` from `redis://127.0.0.1:<rq_port>` (bench `config.json`) | done |
+| Redis queue | Reads `queue_length`, the RQ failed/started registries, live workers and Redis memory/evictions from `redis://127.0.0.1:<rq_port>` (bench `config.json`) | done |
+| TLS expiry | Checks every site and custom domain like on other benches. On Press the certificates live on the proxy server, so the public handshake measures what customers see | done (generic) |
+| Backups | **Skipped** by default (`backups.press: false`): Press takes backups through its agent and uploads them offsite; whether local copies stay in `sites/<site>/private/backups` has not been checked | off |
+| Processes | **Skipped**: supervisor runs inside each bench container and Wolf never runs `docker` | — |
+| MariaDB | Uses the site's `db_host`, which on Press points at the separate database server; it works only if the app server can reach it with the site user and has a `mariadb` client | unverified |
 | Deploy correlation | Emits a `deployment` event for each deploy, update or migrate job in the Press agent's `jobs.sqlite3`, and an `error` event when one fails | done, unit tested |
 | Fallback | If `jobs.sqlite3` cannot be read, emits a `deployment` event when a new bench appears or a site moves to another bench | done, unit tested |
 | Press credentials | None are needed. Everything is read from local files. | — |

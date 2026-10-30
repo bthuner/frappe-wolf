@@ -818,6 +818,125 @@ def main():
 		return (f"60 unresolved counted past the 50-row list (7 critical, 40 unacknowledged), bench filter {bench_only}, "
 		        f"satellite counted on its host, scoped user sees 55 and only {kpi_site} + the quiet {quiet}")
 
+	def incident_view():
+		"""Incident page APIs: detail, timeline pages with ties, families, access, actions, deleted deployment."""
+		from frappe_wolf.api import incident as inc_api
+		from frappe_wolf.api import incident_view as view
+		from frappe_wolf.wolf import access
+
+		site, other = "tl.localhost", "tl-other.localhost"
+		at = now - timedelta(minutes=20)
+
+		def ev(title, site_, minutes=0, typ="error", bench="b1"):
+			return events.insert_event(schema.normalize_event(
+				{"type": typ, "host": HOST, "bench": bench, "site": site_, "severity": "critical", "title": title},
+				tz, at + timedelta(minutes=minutes)))
+
+		deploy = ev("tl deploy", site, -5, "deployment")
+		linked = [ev(f"tl linked {i}", site) for i in range(7)]  # seven rows at the same time
+		context = [ev(f"tl context {i}", site, 2) for i in range(3)]
+		# another site on another bench: out of scope (a site on the same bench would be context)
+		hidden = ev("tl other site", other, 1, bench="b9")
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "tl incident", "host": HOST, "bench": "b1",
+		                      "site": site, "severity": "critical", "status": "Open", "started_at": at,
+		                      "deployment_event": deploy, "deployment_at": at - timedelta(minutes=5)}).insert()
+		for name in linked:
+			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		for i in range(3):
+			frappe.get_doc({"doctype": "Wolf Delivery", "incident": inc.name, "at": at, "kind": "webhook",
+			                "channel_type": "webhook", "action": "opened", "ok": i != 2, "http_status": 200 if i != 2 else 500,
+			                "target": "https://hooks.example.test/x"}).insert(ignore_permissions=True)
+		inc_api.add_comment(inc.name, "Looking <b>now</b>")
+		frappe.db.commit()
+
+		detail = view.get_incident(inc.name)
+		assert detail["deployment"]["available"] and detail["event_records"] == 7, detail
+		assert detail["can"]["acknowledge"] and detail["can"]["resolve"], detail["can"]
+		full = view.get_timeline(inc.name, limit=500)
+		ids = [r["id"] for r in full["rows"]]
+		assert not full["paging"]["has_more"] and len(ids) == len(set(ids)), "duplicates in one page"
+		assert f"event:{hidden}" not in ids, "other site's event in the timeline"
+		assert {f"event:{n}" for n in linked + context + [deploy]} <= set(ids), "events missing"
+		deploy_row = next(r for r in full["rows"] if r["id"] == f"event:{deploy}")
+		assert deploy_row["relation"] == "preceding_change", deploy_row
+		comment = next(r for r in full["rows"] if r.get("activity") == "comment")
+		assert comment["text"] == "Looking <b>now</b>", comment  # plain text as typed, never HTML to render
+		results = sorted(r["result"] for r in full["rows"] if r["kind"] == "delivery")
+		assert results == ["accepted", "accepted", "failed"], results
+		# every page size gives the same rows, once each, in the same order
+		for limit in (1, 2, 3, 7):
+			paged, cursor = [], None
+			while True:
+				page = view.get_timeline(inc.name, cursor=cursor, limit=limit)
+				paged += [r["id"] for r in page["rows"]]
+				if not page["paging"]["has_more"]:
+					break
+				cursor = page["paging"]["next_cursor"]
+			assert paged == ids, f"limit {limit}: {len(paged)} rows vs {len(ids)}"
+		evidence = view.get_timeline(inc.name, families="evidence")["rows"]
+		assert {r["family"] for r in evidence} == {"evidence"} and len(evidence) == 7, evidence
+		try:
+			view.get_timeline(inc.name, cursor="garbage")
+			raise AssertionError("bad cursor accepted")
+		except frappe.ValidationError:
+			pass
+
+		user = "smoke-scoped@example.com"
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site", "value": other}).insert()
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			try:
+				view.get_incident(inc.name)
+				raise AssertionError("scoped user read another site's incident")
+			except frappe.PermissionError:
+				pass
+			listed = view.list_incidents(status="all", limit=200)["incidents"]
+			assert inc.name not in {i["name"] for i in listed}, "incident listed to a scoped user"
+		finally:
+			frappe.set_user("Administrator")
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site", "value": site}).insert()
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			assert not view.get_incident(inc.name)["can"]["acknowledge"], "Wolf User offered an action"
+			try:
+				view.act(inc.name, "acknowledge")
+				raise AssertionError("Wolf User acknowledged")
+			except frappe.PermissionError:
+				pass
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Wolf User Scope", {"user": user})
+			access.clear_cache()
+
+		acked = view.act(inc.name, "acknowledge")
+		assert acked["status"] == "Acknowledged" and acked["acknowledged"]["by"] == "Administrator", acked
+		mine = view.act(inc.name, "assign_to_me")
+		assert mine["assigned_to"]["user"] == "Administrator", mine
+		statuses = [r["summary"] for r in view.get_timeline(inc.name, families="activity")["rows"]]
+		assert any("acknowledged" in s for s in statuses), statuses
+
+		# retention deleted the deployment event: the incident still says one happened
+		frappe.db.delete("Wolf Event", {"name": deploy})
+		frappe.db.commit()
+		gone = view.get_incident(inc.name)["deployment"]
+		rows = view.get_timeline(inc.name)["rows"]
+		unavailable = [r for r in rows if r["id"] == f"deployment:{inc.name}"]
+		assert not gone["available"] and unavailable and unavailable[0]["unavailable"], (gone, unavailable)
+
+		first = view.list_incidents(status="all", limit=1)
+		assert first["paging"]["has_more"] and first["paging"]["next_cursor"], first["paging"]
+		second = view.list_incidents(status="all", limit=1, cursor=first["paging"]["next_cursor"])
+		assert second["incidents"][0]["name"] != first["incidents"][0]["name"], "list page repeated"
+		view.act(inc.name, "resolve")
+		frappe.db.delete("Wolf Event", {"name": ("in", linked + context + [hidden])})
+		frappe.db.commit()
+		return (f"{inc.name}: {len(ids)} rows identical at page sizes 1/2/3/7, other site hidden, comment as text, "
+		        f"2 accepted + 1 failed deliveries, Wolf User denied, acknowledged and assigned, deleted deployment kept")
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -826,7 +945,8 @@ def main():
 	                 ("assign+comment+activity", workflow), ("merge+split", merge_split), ("postmortem", postmortem),
 	                 ("metrics report", metrics), ("status page", status_page),
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
-	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts)]:
+	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
+	                 ("incident view", incident_view)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

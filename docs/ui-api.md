@@ -105,3 +105,59 @@ list as complete.
 - `unplaced_sites` holds sites seen without a host (for example a satellite with no host
   information); they are not attached to a guessed host.
 - Times are UTC.
+
+## Incident page
+
+### `frappe_wolf.api.incident_view.list_incidents`
+
+Incidents the caller may see, newest first. Arguments: `status` (`unresolved`, the default,
+`resolved` or `all`), the scope arguments, `limit` (at most 200) and `cursor`. Pages follow
+`(started_at, name)`, so two incidents started at the same second are neither repeated nor
+skipped. Returns `incidents`, `paging` (`has_more`, `next_cursor`) and `time_zone`.
+
+### `frappe_wolf.api.incident_view.get_incident`
+
+The incident header in one call: title, status, severity, scope, start, acknowledgement,
+resolution and owner, rule, silence, notification and escalation times, merge and split links,
+and the timeline window. `deployment` gives the time of the deployment before the incident,
+with `available: false` when retention deleted its event but the incident kept the time.
+`event_records` (linked Wolf Events) and `event_count` (the repeats they absorbed) are
+different numbers. `can` says which actions the caller may take: Wolf Users read and comment,
+and Wolf Managers also acknowledge, resolve, take the incident and work on it in Desk.
+
+### `frappe_wolf.api.incident_view.get_timeline`
+
+One page of the timeline, oldest first. Arguments: `incident`, `limit` (default 100, at most
+500), `cursor`, and `families`, a comma-separated subset of:
+
+| Family | Rows |
+|---|---|
+| `evidence` | Wolf Events linked to the incident, at any time |
+| `context` | Other events in its scope (site, the same bench on the same host, or host-wide) during its window, if the caller may see them, and the deployment before it |
+| `activity` | Status changes, assignments, comments and notes, from Frappe's Version and Comment history |
+| `delivery` | Notification attempts (Wolf Delivery) |
+
+Each row has a stable `id` (`event:<name>`, `activity:comment:<name>`,
+`activity:version:<name>:<field>`, `delivery:<name>`, `deployment:<incident>`), `family`,
+`kind`, `at` (UTC) and a plain-text `summary`, plus per kind:
+
+- **Events:** `relation` is `linked`, `context` or `preceding_change` (the deployment before the
+  incident, never called its cause). `count`, `first_seen` and `last_seen` describe a
+  deduplicated record: one row, not one row per occurrence. `details` is the event payload,
+  for display as text.
+- **Activity:** `user_name`. Comments and notes come as plain `text`, never HTML to render.
+- **Deliveries:** `channel`, `action`, `target`, `result` and `http_status`. `result` is
+  `accepted` when the endpoint took the message, which does not mean a person read it.
+
+Rows are ordered by time, then events, activity and deliveries, then id. Rows with the same
+time have no causal order. `paging.next_cursor` continues after the last row; the same rows
+come back once each whatever the page size. `truncated.delivery` reports when more than 2,000
+attempts exist. `window` is the incident's window (start minus `padding_minutes`, to its
+resolution or now).
+
+### `frappe_wolf.api.incident_view.act`
+
+POST `incident` and `action`, one of `acknowledge`, `resolve` or `assign_to_me`. It runs the
+incident's own method, so Frappe's write permission and the incident's rules apply, and
+returns the new `get_incident`. Merged incidents refuse every action. Merge, split and
+postmortems stay in Desk for now.

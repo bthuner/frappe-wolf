@@ -184,7 +184,9 @@ def build_activity(incident, versions, comments):
 			if field not in TRACKED_FIELDS or old == new:
 				continue
 			kind = "status" if field == "status" else "field"
-			out.append({"kind": kind, "field": field, "from": old, "to": new, "timestamp": ts, "user": v.get("owner")})
+			out.append(
+				{"kind": kind, "field": field, "from": old, "to": new, "timestamp": ts, "user": v.get("owner"), "version": v.get("name")}
+			)
 			if field == "status" and new in status_seen and ts:
 				status_seen[new].append(ts)
 

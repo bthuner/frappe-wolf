@@ -105,7 +105,7 @@ def get_activity(inc):
 	versions = frappe.get_all(
 		"Version",
 		filters={"ref_doctype": "Wolf Incident", "docname": inc.name},
-		fields=["owner", "creation", "data"],
+		fields=["name", "owner", "creation", "data"],
 		order_by="creation asc",
 		limit=200,
 	)

@@ -19,10 +19,17 @@ async function render(component, path) {
 }
 
 describe('PendingPage', () => {
-  it('says the view is not built and links the Desk page that covers it', async () => {
-    const page = await render(PendingPage, '/metrics')
+  it('says a view is not built and links the Desk page that covers it', async () => {
+    const { createRouter } = await import('vue-router')
+    const router = createRouter({
+      history: createMemoryHistory('/wolf'),
+      routes: [{ path: '/later', component: PendingPage, meta: { title: 'Later', fallback: 'metrics', planned: 'Something useful.' } }],
+    })
+    await router.push('/later')
+    await router.isReady()
+    const page = mount(PendingPage, { global: { plugins: [router], provide: { boot: BOOT } } })
     expect(page.text()).toContain('This view is not built yet')
-    expect(page.text()).toContain('Metric explorer')
+    expect(page.text()).toContain('Something useful.')
     expect(page.get('a.wolf-link').attributes('href')).toBe('/app/wolf-overview')
   })
 })

@@ -22,7 +22,8 @@ def rollup_metrics():
 
 def purge_metrics():
 	"""Hourly, so each run deletes about an hour of raw samples."""
-	rollups.purge()
+	# a satellite rolls nothing up (rollup_metrics): its raw samples follow raw retention
+	rollups.purge(rolled=not satellite.is_satellite())
 
 
 def forward_outbox():

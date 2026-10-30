@@ -97,6 +97,19 @@ class TestRollupExactness(unittest.TestCase):
 		with self.assertRaises(ValueError):
 			storage.finalize(storage.new_partial(1.0, T0), "p95")
 
+	def test_clamp_sum(self):
+		# two values that fit the column, whose sum does not
+		big = storage.merge(storage.new_partial(6e11, T0), storage.new_partial(6e11, T0 + timedelta(seconds=30)))
+		self.assertTrue(storage.clamp_sum(big))
+		self.assertEqual(big["sum"], storage.MAX_STORED)
+		self.assertEqual(big["max"], 6e11)
+		low = storage.merge(storage.new_partial(-6e11, T0), storage.new_partial(-6e11, T0))
+		self.assertTrue(storage.clamp_sum(low))
+		self.assertEqual(low["sum"], -storage.MAX_STORED)
+		small = storage.new_partial(91.5, T0)
+		self.assertFalse(storage.clamp_sum(small))
+		self.assertEqual(small["sum"], 91.5)
+
 
 class TestResolution(unittest.TestCase):
 	def test_pick_resolution(self):

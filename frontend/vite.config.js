@@ -12,6 +12,8 @@ export default defineConfig({
       buildConfig: {
         outDir: path.resolve(__dirname, '../frappe_wolf/public/frontend'),
         indexHtmlPath: path.resolve(__dirname, '../frappe_wolf/www/wolf.html'),
+        // not guessed from the path: a bench under a directory named `public` would fool it
+        baseUrl: '/assets/frappe_wolf/frontend/',
       },
     }),
     vue(),

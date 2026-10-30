@@ -6,6 +6,7 @@ missing feature instead of showing an empty page.
 """
 
 READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
+# who may act on incidents and configure Wolf; wolf/workflow.py enforces it with this tuple
 MANAGER_ROLES = ("System Manager", "Wolf Manager")
 
 # Desk pages that still do the job of a view the SPA does not have yet (Desk stays available).

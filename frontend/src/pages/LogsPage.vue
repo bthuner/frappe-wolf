@@ -21,5 +21,6 @@ const logs = boot.capabilities.logs
         <RouterLink class="wolf-link" :to="{ name: 'events' }">Search those events</RouterLink>.
       </p>
     </template>
+    <p v-else>Log search has a backend now, but its view is not built yet.</p>
   </section>
 </template>

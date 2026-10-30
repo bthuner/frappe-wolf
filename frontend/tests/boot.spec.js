@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { deskFallback, loadBoot } from '@/services/boot'
+import { deskFallback, loadBoot, logout } from '@/services/boot'
 
 const BOOT = {
   user: { name: 'ops@example.com', full_name: 'Ops' },
@@ -54,5 +54,34 @@ describe('deskFallback', () => {
 
   it('has nothing for a view without a Desk page', () => {
     expect(deskFallback(BOOT, { meta: {}, params: {} })).toBeNull()
+  })
+})
+
+describe('signed in without a Wolf role', () => {
+  it('shows an error instead of looping through /login', async () => {
+    const win = fakeWindow({ document: { cookie: 'user_id=clerk%40example.com; sid=abc' } })
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 403 })
+    await expect(loadBoot({ win, fetchFn })).rejects.toThrow('Wolf User or Wolf Manager role')
+    expect(win.location.href).toBe('')
+  })
+
+  it('still sends a guest to the login page on 403', async () => {
+    const win = fakeWindow({ document: { cookie: 'user_id=Guest' } })
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 403 })
+    expect(await loadBoot({ win, fetchFn })).toBeNull()
+    expect(win.location.href).toMatch(/^\/login\?redirect-to=/)
+  })
+})
+
+describe('logout', () => {
+  it('posts to the logout method with the CSRF token, then leaves', async () => {
+    const win = fakeWindow({ csrf_token: 'tok' })
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true })
+    await logout({ win, fetchFn })
+    const [url, init] = fetchFn.mock.calls[0]
+    expect(url).toBe('/api/method/logout')
+    expect(init.method).toBe('POST')
+    expect(init.headers['X-Frappe-CSRF-Token']).toBe('tok')
+    expect(win.location.href).toBe('/login')
   })
 })

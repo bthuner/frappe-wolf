@@ -1,5 +1,7 @@
 <script setup>
 import { Sidebar, SidebarHeader, SidebarItem, SidebarLabel, useColorScheme } from 'frappe-ui'
+
+import { logout } from '@/services/boot'
 import { computed, inject } from 'vue'
 
 const boot = inject('boot')
@@ -18,7 +20,7 @@ const menu = computed(() => [
     onClick: () => setColorScheme(s.value),
   })),
   { label: 'Open Desk', icon: 'lucide-external-link', onClick: () => window.location.assign(boot.desk.home) },
-  { label: 'Log out', icon: 'lucide-log-out', onClick: () => window.location.assign('/?cmd=web_logout') },
+  { label: 'Log out', icon: 'lucide-log-out', onClick: () => logout() },
 ])
 </script>
 

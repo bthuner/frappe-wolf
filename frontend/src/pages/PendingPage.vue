@@ -10,6 +10,8 @@ import { deskFallback } from '@/services/boot'
 const route = useRoute()
 const boot = inject('boot')
 const desk = computed(() => deskFallback(boot, route))
+// a satellite keeps no incidents: its central site opens them
+const unavailable = computed(() => route.meta.capability && !boot.capabilities?.[route.meta.capability]?.available)
 const subject = computed(() => Object.values(route.params).filter(Boolean).join(' / '))
 </script>
 
@@ -17,7 +19,13 @@ const subject = computed(() => Object.values(route.params).filter(Boolean).join(
   <PageHeader>
     <PageHeaderTitle :title="subject ? `${route.meta.title}: ${subject}` : route.meta.title" />
   </PageHeader>
-  <section class="max-w-2xl space-y-3 p-5 text-base text-ink-gray-8">
+  <section v-if="unavailable" class="max-w-2xl space-y-3 p-5 text-base text-ink-gray-8">
+    <p>
+      This site is a satellite: it forwards its telemetry to a central Wolf site, which opens and
+      keeps the incidents. Look for {{ route.meta.title.toLowerCase() }} there.
+    </p>
+  </section>
+  <section v-else class="max-w-2xl space-y-3 p-5 text-base text-ink-gray-8">
     <p>
       This view is not built yet. When it is, it will show:
       <span class="text-ink-gray-9">{{ route.meta.planned }}</span>

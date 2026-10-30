@@ -27,6 +27,8 @@ website_route_rules = [
 	{"from_route": "/wolf/<path:app_path>", "to_route": "wolf"},
 ]
 
+boot_session = "frappe_wolf.api.spa.boot_session"
+
 after_install ="frappe_wolf.install.after_install"
 after_migrate = "frappe_wolf.install.after_migrate"
 

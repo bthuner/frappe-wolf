@@ -6,11 +6,14 @@ FROM ${BASE}
 
 USER frappe
 WORKDIR /home/frappe/frappe-bench
+# The Wolf UI's packages first: this layer survives edits to the Python app.
+COPY --chown=frappe:frappe frontend/package.json frontend/yarn.lock apps/frappe_wolf/frontend/
+RUN cd apps/frappe_wolf/frontend && yarn install --frozen-lockfile --non-interactive
 COPY --chown=frappe:frappe pyproject.toml README.md LICENSE package.json apps/frappe_wolf/
 COPY --chown=frappe:frappe frappe_wolf apps/frappe_wolf/frappe_wolf
 # The Wolf UI (/wolf): what `bench build --app frappe_wolf` runs, without rebuilding Desk assets.
 COPY --chown=frappe:frappe frontend apps/frappe_wolf/frontend
-RUN cd apps/frappe_wolf/frontend && yarn install --frozen-lockfile --non-interactive && yarn build
+RUN cd apps/frappe_wolf/frontend && yarn build
 COPY --chown=frappe:frappe agent /home/frappe/wolf-agent-src
 RUN env/bin/pip install --no-cache-dir -e apps/frappe_wolf \
  && env/bin/pip install --no-cache-dir /home/frappe/wolf-agent-src \

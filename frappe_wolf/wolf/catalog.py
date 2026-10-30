@@ -34,6 +34,7 @@ _SPEC = [
 	("redis_used_memory_percent", "redis", "Redis memory used", "gauge", "%", "bench", PUSH_SECONDS),
 	("redis_evicted_keys", "redis", "Redis evicted keys", "interval_count", "keys", "bench", PUSH_SECONDS),
 	("db_connections_used_percent", "database", "Database connections used", "gauge", "%", "bench", PUSH_SECONDS),
+	("db_threads_connected", "database", "Database connections", "gauge", "connections", "bench", PUSH_SECONDS),
 	("db_slow_queries", "database", "Slow queries", "interval_count", "queries", "bench", PUSH_SECONDS),
 	("db_replication_running", "database", "Replication running", "gauge", "1 = yes", "bench", PUSH_SECONDS),
 	("db_replication_lag_seconds", "database", "Replication lag", "gauge", "s", "bench", PUSH_SECONDS),
@@ -43,6 +44,10 @@ _SPEC = [
 	("memory_used_percent", "host", "Memory used", "gauge", "%", "host", PUSH_SECONDS),
 	("disk_used_percent", "host", "Disk used", "gauge", "%", "host", PUSH_SECONDS),
 	("load_per_core", "host", "Load per core", "gauge", "per core", "host", PUSH_SECONDS),
+	("load_1m", "host", "Load (1 min)", "gauge", "", "host", PUSH_SECONDS),
+	("load_5m", "host", "Load (5 min)", "gauge", "", "host", PUSH_SECONDS),
+	("load_15m", "host", "Load (15 min)", "gauge", "", "host", PUSH_SECONDS),
+	("swap_used_percent", "host", "Swap used", "gauge", "%", "host", PUSH_SECONDS),
 ]
 CATALOG = {
 	m: {"metric": m, "group": g, "label": label, "kind": kind, "unit": unit, "level": level, "cadence_seconds": cadence}
@@ -106,3 +111,64 @@ def state(series, now, rules=(), incidents=()):
 	if is_stale(series, now):
 		return "stale"
 	return "watched" if applicable else "unwatched"
+
+
+# --- exploring a metric ---------------------------------------------------------------------
+
+# the label each metric carries (one per series), for filtering and grouping
+LABELS = {
+	"disk_used_percent": "mount", "queue_length": "queue", "rq_failed_jobs": "queue",
+	"rq_failed_jobs_added": "queue", "rq_long_running_jobs": "queue", "tls_days_left": "domain",
+	"bench_processes_down": "manager", "redis_used_memory_percent": "of",
+	"db_connections_used_percent": "db", "db_threads_connected": "db", "db_slow_queries": "db", "db_replication_running": "db",
+	"db_replication_lag_seconds": "db",
+}  # fmt: skip
+
+# what a bucket may say about each kind. A gauge is a level: its average, extremes or last value
+# over the bucket. An interval count is a number of things per push: summed over the bucket it
+# is the total, its average or maximum is per push interval.
+AGGREGATIONS = {
+	"gauge": ("avg", "min", "max", "last"),
+	"interval_count": ("sum", "avg", "max"),
+	"unknown": ("avg", "min", "max", "last"),  # a custom metric: read it as a level
+}
+DEFAULT_AGGREGATION = {"gauge": "avg", "interval_count": "sum", "unknown": "avg"}
+
+# grouping a metric only by what its series carry: a host-level metric has no bench or site
+GROUP_BYS = {
+	"host": ("none", "host"),
+	"bench": ("none", "host", "bench"),
+	"site": ("none", "host", "bench", "site"),
+	# a custom metric may carry labels the catalog cannot name: it may be split by them
+	"unknown": ("none", "host", "bench", "site", "host_label"),
+}
+
+
+def describe(metric):
+	"""What the explorer may do with a metric: catalog fields, aggregations, groupings, label."""
+	spec = CATALOG.get(metric) or {
+		"metric": metric, "group": "custom", "label": metric, "kind": "unknown", "unit": "",
+		"level": "unknown", "cadence_seconds": PUSH_SECONDS,
+	}  # fmt: skip
+	label = LABELS.get(metric) or ("label" if spec["kind"] == "unknown" else None)
+	group_bys = GROUP_BYS[spec["level"]] + (("host_label",) if label and "host_label" not in GROUP_BYS[spec["level"]] else ())
+	return {
+		**spec,
+		"label_key": label,
+		"aggregations": AGGREGATIONS[spec["kind"]],
+		"default_aggregation": DEFAULT_AGGREGATION[spec["kind"]],
+		"group_bys": group_bys,
+		"caveat": CAVEATS.get(metric),
+	}
+
+
+def validate(metric, aggregation, group_by):
+	"""(aggregation, group_by) checked against the metric's kind and level; ValueError if not allowed."""
+	d = describe(metric)
+	aggregation = aggregation or d["default_aggregation"]
+	group_by = group_by or "none"
+	if aggregation not in d["aggregations"]:
+		raise ValueError(f"{aggregation} is not meaningful for {metric} ({d['kind']}): use {', '.join(d['aggregations'])}")
+	if group_by not in d["group_bys"]:
+		raise ValueError(f"{metric} cannot be grouped by {group_by}: use {', '.join(d['group_bys'])}")
+	return aggregation, group_by

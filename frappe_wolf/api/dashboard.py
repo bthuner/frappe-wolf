@@ -171,9 +171,8 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	resolution = rollups.resolution_for(seconds)
 	bucket = storage.chart_bucket(seconds, resolution)
 	where, params = _where(scope, HTTP_METRICS)
-	# whole buckets only: a bucket cut by the window start, or the one still filling, would draw
-	# as a drop in traffic. The newest data shows once its bucket closes.
-	first, end = storage.floor(win.since, bucket), storage.floor(win.until, bucket)
+	# whole buckets only: the newest data shows once its bucket closes (storage.whole_buckets)
+	first, end, buckets = storage.whole_buckets(win.since, win.until, bucket)
 	rows = [r for r in rollups.series_rows(where, params, resolution, first, end) if get_datetime(r["timestamp"]) < end]
 
 	# interval counts: the sum per bucket, every label together. A bucket without samples is a
@@ -182,10 +181,6 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	for r in rows:
 		start = storage.floor(get_datetime(r["timestamp"]), bucket)
 		sums[r["metric_name"]][start] = sums[r["metric_name"]].get(start, 0) + float(r["value"])
-	buckets, t = [], first
-	while t < end:
-		buckets.append(t)
-		t += timedelta(seconds=bucket)
 	series = {
 		m: [[window.to_utc(b, tz), round(sums[m][b], 2) if b in sums[m] else None] for b in buckets] for m in HTTP_METRICS
 	}

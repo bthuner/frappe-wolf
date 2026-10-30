@@ -233,6 +233,23 @@ class TestLastLabel(unittest.TestCase):
 		self.assertNotIn("last_label", storage.merge(storage.new_partial(1.0, T0), storage.new_partial(2.0, T0)))
 
 
+class TestBucketPartials(unittest.TestCase):
+	def test_raw_and_rollup_rows_merge_exactly(self):
+		g = ("h1",)
+		raw = [(g, T0 + timedelta(minutes=5, seconds=s), storage.new_partial(v, T0 + timedelta(minutes=5, seconds=s)))
+			   for s, v in ((10, 4.0), (40, 8.0))]  # fmt: skip
+		rollup = [(g, T0, {"count": 2, "sum": 10.0, "min": 1.0, "max": 9.0, "last": 9.0, "last_ts": T0 + timedelta(seconds=50)})]
+		cells = storage.bucket_partials(raw + rollup, 600)
+		(key, part), = cells.items()
+		self.assertEqual(key, (g, T0))
+		self.assertEqual((part["count"], part["sum"], part["min"], part["max"], part["last"]), (4, 22.0, 1.0, 9.0, 8.0))
+
+	def test_groups_and_buckets_stay_apart(self):
+		rows = [(("a",), T0, storage.new_partial(1.0, T0)), (("b",), T0, storage.new_partial(2.0, T0)),
+				(("a",), T0 + timedelta(minutes=10), storage.new_partial(3.0, T0 + timedelta(minutes=10)))]  # fmt: skip
+		self.assertEqual(len(storage.bucket_partials(rows, 600)), 3)
+
+
 class TestWeightedSeries(unittest.TestCase):
 	def test_rollup_rows_average_by_samples(self):
 		rows = [
@@ -243,6 +260,21 @@ class TestWeightedSeries(unittest.TestCase):
 		out = bucket_series(rows, 60)
 		self.assertEqual(out["cpu_usage"], [["2026-10-29 02:00:00", 20.0]])
 		self.assertEqual(out["http_502"], [["2026-10-29 02:00:00", 12.0]])
+
+
+class TestWholeBuckets(unittest.TestCase):
+	def test_cut_and_filling_buckets_are_left_out(self):
+		since, until = datetime(2026, 10, 30, 10, 3, 20), datetime(2026, 10, 30, 10, 31, 5)
+		first, end, starts = storage.whole_buckets(since, until, 600)
+		self.assertEqual((first, end), (datetime(2026, 10, 30, 10, 0), datetime(2026, 10, 30, 10, 30)))
+		self.assertEqual(starts, [datetime(2026, 10, 30, 10, 0), datetime(2026, 10, 30, 10, 10), datetime(2026, 10, 30, 10, 20)])
+
+	def test_resolution_reaches_back_to_the_start(self):
+		kept = {RAW: T0 - timedelta(hours=48), MINUTE: T0 - timedelta(days=30), HOUR: T0 - timedelta(days=365)}
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(hours=2), kept), RAW)
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(days=5), kept), MINUTE)  # zoom into last week
+		self.assertEqual(storage.resolution_covering(RAW, T0 - timedelta(days=40), kept), HOUR)
+		self.assertEqual(storage.resolution_covering(HOUR, T0 - timedelta(days=500), kept), HOUR)  # nothing coarser
 
 
 if __name__ == "__main__":

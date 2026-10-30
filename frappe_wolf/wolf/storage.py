@@ -200,3 +200,42 @@ def late_horizon(now, raw_hours):
 	"""
 	retention = timedelta(hours=raw_hours)
 	return now - retention + min(timedelta(hours=1), retention / 4)
+
+
+def bucket_partials(rows, bucket_seconds):
+	"""Merge rows into chart buckets per group: {(group, bucket_start): partial}.
+
+	rows: (group, time, partial) with a partial from new_partial (a raw sample) or a rollup row.
+	A bucket is a whole multiple of the rollups read, so a rollup row falls in one bucket.
+	"""
+	out = {}
+	for group, at, part in rows:
+		key = (group, floor(at, bucket_seconds))
+		out[key] = merge(out.get(key), part)
+	return out
+
+
+def whole_buckets(since, until, bucket_seconds):
+	"""(first, end, starts) of the whole chart buckets in [since, until).
+
+	The bucket cut by `since` starts at its own boundary instead, and the one still filling at
+	`until` is left out: either would draw as a dip or a drop that did not happen.
+	"""
+	first, end = floor(since, bucket_seconds), floor(until, bucket_seconds)
+	starts, t = [], first
+	while t < end:
+		starts.append(t)
+		t += timedelta(seconds=bucket_seconds)
+	return first, end, starts
+
+
+def resolution_covering(resolution, since, kept_from):
+	"""The finest resolution at or above `resolution` whose data still reaches back to `since`.
+
+	A short window far back (a zoom into last week) would read raw samples purged long ago.
+	"""
+	order = [RAW, MINUTE, HOUR]
+	i = order.index(resolution)
+	while i < len(order) - 1 and since < kept_from[order[i]]:
+		i += 1
+	return order[i]

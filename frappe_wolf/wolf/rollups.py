@@ -257,22 +257,28 @@ def _delete_before(table, column, cutoff, step, extra="", params=None):
 	return deleted_until
 
 
-def purge(now=None, rolled=True):
-	"""Apply raw / 1-minute / 1-hour retention. Never deletes data that is not rolled up yet.
+def kept_from(now=None, rolled=True):
+	"""{RAW, MINUTE, HOUR: time} before which purge deletes that resolution's data.
 
+	Never data that is not rolled up yet: raw samples stay until the 1-minute watermark (up to
+	the 1-minute retention if rollups never ran), minute rollups until the hour watermark.
 	`rolled` is False where rollups do not run (satellites): raw retention then applies as is.
 	"""
 	now = now or now_datetime()
 	raw_hours, minute_days, hour_days = retention()
 	marks = watermarks()
-
-	raw_cutoff = now - timedelta(hours=raw_hours)
+	raw = now - timedelta(hours=raw_hours)
 	if rolled:
-		# Unrolled raw samples are kept (up to the 1-minute retention, if rollups never ran).
-		raw_cutoff = min(raw_cutoff, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
-	minute_cutoff = now - timedelta(days=minute_days)
-	minute_cutoff = min(minute_cutoff, marks[HOUR]) if marks[HOUR] else now - timedelta(days=hour_days)
-	hour_cutoff = now - timedelta(days=hour_days)
+		raw = min(raw, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
+	minute = now - timedelta(days=minute_days)
+	minute = min(minute, marks[HOUR]) if marks[HOUR] else now - timedelta(days=hour_days)
+	return {RAW: raw, MINUTE: minute, HOUR: now - timedelta(days=hour_days)}
+
+
+def purge(now=None, rolled=True):
+	"""Apply raw / 1-minute / 1-hour retention (kept_from)."""
+	cut = kept_from(now, rolled)
+	raw_cutoff, minute_cutoff, hour_cutoff = cut[RAW], cut[MINUTE], cut[HOUR]
 
 	_delete_before(RAW_TABLE, "`timestamp`", raw_cutoff, timedelta(hours=1))
 	rollup_table = f"tab{ROLLUP_DOCTYPE}"
@@ -415,3 +421,37 @@ def series_rows(where, params, resolution, since, until):
 			as_dict=True,
 		)
 	return rows
+
+
+def bucket_rows(where, params, group_cols, resolution, since, until):
+	"""(group, time, partial) rows over [since, until), for storage.bucket_partials.
+
+	Raw samples become one-sample partials; rollup rows keep their count, sum, min, max and
+	last, so any aggregation of a chart bucket stays exact across the raw/rollup boundary.
+	"""
+	cols = [f"`{c}`" for c in group_cols]
+	out = []
+	for res, start, end in segments(resolution, since, until):
+		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+		if res == RAW:
+			select = ", ".join([*cols, "`value` as v", "`timestamp` as t"])
+		else:
+			select = ", ".join([*cols, "bucket_start as t", "value_count as c", "value_sum as s", "value_min as mn",
+								"value_max as mx", "value_last as l", "last_ts as lt"])  # fmt: skip
+		rows = frappe.db.sql(
+			f"select {select} from `{table}` where {' and '.join([*where, seg_where])}",
+			{**params, **seg_params},
+			as_dict=True,
+		)
+		for r in rows:
+			group = tuple(r.get(c) for c in group_cols)
+			at = get_datetime(r.t)
+			if res == RAW:
+				if at >= until:
+					continue  # [since, until): the raw segment's end is inclusive
+				part = storage.new_partial(float(r.v), at)
+			else:
+				part = {"count": int(r.c), "sum": float(r.s), "min": float(r.mn), "max": float(r.mx),
+						"last": float(r.l), "last_ts": get_datetime(r.lt)}  # fmt: skip
+			out.append((group, at, part))
+	return out

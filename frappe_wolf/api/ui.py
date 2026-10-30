@@ -4,17 +4,32 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import access, rollups, spa, storage
+from frappe_wolf.wolf import access, inventory, rollups, schema, spa, storage, window
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 from frappe_wolf.wolf.workflow import get_activity
 
+# the chart ranges Desk offers (any range wolf/window.py parses is accepted)
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
 READ_ROLES = spa.READ_ROLES
 
 
+def _minutes(range_key, default="24h"):
+	"""Length of a relative range ('1h', '24h', '15m', '30d': wolf/window.py) in minutes."""
+	try:
+		return int(window.parse_range(range_key or default).total_seconds() // 60)
+	except schema.PayloadError as e:
+		frappe.throw(str(e), frappe.ValidationError)
+
+
 def _since(range_key):
-	return add_to_date(now_datetime(), minutes=-RANGES.get(range_key, 1440))
+	return add_to_date(now_datetime(), minutes=-_minutes(range_key))
+
+
+def agent_cutoff():
+	"""(minutes, cutoff): agents seen since the cutoff are online (Wolf Settings agent silence)."""
+	silence = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
+	return silence, add_to_date(now_datetime(), minutes=-silence)
 
 
 def _filters(site=None, bench=None, host=None):
@@ -58,15 +73,14 @@ def get_overview(range="24h", site=None, bench=None, host=None):
 		{"since": since, **scope, **allowed_params},
 		as_dict=True,
 	)
-	silence = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
 	agents = frappe.get_list(
 		"Wolf Agent",
 		fields=["name", "hostname", "kind", "status", "last_seen", "agent_version"],
 		order_by="hostname asc",
 	)
-	cutoff = add_to_date(now_datetime(), minutes=-silence)
+	_, cutoff = agent_cutoff()
 	for a in agents:
-		a.online = bool(a.status == "Active" and a.last_seen and a.last_seen >= cutoff)
+		a.online = inventory.agent_state(a.status, a.last_seen, cutoff) == "fresh"
 
 	return {
 		"open_incidents": open_incidents,
@@ -105,7 +119,7 @@ def get_metric_series(host, metrics=None, range="6h", site=None):
 	"""
 	frappe.only_for(READ_ROLES)
 	metrics = frappe.parse_json(metrics) if metrics else ["cpu_usage", "memory_used_percent", "disk_used_percent", "load_per_core"]
-	minutes = RANGES.get(range, 360)
+	minutes = _minutes(range, "6h")
 	resolution = rollups.resolution_for(minutes * 60)
 	bucket = storage.chart_bucket(minutes * 60, resolution)
 	params = {"host": host, "metrics": tuple(metrics)}

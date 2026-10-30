@@ -4,14 +4,14 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import access, inventory, rollups, schema, storage, window
+from frappe_wolf.wolf import access, inventory, rollups, schema, spa, storage, window
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 from frappe_wolf.wolf.workflow import get_activity
 
 # the chart ranges Desk offers (any range wolf/window.py parses is accepted)
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
-READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
+READ_ROLES = spa.READ_ROLES
 
 
 def _minutes(range_key, default="24h"):

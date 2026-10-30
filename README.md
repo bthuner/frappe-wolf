@@ -20,10 +20,10 @@ before customers notice, and keeps all data on your own Frappe site.
 cd ~/frappe-bench
 bench get-app https://github.com/bthuner/frappe-wolf
 bench --site wolf.example.com install-app frappe_wolf
-bench build --app frappe_wolf   # links the static assets
+bench build --app frappe_wolf   # links the static assets and builds the Wolf UI (/wolf)
 ```
 
-Installing creates the roles **Wolf Manager** and **Wolf User**, a random registration token and
+`bench build` needs Node 20.19 or newer for the Wolf UI. Installing creates the roles **Wolf Manager** and **Wolf User**, a random registration token and
 the Dokos preset rules. Open **Wolf Settings → Agent install command** to copy the one-liner.
 
 ## Install the agent on a host
@@ -341,11 +341,32 @@ python3 -m unittest discover -s tests -t .           # app pure-python tests
 python3 -m unittest discover -s agent/tests          # agent tests
 ```
 
+### Wolf UI
+
+The operator UI at `/wolf` is a Vue app built on [frappe-ui](https://ui.frappe.io) in
+[`frontend/`](frontend/) ([#19](https://github.com/bthuner/frappe-wolf/issues/19)). Desk keeps the
+configuration DocTypes and stays usable for everything the Wolf UI does not show yet; its views are
+added one by one, and a view that is not built says so and links to Desk. It reuses the Frappe
+session: guests are sent to the login page, users without the Wolf User or Wolf Manager role get a
+403.
+
+```bash
+cd frontend
+yarn install
+yarn dev        # Vite on the bench port + 80 (8080 for 8000), proxied to the bench
+yarn test       # unit and component tests (Vitest)
+yarn build      # writes frappe_wolf/public/frontend and frappe_wolf/www/wolf.html
+```
+
+Node 20.19 or newer is required. The build output is not committed; `bench build --app frappe_wolf`
+produces it on the bench.
+
 ### CI checks
 
 Every pull request and every push to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
-lint (ruff, shellcheck), the app tests on Python 3.12, the agent tests on Python 3.9 and 3.14, and a
-bench integration job on MariaDB 10.6 and on Postgres 16. To run the same checks locally:
+lint (ruff, shellcheck), the app tests on Python 3.12, the agent tests on Python 3.9 and 3.14, the
+Wolf UI tests and build on Node 20.19 and 24, and a bench integration job on MariaDB 10.6 and on
+Postgres 16. To run the same checks locally:
 
 ```bash
 pip install ruff==0.17.3                             # ruff rules are in pyproject.toml

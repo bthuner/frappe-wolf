@@ -1,0 +1,77 @@
+@import 'frappe-ui/style.css';
+@import '@fontsource/inter-tight/400.css';
+@import '@fontsource/inter-tight/500.css';
+@import '@fontsource/inter-tight/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/* docs/making-of/brand.md tokens, copied as they are. frappe-ui flips its own tokens under
+   [data-theme='dark']; the Wolf ones follow the same attribute. */
+:root {
+  --wolf-brand: #035aec;
+  --wolf-on-brand: #ffffff;
+  --wolf-brand-text: #035aec;
+  --wolf-bg: #f4f2ec;
+  --wolf-surface: #ffffff;
+  --wolf-line: #dcd8ce;
+  --wolf-ink: #121725;
+  --wolf-muted: #565d6b;
+  --wolf-info: #6b4fa0;
+  --wolf-warning: #8a5200;
+  --wolf-critical: #b0281c;
+  --wolf-ok: #2e6b4a;
+
+  /* frappe-ui surfaces on the Os / Nuit neutrals */
+  --surface-base: var(--wolf-surface);
+  --surface-sidebar: var(--wolf-bg);
+  --ink-gray-9: var(--wolf-ink);
+}
+
+[data-theme='dark'] {
+  --wolf-brand-text: #7fa8ff;
+  --wolf-bg: #0a0f1c;
+  --wolf-surface: #131a2a;
+  --wolf-line: #283147;
+  --wolf-ink: #eceef3;
+  --wolf-muted: #a2aaba;
+  --wolf-info: #bba6e6;
+  --wolf-warning: #f0b04a;
+  --wolf-critical: #ff7466;
+  --wolf-ok: #7cc79e;
+}
+
+/* frappe-ui's Tailwind plugin puts InterVar first on <html>; brand.md sets Inter Tight */
+html {
+  font-family: 'Inter Tight', InterVar, system-ui, sans-serif;
+}
+
+body {
+  background: var(--wolf-bg);
+  color: var(--wolf-ink);
+}
+
+/* timestamps and values: mono with tabular figures (brand.md) */
+.wolf-data {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+a.wolf-link {
+  color: var(--wolf-brand-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--wolf-brand-text);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

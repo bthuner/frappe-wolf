@@ -74,5 +74,17 @@ class TestScope(unittest.TestCase):
 			window.scope_filters(bench="frappe-bench")
 
 
+class TestLikePattern(unittest.TestCase):
+	def test_plain_substring(self):
+		self.assertEqual(window.like_pattern(" timeout "), "%timeout%")
+		self.assertIsNone(window.like_pattern("  "))
+
+	def test_wildcards_match_themselves(self):
+		self.assertEqual(window.like_pattern(r"100%_done\x"), r"%100\%\_done\\x%")
+
+	def test_bounded(self):
+		self.assertEqual(len(window.like_pattern("x" * 500)), window.MAX_QUERY + 2)
+
+
 if __name__ == "__main__":
 	unittest.main()

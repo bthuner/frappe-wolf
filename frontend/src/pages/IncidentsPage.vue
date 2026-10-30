@@ -1,14 +1,12 @@
 <script setup>
 import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
-import { computed, inject, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { inject, ref, watch } from 'vue'
 
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
+import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
 import { duration, full } from '@/services/time'
 
-const route = useRoute()
-const router = useRouter()
 const boot = inject('boot')
 const tz = boot.time_zone
 
@@ -17,10 +15,7 @@ const STATUSES = [
   { value: 'resolved', label: 'Resolved' },
   { value: 'all', label: 'All' },
 ]
-const status = computed({
-  get: () => (STATUSES.some((s) => s.value === route.query.status) ? route.query.status : 'unresolved'),
-  set: (value) => router.replace({ query: { ...route.query, status: value === 'unresolved' ? undefined : value } }),
-})
+const status = useQueryParam('status', 'unresolved', STATUSES.map((s) => s.value))
 
 const incidents = ref([])
 const cursor = ref(null)

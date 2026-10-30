@@ -7,7 +7,7 @@ import PendingPage from '@/pages/PendingPage.vue'
 import { makeRouter } from '@/router'
 
 const BOOT = {
-  desk: { home: '/app', fallbacks: { incidents: '/app/wolf-incident', errors: '/app/wolf-event?event_type=error' } },
+  desk: { home: '/app', fallbacks: { incidents: '/app/wolf-incident', metrics: '/app/wolf-overview' } },
   capabilities: { logs: { available: false, reason: 'No raw log lines are stored.' }, incidents: { available: true } },
 }
 
@@ -20,10 +20,10 @@ async function render(component, path) {
 
 describe('PendingPage', () => {
   it('says the view is not built and links the Desk page that covers it', async () => {
-    const page = await render(PendingPage, '/errors/abc123')
+    const page = await render(PendingPage, '/metrics')
     expect(page.text()).toContain('This view is not built yet')
-    expect(page.text()).toContain('representative traceback')
-    expect(page.get('a.wolf-link').attributes('href')).toBe('/app/wolf-event?event_type=error')
+    expect(page.text()).toContain('Metric explorer')
+    expect(page.get('a.wolf-link').attributes('href')).toBe('/app/wolf-overview')
   })
 })
 

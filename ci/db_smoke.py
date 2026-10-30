@@ -1045,6 +1045,84 @@ def main():
 		        f"site dashboard has the bench-wide deployment; "
 		        f"5xx 12 with 502 4 inside it, gaps kept; restricted user sees no rule filters")
 
+	def explorers():
+		"""Event list paging and search, error groups across sites, a scoped user's view of a group."""
+		from frappe_wolf.api import explore
+		from frappe_wolf.wolf import access
+
+		xhost, sa, sb = "smoke-explore", "xa.localhost", "xb.localhost"
+		fp = "smoke-explore-fp"
+
+		def err(site, minutes_ago, title="KeyError: 'customer' in 100%_sync", **extra):
+			return events.insert_event(schema.normalize_event(
+				{"type": "error", "host": xhost, "bench": "b1", "site": site, "severity": "critical", "title": title,
+				 "fingerprint": fp, "payload": {"traceback": "Traceback (most recent call last):\n  KeyError: 'customer'"}, **extra},
+				tz, now - timedelta(minutes=minutes_ago)))
+
+		# a record first seen 3 days ago and seen again today: active in a 24h window, with old repeats
+		old = err(sa, 3 * 24 * 60)
+		frappe.db.set_value("Wolf Event", old, {"count": 40, "last_seen": now - timedelta(minutes=5)})
+		recent = [err(sa, 10), err(sb, 20)]
+		ancient = err(sa, 5 * 24 * 60)  # last seen 5 days ago: outside a 24h window, still in the group
+		same_time = [err(sb, 30, title=f"smoke explore tie {i}") for i in range(5)]  # identical timestamps
+		other = events.insert_event(schema.normalize_event(
+			{"type": "error", "host": xhost, "bench": "b1", "site": sa, "title": "unrelated", "fingerprint": "smoke-other"},
+			tz, now - timedelta(minutes=15)))
+		frappe.db.commit()
+
+		groups = explore.list_error_groups(range="24h", host=xhost)["groups"]
+		g = next(x for x in groups if x["fingerprint"] == fp)
+		assert g["records"] == 9 and g["records_in_window"] == 8 and g["sites"] == 2, g  # the whole group, as its page
+		assert g["occurrences"] == 48, g  # 40 on the old record, inside the window or not
+		assert g["first_seen"] < explore.list_error_groups(range="24h", host=xhost)["window"]["since"], g  # first seen days ago
+		found = explore.list_events(range="24h", host=xhost, q="100%_sync")["events"]
+		assert {e["name"] for e in found} == {old, *recent}, found  # % and _ matched literally
+		assert not explore.list_events(range="24h", host=xhost, q="100x_sync")["events"], "_ matched a wildcard"
+		# page through equal timestamps one by one: each record once
+		seen, cursor = [], None
+		while True:
+			page = explore.list_events(range="24h", host=xhost, limit=2, cursor=cursor)
+			seen += [e["name"] for e in page["events"]]
+			if not page["paging"]["has_more"]:
+				break
+			cursor = page["paging"]["next_cursor"]
+		assert len(seen) == len(set(seen)) == 9 and set(same_time) <= set(seen), seen
+		assert not explore.list_events(range="24h", host=xhost, event_type="security")["events"]
+		try:
+			explore.list_events(event_type="gossip")
+			raise AssertionError("unknown event type accepted")
+		except frappe.ValidationError:
+			pass
+		detail = explore.get_error_group(fp)
+		assert detail["records"] == 9 and len(detail["scopes"]) == 2, detail["scopes"]
+		assert detail["title"] == g["title"] and detail["representative"]["name"] == g["latest"]["name"], (detail["title"], g)
+		assert "KeyError" in detail["representative"]["payload"]["traceback"], detail["representative"]
+		assert explore.get_event(recent[0])["payload"]["traceback"].startswith("Traceback"), "payload"
+
+		user = "smoke-scoped@example.com"
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site", "value": sb}).insert()
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			scoped = explore.get_error_group(fp)
+			assert scoped["records"] == 6 and [s["site"] for s in scoped["scopes"]] == [sb], scoped["scopes"]
+			sg = next(x for x in explore.list_error_groups(range="24h")["groups"] if x["fingerprint"] == fp)
+			assert sg["sites"] == 1 and sg["occurrences"] == 6, sg  # the other site's 41 stay hidden
+			try:
+				explore.get_event(old)
+				raise AssertionError("scoped user read another site's event")
+			except frappe.PermissionError:
+				pass
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Wolf User Scope", {"user": user})
+			access.clear_cache()
+		frappe.db.delete("Wolf Event", {"name": ("in", [old, ancient, *recent, *same_time, other])})
+		frappe.db.commit()
+		return ("group of 9 records (8 in the window) on 2 sites, 48 occurrences, same newest record in list and page, literal % _ search, "
+		        "9 events paged by 2 without repeats, scoped user sees 6 records on 1 site")
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1054,7 +1132,8 @@ def main():
 	                 ("metrics report", metrics), ("status page", status_page),
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
-	                 ("incident view", incident_view), ("dashboards", dashboards)]:
+	                 ("incident view", incident_view), ("dashboards", dashboards),
+	                 ("explorers", explorers)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

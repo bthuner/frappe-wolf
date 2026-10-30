@@ -1,16 +1,16 @@
 <script setup>
 import { Button, PageHeader, PageHeaderTitle, TabButtons, Textarea, TextInput } from 'frappe-ui'
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
+import { useQueryParam } from '@/composables/useQueryParam'
 import { useTimeline } from '@/composables/useTimeline'
 import { call } from '@/services/api'
 import { clock, day, duration, full } from '@/services/time'
 
 const route = useRoute()
-const router = useRouter()
 const boot = inject('boot')
 const tz = boot.time_zone
 
@@ -24,14 +24,8 @@ const SHOW = [
 const GAP_MINUTES = 60
 
 const name = computed(() => route.params.incident)
-const show = computed({
-  get: () => (SHOW.some((s) => s.value === route.query.show) ? route.query.show : 'all'),
-  set: (value) => router.replace({ query: { ...route.query, show: value === 'all' ? undefined : value }, hash: route.hash }),
-})
-const query = computed({
-  get: () => route.query.q || '',
-  set: (value) => router.replace({ query: { ...route.query, q: value || undefined }, hash: route.hash }),
-})
+const show = useQueryParam('show', 'all', SHOW.map((s) => s.value))
+const query = useQueryParam('q')
 const families = computed(() => SHOW.find((s) => s.value === show.value).families)
 
 const incident = ref(null)

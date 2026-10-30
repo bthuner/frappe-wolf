@@ -7,3 +7,4 @@ frappe_wolf.patches.default_signal_settings
 frappe_wolf.patches.hash_agent_secrets
 frappe_wolf.patches.default_max_pushes_per_minute
 frappe_wolf.patches.default_storage_settings
+frappe_wolf.patches.event_last_seen

@@ -13,13 +13,13 @@ export function day(iso, timeZone) {
   return iso ? parts(iso, timeZone, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : ''
 }
 
-export function full(iso, timeZone) {
+export function full(iso, timeZone, { zone = true } = {}) {
   if (!iso) return ''
   const text = parts(iso, timeZone, {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
   })
-  return `${text} (${timeZone})`
+  return zone ? `${text} (${timeZone})` : text
 }
 
 export function duration(fromIso, toIso) {

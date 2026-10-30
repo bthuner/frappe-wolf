@@ -224,8 +224,9 @@ watch(name, refresh)
       <p v-if="query.trim()" class="text-sm text-ink-gray-6">
         {{ visible.length }} of {{ timeline.rows.value.length }} loaded rows match<span v-if="timeline.paging.value.has_more">; more rows are not loaded yet</span>.
       </p>
-      <p v-if="timeline.meta.value.truncated.delivery" class="text-sm text-ink-gray-6">
-        Showing the first {{ timeline.meta.value.truncated.delivery.shown }} of {{ timeline.meta.value.truncated.delivery.total }} notification attempts.
+      <p v-for="(cut, key) in timeline.meta.value.truncated" :key="key" class="text-sm text-ink-gray-6">
+        Activity shows the newest {{ cut.shown }} of {{ cut.total }} {{ key === 'activity_version' ? 'recorded changes' : 'comments' }};
+        older ones are in Desk.
       </p>
       <p v-if="timeline.error.value" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ timeline.error.value }}</p>
 
@@ -235,7 +236,15 @@ watch(name, refresh)
           <li v-else-if="item.type === 'gap'" class="wolf-gap">
             {{ item.label }} with no {{ filtered ? 'matching rows' : 'recorded activity' }}
           </li>
-          <TimelineRow v-else :row="item.row" :time-zone="tz" :anchor="anchor(item.row)" :expanded="expanded.has(item.row.id)" @toggle="toggle(item.row.id)" />
+          <TimelineRow
+            v-else
+            :row="item.row"
+            :time-zone="tz"
+            :anchor="anchor(item.row)"
+            :targeted="route.hash === `#${anchor(item.row)}`"
+            :expanded="expanded.has(item.row.id)"
+            @toggle="toggle(item.row.id)"
+          />
         </template>
       </ol>
       <p v-if="!timeline.loading.value && !visible.length" class="text-sm text-ink-gray-6">

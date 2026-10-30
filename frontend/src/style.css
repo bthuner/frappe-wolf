@@ -113,7 +113,8 @@ a.wolf-link {
   align-items: flex-start;
   padding: 8px 12px;
 }
-.wolf-row:target {
+.wolf-row:target,
+.wolf-row-targeted {
   background: var(--wolf-surface);
   outline: 2px solid var(--wolf-brand-text);
 }

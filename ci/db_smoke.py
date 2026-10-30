@@ -832,14 +832,15 @@ def main():
 				{"type": typ, "host": HOST, "bench": bench, "site": site_, "severity": "critical", "title": title},
 				tz, at + timedelta(minutes=minutes)))
 
-		deploy = ev("tl deploy", site, -5, "deployment")
+		# 90 min before: older than the 30-min timeline padding, linked by the deployment window
+		deploy = ev("tl deploy", site, -90, "deployment")
 		linked = [ev(f"tl linked {i}", site) for i in range(7)]  # seven rows at the same time
 		context = [ev(f"tl context {i}", site, 2) for i in range(3)]
 		# another site on another bench: out of scope (a site on the same bench would be context)
 		hidden = ev("tl other site", other, 1, bench="b9")
 		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "tl incident", "host": HOST, "bench": "b1",
 		                      "site": site, "severity": "critical", "status": "Open", "started_at": at,
-		                      "deployment_event": deploy, "deployment_at": at - timedelta(minutes=5)}).insert()
+		                      "deployment_event": deploy, "deployment_at": at - timedelta(minutes=90)}).insert()
 		for name in linked:
 			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
 		for i in range(3):
@@ -847,6 +848,11 @@ def main():
 			                "channel_type": "webhook", "action": "opened", "ok": i != 2, "http_status": 200 if i != 2 else 500,
 			                "target": "https://hooks.example.test/x"}).insert(ignore_permissions=True)
 		inc_api.add_comment(inc.name, "Looking <b>now</b>")
+		# a comment typed in Desk's editor: paragraphs, not <br>
+		frappe.get_doc({"doctype": "Comment", "comment_type": "Comment", "reference_doctype": "Wolf Incident",
+		                "reference_name": inc.name, "comment_email": "Administrator",
+		                "content": '<div class="ql-editor read-mode"><p>Restarted workers</p><p>Looks fine now</p></div>'}).insert(
+			ignore_permissions=True)
 		frappe.db.commit()
 
 		detail = view.get_incident(inc.name)
@@ -859,8 +865,9 @@ def main():
 		assert {f"event:{n}" for n in linked + context + [deploy]} <= set(ids), "events missing"
 		deploy_row = next(r for r in full["rows"] if r["id"] == f"event:{deploy}")
 		assert deploy_row["relation"] == "preceding_change", deploy_row
-		comment = next(r for r in full["rows"] if r.get("activity") == "comment")
-		assert comment["text"] == "Looking <b>now</b>", comment  # plain text as typed, never HTML to render
+		texts = [r["text"] for r in full["rows"] if r.get("activity") == "comment"]
+		assert "Looking <b>now</b>" in texts, texts  # plain text as typed, never HTML to render
+		assert "Restarted workers\nLooks fine now" in texts, texts
 		results = sorted(r["result"] for r in full["rows"] if r["kind"] == "delivery")
 		assert results == ["accepted", "accepted", "failed"], results
 		# every page size gives the same rows, once each, in the same order
@@ -932,10 +939,25 @@ def main():
 		second = view.list_incidents(status="all", limit=1, cursor=first["paging"]["next_cursor"])
 		assert second["incidents"][0]["name"] != first["incidents"][0]["name"], "list page repeated"
 		view.act(inc.name, "resolve")
+		try:
+			view.act(inc.name, "acknowledge")  # a page left open still shows the button
+			raise AssertionError("acknowledge reopened a resolved incident")
+		except frappe.ValidationError:
+			pass
+		assert frappe.db.get_value("Wolf Incident", inc.name, "status") == "Resolved"
+
+		# an incident without any scope has evidence only: "same scope" would be every site
+		bare = frappe.get_doc({"doctype": "Wolf Incident", "title": "tl bare", "severity": "warning", "status": "Open",
+		                       "started_at": at}).insert()
+		frappe.db.set_value("Wolf Event", linked[0], "incident", bare.name)
+		bare_rows = view.get_timeline(bare.name, families="evidence,context")["rows"]
+		assert [r["id"] for r in bare_rows] == [f"event:{linked[0]}"], [r["id"] for r in bare_rows]
+		frappe.delete_doc("Wolf Incident", bare.name, force=True)
 		frappe.db.delete("Wolf Event", {"name": ("in", linked + context + [hidden])})
 		frappe.db.commit()
-		return (f"{inc.name}: {len(ids)} rows identical at page sizes 1/2/3/7, other site hidden, comment as text, "
-		        f"2 accepted + 1 failed deliveries, Wolf User denied, acknowledged and assigned, deleted deployment kept")
+		return (f"{inc.name}: {len(ids)} rows identical at page sizes 1/2/3/7, deployment outside the window shown, "
+		        f"other site hidden, comments as text, 2 accepted + 1 failed deliveries, Wolf User denied, "
+		        f"acknowledged and assigned, stale acknowledge refused, deleted deployment kept, bare incident has no context")
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),

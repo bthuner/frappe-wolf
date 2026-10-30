@@ -133,7 +133,7 @@ One page of the timeline, oldest first. Arguments: `incident`, `limit` (default 
 | Family | Rows |
 |---|---|
 | `evidence` | Wolf Events linked to the incident, at any time |
-| `context` | Other events in its scope (site, the same bench on the same host, or host-wide) during its window, if the caller may see them, and the deployment before it |
+| `context` | Other events in its scope (site, the same bench on the same host, or host-wide) during its window, if the caller may see them, and the deployment before it even when that is older than the window. An incident with no site, bench or host has no context. |
 | `activity` | Status changes, assignments, comments and notes, from Frappe's Version and Comment history |
 | `delivery` | Notification attempts (Wolf Delivery) |
 
@@ -151,13 +151,16 @@ Each row has a stable `id` (`event:<name>`, `activity:comment:<name>`,
 
 Rows are ordered by time, then events, activity and deliveries, then id. Rows with the same
 time have no causal order. `paging.next_cursor` continues after the last row; the same rows
-come back once each whatever the page size. `truncated.delivery` reports when more than 2,000
-attempts exist. `window` is the incident's window (start minus `padding_minutes`, to its
-resolution or now).
+come back once each whatever the page size. Activity keeps the newest 200 recorded changes
+and 300 comments; `truncated.activity_version` and `truncated.activity_comment` report when
+older ones exist. `window` is the incident's window (start minus `padding_minutes`, to its
+resolution or now), the same one Desk and the postmortem use.
 
 ### `frappe_wolf.api.incident_view.act`
 
 POST `incident` and `action`, one of `acknowledge`, `resolve` or `assign_to_me`. It runs the
-incident's own method, so Frappe's write permission and the incident's rules apply, and
-returns the new `get_incident`. Merged incidents refuse every action. Merge, split and
+incident's own method, so Frappe's write permission applies, and returns the new
+`get_incident`. The incident's state is checked first: acknowledging needs an Open incident,
+and resolving or taking needs an unresolved one. A page left open on a stale incident gets
+an error instead of reopening it. Merged incidents refuse every action. Merge, split and
 postmortems stay in Desk for now.

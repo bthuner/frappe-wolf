@@ -29,8 +29,9 @@ export const routes = [
     meta: { title: 'Bench', fallback: 'overview', planned: 'One bench on one host: workers, queues, Redis, scheduler and its sites.' } },
   { path: '/monitoring', name: 'monitoring', component: Pending,
     meta: { title: 'Monitoring', fallback: 'monitoring', planned: 'Is Wolf itself working: agents, satellites, clock skew, rule and scheduler freshness.' } },
+  // where a view this site cannot have leads (incidents on a satellite); ?from= keeps the link
   { path: '/unavailable/:path(.*)*', name: 'unavailable', component: Pending,
-    meta: { title: 'Not on this site', capability: 'incidents' } },
+    meta: { title: 'Incidents', capability: 'incidents', noSubject: true } },
   { path: '/:path(.*)*', name: 'not-found', component: () => import('@/pages/NotFoundPage.vue'), meta: { title: 'Not found' } },
 ]
 

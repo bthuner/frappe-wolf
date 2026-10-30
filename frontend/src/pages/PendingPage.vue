@@ -12,7 +12,9 @@ const boot = inject('boot')
 const desk = computed(() => deskFallback(boot, route))
 // a satellite keeps no incidents: its central site opens them
 const unavailable = computed(() => route.meta.capability && !boot.capabilities?.[route.meta.capability]?.available)
-const subject = computed(() => Object.values(route.params).filter(Boolean).join(' / '))
+const subject = computed(() =>
+  route.meta.noSubject ? '' : Object.values(route.params).flat().filter(Boolean).join(' / '),
+)
 </script>
 
 <template>

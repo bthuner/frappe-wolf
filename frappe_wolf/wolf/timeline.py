@@ -54,6 +54,28 @@ def decode_cursor(cursor):
 		raise ValueError("invalid cursor") from e
 
 
+def keyset_sql(cursor_key, family, column, name_column="name"):
+	"""(SQL, params) selecting rows of `family` after the cursor key (time, rank, id).
+
+	Ids are "<family>:<name>". After a row of the same family: a later name at the same time.
+	After a row of an earlier rank, or a same-rank row whose id sorts first (the unavailable
+	deployment): every row at that time. Otherwise: a later time.
+	"""
+	if not cursor_key:
+		return "", {}
+	at, rank, row_id = cursor_key
+	prefix = f"{family}:"
+	mine = RANK[family]
+	if rank == mine and row_id.startswith(prefix):
+		return (
+			f"and ({column} > %(c_at)s or ({column} = %(c_at)s and {name_column} > %(c_name)s))",
+			{"c_at": at, "c_name": row_id.removeprefix(prefix)},
+		)
+	if rank < mine or (rank == mine and row_id < prefix):
+		return f"and {column} >= %(c_at)s", {"c_at": at}
+	return f"and {column} > %(c_at)s", {"c_at": at}
+
+
 def after(key, cursor_key):
 	return cursor_key is None or key > cursor_key
 
@@ -170,16 +192,16 @@ def delivery_row(d, tz):
 # --- paging -------------------------------------------------------------------------------
 
 
-def page(keyed_rows, limit, cursor_key=None, more_events=False):
+def page(keyed_rows, limit, cursor_key=None, more=False):
 	"""The first `limit` rows after the cursor, in order, plus the paging block.
 
-	`keyed_rows` holds every activity and delivery row and the events read after the cursor (at
-	most limit + 1 of them; `more_events` says whether the read hit that bound). Events past the
-	bound are all later than the ones read, so the first `limit` rows here are the right ones.
+	`keyed_rows` holds, per source, either all its rows or its first limit + 1 rows after the
+	cursor (`more` says whether any bounded source hit that bound). Rows past a source's bound
+	are later than all it returned, so the first `limit` rows of the merge are the right ones.
 	"""
 	rows = sorted((kr for kr in keyed_rows if after(kr[0], cursor_key)), key=lambda kr: kr[0])
 	chosen = rows[:limit]
-	has_more = len(rows) > limit or more_events
+	has_more = len(rows) > limit or more
 	return [r for _, r in chosen], {
 		"has_more": has_more,
 		"next_cursor": encode_cursor(chosen[-1][0]) if has_more and chosen else None,

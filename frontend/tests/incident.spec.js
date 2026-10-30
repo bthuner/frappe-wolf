@@ -122,6 +122,21 @@ describe('IncidentPage', () => {
   })
 })
 
+describe('api call', () => {
+  it('keeps GET arguments without URLSearchParams.size (Safari 16)', async () => {
+    const { call } = await import('@/services/api')
+    const fetchFn = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 1 })))
+    const original = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size')
+    Object.defineProperty(URLSearchParams.prototype, 'size', { get: () => undefined, configurable: true })
+    try {
+      await call('m', { incident: 'WINC-1', cursor: null }, { fetchFn })
+    } finally {
+      if (original) Object.defineProperty(URLSearchParams.prototype, 'size', original)
+    }
+    expect(fetchFn.mock.calls[0][0]).toBe('/api/method/m?incident=WINC-1')
+  })
+})
+
 describe('useTimeline', () => {
   it('drops an answer that arrives after a newer request', async () => {
     let release

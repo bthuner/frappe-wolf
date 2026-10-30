@@ -101,25 +101,33 @@ def sync_assignment(doc, previous):
 # ---- activity ------------------------------------------------------------------------------
 
 
+ACTIVITY_LIMITS = {"Version": 200, "Comment": 300}
+
+
+def activity_filters(name):
+	return {
+		"Version": {"ref_doctype": "Wolf Incident", "docname": name},
+		"Comment": {"reference_doctype": "Wolf Incident", "reference_name": name, "comment_type": ("in", incident_ops.COMMENT_TYPES)},
+	}
+
+
 def get_activity(inc):
+	# the newest history when it is long: the last status change matters more than the first
+	filters = activity_filters(inc.name)
 	versions = frappe.get_all(
 		"Version",
-		filters={"ref_doctype": "Wolf Incident", "docname": inc.name},
+		filters=filters["Version"],
 		fields=["name", "owner", "creation", "data"],
-		order_by="creation asc",
-		limit=200,
-	)
+		order_by="creation desc",
+		limit=ACTIVITY_LIMITS["Version"],
+	)[::-1]
 	comments = frappe.get_all(
 		"Comment",
-		filters={
-			"reference_doctype": "Wolf Incident",
-			"reference_name": inc.name,
-			"comment_type": ("in", incident_ops.COMMENT_TYPES),
-		},
+		filters=filters["Comment"],
 		fields=["name", "comment_type", "content", "owner", "comment_email", "creation"],
-		order_by="creation asc",
-		limit=300,
-	)
+		order_by="creation desc",
+		limit=ACTIVITY_LIMITS["Comment"],
+	)[::-1]
 	entries = incident_ops.build_activity(inc.as_dict(), versions, comments)
 	from frappe.utils.html_utils import clean_html
 

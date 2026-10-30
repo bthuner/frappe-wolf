@@ -1,22 +1,25 @@
 """The incident page of the Wolf UI: detail, timeline pages and actions (docs/ui-api.md).
 
-Reuses the incident query rules (wolf/incidents.py scope, wolf/access.py grants), the activity
-history (wolf/workflow.get_activity) and the incident's own whitelisted methods for actions.
+Reuses the incident window and scope rules (wolf/incidents.py, wolf/events.py), the access
+grants (wolf/access.py), the activity history (wolf/workflow.get_activity) and the incident's
+own whitelisted methods for actions.
 """
 
 import html
+import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_fullname, now_datetime
+from frappe.utils import cint, get_datetime, get_fullname
 
 from frappe_wolf.api.ui import READ_ROLES
 from frappe_wolf.wolf import access, events, incidents, schema, timeline, window
 from frappe_wolf.wolf.spa import MANAGER_ROLES
-from frappe_wolf.wolf.workflow import get_activity
+from frappe_wolf.wolf.workflow import ACTIVITY_LIMITS, activity_filters, get_activity
 
-DELIVERY_CAP = 2000  # deliveries read per incident; more are reported as truncated
 ACTIONS = ("acknowledge", "resolve", "assign_to_me")
+EVENT_COLUMNS = """name, title, event_type, category, severity, source, `timestamp`, last_seen,
+	`count`, host, bench, site, incident, payload"""
 
 
 def _incident(name):
@@ -26,24 +29,31 @@ def _incident(name):
 	return doc
 
 
+def _allowed(doc, action):
+	"""Whether `action` fits the incident's state now (the server's check, not only the button's)."""
+	if doc.merged_into:
+		return False
+	if action == "acknowledge":
+		return doc.status == "Open"
+	if action == "resolve":
+		return doc.status != "Resolved"
+	if action == "assign_to_me":
+		return doc.status != "Resolved" and doc.assigned_to != frappe.session.user
+	return False
+
+
 def _can(doc):
 	manager = bool(set(frappe.get_roles()) & set(MANAGER_ROLES)) or frappe.session.user == "Administrator"
 	write = manager and frappe.has_permission("Wolf Incident", "write", doc=doc)
-	open_ = doc.status != "Resolved" and not doc.merged_into
 	return {
 		"comment": True,  # read permission is enough, like Desk's comment box
-		"acknowledge": write and doc.status == "Open" and not doc.merged_into,
-		"resolve": write and open_,
-		"assign_to_me": write and open_ and doc.assigned_to != frappe.session.user,
+		**{action: write and _allowed(doc, action) for action in ACTIONS},
 		"workflow": write,  # merge, split, postmortem (Desk)
 	}
 
 
-def _window(doc):
-	padding = cint(frappe.db.get_single_value("Wolf Settings", "timeline_padding_minutes")) or 30
-	start = frappe.utils.add_to_date(get_datetime(doc.started_at or doc.creation), minutes=-padding)
-	end = get_datetime(doc.resolved_at) if doc.resolved_at else now_datetime()
-	return start, end, padding
+def _utc(value, tz):
+	return window.to_utc(get_datetime(value), tz) if value else None
 
 
 @frappe.whitelist()
@@ -51,18 +61,22 @@ def get_incident(incident):
 	"""Everything the incident header needs, in one call."""
 	doc = _incident(incident)
 	tz = events.system_tz()
-	start, end, padding = _window(doc)
+	start, end, padding = incidents.incident_window(doc)
 	deployment = None
 	if doc.deployment_at or doc.deployment_event:
 		exists = bool(doc.deployment_event and frappe.db.exists("Wolf Event", doc.deployment_event))
 		deployment = {
-			"at": window.to_utc(doc.deployment_at, tz),
+			"at": _utc(doc.deployment_at, tz),
 			"event": doc.deployment_event if exists else None,
 			"available": exists,  # the incident keeps the time when retention deleted the event
 		}
 	rule = None
 	if doc.alert_rule:
 		rule = {"name": doc.alert_rule, "readable": frappe.has_permission("Wolf Alert Rule", "read", doc=doc.alert_rule)}
+
+	def who(user):
+		return {"by": user, "by_name": get_fullname(user) if user else None}
+
 	return {
 		"name": doc.name,
 		"title": doc.title,
@@ -70,18 +84,16 @@ def get_incident(incident):
 		"severity": doc.severity,
 		"scope": {"site": doc.site, "bench": doc.bench, "host": doc.host},
 		"summary": doc.summary,
-		"started_at": window.to_utc(get_datetime(doc.started_at), tz),
-		"last_event_at": window.to_utc(get_datetime(doc.last_event_at) if doc.last_event_at else None, tz),
-		"acknowledged": {"at": window.to_utc(get_datetime(doc.acknowledged_at) if doc.acknowledged_at else None, tz),
-						 "by": doc.acknowledged_by, "by_name": get_fullname(doc.acknowledged_by) if doc.acknowledged_by else None},  # fmt: skip
-		"resolved": {"at": window.to_utc(get_datetime(doc.resolved_at) if doc.resolved_at else None, tz),
-					 "by": doc.resolved_by, "by_name": get_fullname(doc.resolved_by) if doc.resolved_by else None},  # fmt: skip
+		"started_at": _utc(doc.started_at or doc.creation, tz),
+		"last_event_at": _utc(doc.last_event_at, tz),
+		"acknowledged": {"at": _utc(doc.acknowledged_at, tz), **who(doc.acknowledged_by)},
+		"resolved": {"at": _utc(doc.resolved_at, tz), **who(doc.resolved_by)},
 		"assigned_to": {"user": doc.assigned_to, "name": get_fullname(doc.assigned_to)} if doc.assigned_to else None,
 		"alert_rule": rule,
 		"deployment": deployment,
 		"silenced": bool(doc.silenced),
-		"notified_at": window.to_utc(get_datetime(doc.notified_at) if doc.notified_at else None, tz),
-		"escalated_at": window.to_utc(get_datetime(doc.escalated_at) if doc.escalated_at else None, tz),
+		"notified_at": _utc(doc.notified_at, tz),
+		"escalated_at": _utc(doc.escalated_at, tz),
 		"merged_into": doc.merged_into,
 		"split_from": doc.split_from,
 		"postmortem": doc.postmortem,
@@ -97,34 +109,21 @@ def get_incident(incident):
 
 def _events_after(doc, start, end, wanted, cursor_key, limit):
 	"""Up to limit + 1 event rows after the cursor: linked ones, and visible context in scope."""
-	clause, params = events.scope_clause(doc.host, doc.bench, doc.site)
-	allowed, allowed_params = access.sql_condition("Wolf Event")
-	parts = []
+	parts, params = [], {}
 	if "evidence" in wanted:
 		parts.append("incident = %(incident)s")
-	if "context" in wanted:
-		# context: in the incident's scope and window, not linked to it, and visible to the caller
+	# an incident without any scope has no context: "same scope" would mean every site
+	if "context" in wanted and (doc.host or doc.bench or doc.site):
+		clause, params = events.scope_clause(doc.host, doc.bench, doc.site)
+		allowed, allowed_params = access.sql_condition("Wolf Event")
+		params.update(allowed_params)
 		parts.append(f"(coalesce(incident, '') != %(incident)s and `timestamp` between %(start)s and %(end)s and {clause}{allowed})")
 	if not parts:
 		return [], False
-	keyset = ""
-	if cursor_key:
-		at, rank, row_id = cursor_key
-		params.update(c_at=at, c_name=row_id.removeprefix("event:"))
-		# rows after (at, rank, id). Event rows have rank 0 and ids "event:<name>": after an event,
-		# a later name at the same time; after a rank-0 row whose id sorts before "event:" (the
-		# unavailable deployment), every event at that time; after a later family, a later time.
-		if rank == timeline.RANK["event"] and row_id.startswith("event:"):
-			keyset = "and (`timestamp` > %(c_at)s or (`timestamp` = %(c_at)s and name > %(c_name)s))"
-		elif rank == timeline.RANK["event"] and row_id < "event:":
-			keyset = "and `timestamp` >= %(c_at)s"
-		else:
-			keyset = "and `timestamp` > %(c_at)s"
-	params.update(allowed_params, incident=doc.name, start=start, end=end, limit=limit + 1)
+	keyset, keyset_params = timeline.keyset_sql(cursor_key, "event", "`timestamp`")
+	params.update(keyset_params, incident=doc.name, start=start, end=end, limit=limit + 1)
 	rows = frappe.db.sql(
-		f"""select name, title, event_type, category, severity, source, `timestamp`, last_seen,
-			`count`, host, bench, site, incident, payload
-		from `tabWolf Event`
+		f"""select {EVENT_COLUMNS} from `tabWolf Event`
 		where ({' or '.join(parts)}) {keyset}
 		order by `timestamp` asc, name asc
 		limit %(limit)s""",
@@ -134,6 +133,56 @@ def _events_after(doc, start, end, wanted, cursor_key, limit):
 	for r in rows:
 		r.payload = incidents.parse_payload(r)
 	return rows, len(rows) > limit
+
+
+def _deployment_rows(doc, start, tz):
+	"""The deployment before the incident when the context query cannot see it: deleted by
+	retention (time only), or older than the timeline window (it is linked by its own setting)."""
+	if not doc.deployment_at and not doc.deployment_event:
+		return []
+	if not doc.deployment_event or not frappe.db.exists("Wolf Event", doc.deployment_event):
+		return [timeline.deployment_unavailable_row(doc.name, get_datetime(doc.deployment_at), tz)] if doc.deployment_at else []
+	ev = frappe.db.sql(f"select {EVENT_COLUMNS} from `tabWolf Event` where name = %s", doc.deployment_event, as_dict=True)[0]
+	if ev.incident == doc.name or get_datetime(ev.timestamp) >= start or not access.visible("Wolf Event", ev):
+		return []  # in the window (or linked): the event query returns it
+	ev.payload = incidents.parse_payload(ev)
+	return [timeline.event_row(ev, doc.name, tz, doc.deployment_event)]
+
+
+def _plain(content):
+	"""Comment HTML (Wolf's escaped text, or Desk's editor paragraphs) as the text typed."""
+	text = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", content or "", flags=re.I)
+	text = html.unescape(frappe.utils.strip_html(text))
+	return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _activity(doc, tz):
+	entries = get_activity(doc)
+	for e in entries:
+		e["timestamp"] = get_datetime(e["timestamp"]) if e.get("timestamp") else None
+		if e.get("kind") in ("comment", "note"):
+			e["plain"] = _plain(e.get("content"))
+	rows = [timeline.activity_row(e, doc.name, tz) for e in entries if e.get("timestamp")]
+	# get_activity keeps the newest Versions and Comments; say when older ones were left out
+	truncated = {}
+	for doctype, cap in ACTIVITY_LIMITS.items():
+		total = frappe.db.count(doctype, activity_filters(doc.name)[doctype])
+		if total > cap:
+			truncated[doctype.lower()] = {"shown": cap, "total": total}
+	return rows, len(entries), truncated
+
+
+def _deliveries_after(doc, cursor_key, limit, tz):
+	keyset, params = timeline.keyset_sql(cursor_key, "delivery", "`at`")
+	params.update(incident=doc.name, limit=limit + 1)
+	rows = frappe.db.sql(
+		f"""select name, `at`, kind, digest, channel_type, target, action, ok, http_status, error
+		from `tabWolf Delivery` where incident = %(incident)s and `at` is not null {keyset}
+		order by `at` asc, name asc limit %(limit)s""",
+		params,
+		as_dict=True,
+	)
+	return [timeline.delivery_row(d, tz) for d in rows], len(rows) > limit
 
 
 @frappe.whitelist()
@@ -147,44 +196,28 @@ def get_timeline(incident, cursor=None, limit=100, families=None):
 		cursor_key = timeline.decode_cursor(cursor)
 	except ValueError as e:
 		frappe.throw(str(e), frappe.ValidationError)
-	start, end, padding = _window(doc)
+	start, end, padding = incidents.incident_window(doc)
 
-	keyed, totals, truncated = [], {}, {}
+	# each source gives its first limit + 1 rows after the cursor: the first `limit` of their
+	# merge are the page (timeline.page)
+	keyed, totals, truncated, more = [], {}, {}, False
 	event_rows, more_events = _events_after(doc, start, end, wanted, cursor_key, limit)
 	keyed += [timeline.event_row(r, doc.name, tz, doc.deployment_event) for r in event_rows]
-	if "context" in wanted and doc.deployment_at and doc.deployment_event and not any(
-		r.name == doc.deployment_event for r in event_rows
-	):
-		if not frappe.db.exists("Wolf Event", doc.deployment_event):
-			keyed.append(timeline.deployment_unavailable_row(doc.name, get_datetime(doc.deployment_at), tz))
-	elif "context" in wanted and doc.deployment_at and not doc.deployment_event:
-		keyed.append(timeline.deployment_unavailable_row(doc.name, get_datetime(doc.deployment_at), tz))
-
+	more |= more_events
+	if "context" in wanted:
+		keyed += _deployment_rows(doc, start, tz)
 	if "activity" in wanted:
-		entries = get_activity(doc)
-		for e in entries:
-			e["timestamp"] = get_datetime(e["timestamp"]) if e.get("timestamp") else None
-			if e.get("kind") in ("comment", "note"):
-				# the text as typed: tags dropped, entities decoded; the UI shows it as text
-				e["plain"] = html.unescape(frappe.utils.strip_html((e.get("content") or "").replace("<br>", "\n")))
-		keyed += [timeline.activity_row(e, doc.name, tz) for e in entries if e.get("timestamp")]
-		totals["activity"] = len(entries)
+		rows, count, cut = _activity(doc, tz)
+		keyed += rows
+		totals["activity"] = count
+		truncated.update({f"activity_{k}": v for k, v in cut.items()})
 	if "delivery" in wanted:
-		deliveries = frappe.get_all(
-			"Wolf Delivery",
-			filters={"incident": doc.name},
-			fields=["name", "at", "kind", "digest", "channel_type", "target", "action", "ok", "http_status", "error"],
-			order_by="at asc, name asc",
-			limit_page_length=DELIVERY_CAP,
-			ignore_permissions=True,  # the incident's read permission covers its deliveries
-		)
-		keyed += [timeline.delivery_row(d, tz) for d in deliveries if d.at]
-		total = frappe.db.count("Wolf Delivery", {"incident": doc.name})
-		totals["delivery"] = total
-		if total > len(deliveries):
-			truncated["delivery"] = {"shown": len(deliveries), "total": total}
+		rows, more_deliveries = _deliveries_after(doc, cursor_key, limit, tz)
+		keyed += rows
+		more |= more_deliveries
+		totals["delivery"] = frappe.db.count("Wolf Delivery", {"incident": doc.name})
 
-	rows, paging = timeline.page(keyed, limit, cursor_key, more_events)
+	rows, paging = timeline.page(keyed, limit, cursor_key, more)
 	return {
 		"incident": doc.name,
 		"rows": rows,
@@ -200,7 +233,11 @@ def get_timeline(incident, cursor=None, limit=100, families=None):
 
 @frappe.whitelist(methods=["POST"])
 def act(incident, action):
-	"""Acknowledge, resolve or take an incident, through its own methods (and their checks)."""
+	"""Acknowledge, resolve or take an incident, through its own methods (and their checks).
+
+	The incident's state is checked here too: a page left open may offer a button that no
+	longer applies (resolved by the rule engine or a colleague meanwhile).
+	"""
 	if action not in ACTIONS:
 		frappe.throw(_("Unknown action {0}").format(action), frappe.ValidationError)
 	doc = _incident(incident)
@@ -208,16 +245,22 @@ def act(incident, action):
 	doc.check_permission("write")
 	if doc.merged_into:
 		frappe.throw(_("This incident was merged into {0}.").format(doc.merged_into))
+	if not _allowed(doc, action):
+		frappe.throw(
+			_("This incident is {0} now: refresh to see what changed.").format(_(doc.status).lower()),
+			frappe.ValidationError,
+		)
 	getattr(doc, action)()
 	return get_incident(doc.name)
 
 
 @frappe.whitelist()
 def list_incidents(status="unresolved", cursor=None, limit=50, site=None, bench=None, host=None):
-	"""Incidents the caller may see, newest first, paged by (started_at, name).
+	"""Incidents the caller may see, newest first, paged by (start, name).
 
 	status: "unresolved" (Open and Acknowledged), "resolved" or "all". Merged incidents are
-	resolved and listed under resolved/all with `merged_into`.
+	resolved and listed under resolved/all with `merged_into`. An incident without started_at
+	(an old hand-made one) is placed at its creation time.
 	"""
 	frappe.only_for(READ_ROLES)
 	tz = events.system_tz()
@@ -237,35 +280,34 @@ def list_incidents(status="unresolved", cursor=None, limit=50, site=None, bench=
 			at, _rank, name = timeline.decode_cursor(cursor)
 		except ValueError as e:
 			frappe.throw(str(e), frappe.ValidationError)
-		where.append("(started_at < %(c_at)s or (started_at = %(c_at)s and name < %(c_name)s))")
+		where.append("(coalesce(started_at, creation) < %(c_at)s or (coalesce(started_at, creation) = %(c_at)s and name < %(c_name)s))")
 		params.update(c_at=at, c_name=name)
 	rows = frappe.db.sql(
-		f"""select name, title, status, severity, started_at, resolved_at, acknowledged_at, site, bench, host,
-			event_count, assigned_to, merged_into, deployment_at
+		f"""select name, title, status, severity, coalesce(started_at, creation) as started_at, resolved_at,
+			acknowledged_at, site, bench, host, event_count, assigned_to, merged_into, deployment_at
 		from `tabWolf Incident` where {' and '.join(where)}{allowed}
-		order by started_at desc, name desc limit %(limit)s""",
+		order by coalesce(started_at, creation) desc, name desc limit %(limit)s""",
 		params,
 		as_dict=True,
 	)
 	more = len(rows) > limit
 	rows = rows[:limit]
-	out = []
-	for r in rows:
-		out.append(
-			{
-				**{k: r[k] for k in ("name", "title", "status", "severity", "site", "bench", "host", "event_count", "merged_into")},
-				"assigned_to": r.assigned_to,
-				"assigned_name": get_fullname(r.assigned_to) if r.assigned_to else None,
-				"started_at": window.to_utc(r.started_at, tz),
-				"resolved_at": window.to_utc(r.resolved_at, tz),
-				"acknowledged_at": window.to_utc(r.acknowledged_at, tz),
-				"deployment_at": window.to_utc(r.deployment_at, tz),
-			}
-		)
+	out = [
+		{
+			**{k: r[k] for k in ("name", "title", "status", "severity", "site", "bench", "host", "event_count", "merged_into")},
+			"assigned_to": r.assigned_to,
+			"assigned_name": get_fullname(r.assigned_to) if r.assigned_to else None,
+			"started_at": window.to_utc(r.started_at, tz),
+			"resolved_at": window.to_utc(r.resolved_at, tz),
+			"acknowledged_at": window.to_utc(r.acknowledged_at, tz),
+			"deployment_at": window.to_utc(r.deployment_at, tz),
+		}
+		for r in rows
+	]
 	last = rows[-1] if rows and more else None
 	return {
 		"incidents": out,
-		"paging": {"has_more": more, "next_cursor": timeline.encode_cursor((last.started_at, 0, last.name)) if last else None},
+		"paging": {"has_more": more, "next_cursor": timeline.encode_cursor((get_datetime(last.started_at), 0, last.name)) if last else None},
 		"status": status,
 		"scope": scope,
 		"time_zone": tz,

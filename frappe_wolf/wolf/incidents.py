@@ -165,12 +165,19 @@ def attach_to_open_incident(event_name, event):
 	return incident
 
 
-def get_timeline(incident, limit=300):
-	"""Events linked to the incident plus everything in the same scope during its window."""
-	inc = frappe.get_doc("Wolf Incident", incident) if isinstance(incident, str) else incident
+def incident_window(inc):
+	"""(start, end, padding_minutes) of an incident's timeline: its start less the padding, to its
+	resolution or now. Desk, the postmortem and the Wolf UI read the same window."""
 	padding = cint(frappe.db.get_single_value("Wolf Settings", "timeline_padding_minutes")) or 30
 	start = add_to_date(get_datetime(inc.started_at or inc.creation), minutes=-padding)
 	end = get_datetime(inc.resolved_at) if inc.resolved_at else now_datetime()
+	return start, end, padding
+
+
+def get_timeline(incident, limit=300):
+	"""Events linked to the incident plus everything in the same scope during its window."""
+	inc = frappe.get_doc("Wolf Incident", incident) if isinstance(incident, str) else incident
+	start, end, _padding = incident_window(inc)
 	clause, params = scope_clause(inc.host, inc.bench, inc.site)
 	params.update(incident=inc.name, start=start, end=end, limit=cint(limit))
 	return frappe.db.sql(

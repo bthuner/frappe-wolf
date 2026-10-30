@@ -79,7 +79,7 @@ class TestPaging(unittest.TestCase):
 		dels = [timeline.delivery_row({"name": f"d{i}", "at": T0 + timedelta(minutes=1), "ok": 1}, TZ) for i in range(2)]
 		return events, acts + dels
 
-	def fetch_events(self, events, cursor_key, limit):
+	def fetch(self, events, cursor_key, limit):
 		"""What the SQL keyset read returns: events after the cursor, limit + 1 of them."""
 		after = [kr for kr in sorted(events, key=lambda kr: kr[0]) if timeline.after(kr[0], cursor_key)]
 		return after[: limit + 1], len(after) > limit
@@ -90,7 +90,7 @@ class TestPaging(unittest.TestCase):
 		for limit in (1, 2, 3, 5, 14, 50):
 			seen, cursor = [], None
 			for _ in range(50):
-				fetched, more = self.fetch_events(events, timeline.decode_cursor(cursor), limit)
+				fetched, more = self.fetch(events, timeline.decode_cursor(cursor), limit)
 				rows, paging = timeline.page(fetched + others, limit, timeline.decode_cursor(cursor), more)
 				seen += [r["id"] for r in rows]
 				if not paging["has_more"]:
@@ -107,3 +107,21 @@ class TestPaging(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestKeyset(unittest.TestCase):
+	def test_no_cursor(self):
+		self.assertEqual(timeline.keyset_sql(None, "event", "`timestamp`"), ("", {}))
+
+	def test_same_family_continues_by_name(self):
+		sql, params = timeline.keyset_sql((T0, 0, "event:E5"), "event", "`timestamp`")
+		self.assertIn("name > %(c_name)s", sql)
+		self.assertEqual(params, {"c_at": T0, "c_name": "E5"})
+
+	def test_earlier_rank_or_earlier_id_keeps_the_same_time(self):
+		self.assertEqual(timeline.keyset_sql((T0, 0, "event:E5"), "delivery", "`at`")[0], "and `at` >= %(c_at)s")
+		self.assertEqual(timeline.keyset_sql((T0, 0, "deployment:W1"), "event", "`timestamp`")[0], "and `timestamp` >= %(c_at)s")
+
+	def test_later_rank_moves_on(self):
+		self.assertEqual(timeline.keyset_sql((T0, 1, "activity:x"), "event", "`timestamp`")[0], "and `timestamp` > %(c_at)s")
+		self.assertEqual(timeline.keyset_sql((T0, 2, "delivery:d"), "event", "`timestamp`")[0], "and `timestamp` > %(c_at)s")

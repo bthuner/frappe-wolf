@@ -29,7 +29,8 @@ export async function call(method, args = {}, { post = false, fetchFn = window.f
     init.body = JSON.stringify(args)
   } else {
     const query = new URLSearchParams(Object.entries(args).filter(([, v]) => v != null && v !== ''))
-    target = query.size ? `${url}?${query}` : url
+    const text = query.toString() // not query.size: missing before Safari 17 and Chrome 113
+    target = text ? `${url}?${text}` : url
   }
   const response = await fetchFn(target, init)
   const body = await response.json().catch(() => ({}))

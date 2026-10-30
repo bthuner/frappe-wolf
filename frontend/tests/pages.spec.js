@@ -46,6 +46,8 @@ describe('on a satellite', () => {
     expect(router.currentRoute.value.query.from).toBe('/incidents/WINC-00012')
     const page = mount(PendingPage, { global: { plugins: [router], provide: { boot } } })
     expect(page.text()).toContain('This site is a satellite')
+    expect(page.text()).toContain('Look for incidents there.')
+    expect(page.text()).not.toContain('incidents,WINC') // no array of path segments in the title
   })
 })
 

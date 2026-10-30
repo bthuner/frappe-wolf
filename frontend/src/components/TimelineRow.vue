@@ -9,6 +9,7 @@ const props = defineProps({
   timeZone: { type: String, required: true },
   expanded: { type: Boolean, default: false },
   anchor: { type: String, required: true },
+  targeted: { type: Boolean, default: false }, // the row the URL points at (#row-...)
 })
 defineEmits(['toggle'])
 
@@ -30,7 +31,7 @@ const detailText = computed(() => (details.value ? JSON.stringify(details.value,
 </script>
 
 <template>
-  <li :id="anchor" class="wolf-row" :class="{ 'wolf-row-context': row.family === 'context' }">
+  <li :id="anchor" class="wolf-row" :class="{ 'wolf-row-context': row.family === 'context', 'wolf-row-targeted': targeted }">
     <time class="wolf-data wolf-row-time" :datetime="row.at" :title="full(row.at, timeZone)">{{ clock(row.at, timeZone) }}</time>
     <span class="wolf-row-icon size-4" :class="ICONS[row.kind]" aria-hidden="true" />
     <div class="min-w-0 flex-1">

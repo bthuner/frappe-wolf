@@ -4,13 +4,26 @@ import frappe
 from frappe.utils import add_days, add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import digest, email_queue, escalation, events, rules, silences
+from frappe_wolf.wolf import digest, email_queue, escalation, events, rollups, rules, silences
 
 
 def evaluate_rules():
 	if satellite.is_satellite():
 		return
 	rules.evaluate_all()
+
+
+def rollup_metrics():
+	"""Roll raw samples into 1-minute buckets and those into 1-hour buckets (wolf/rollups.py)."""
+	if satellite.is_satellite():
+		return
+	rollups.run()
+
+
+def purge_metrics():
+	"""Hourly, so each run deletes about an hour of raw samples."""
+	# a satellite rolls nothing up (rollup_metrics): its raw samples follow raw retention
+	rollups.purge(rolled=not satellite.is_satellite())
 
 
 def forward_outbox():
@@ -87,9 +100,8 @@ def satellite_scope(agent):
 def purge_old_data():
 	settings = frappe.get_single("Wolf Settings")
 	now = now_datetime()
-	metric_days = cint(settings.metric_retention_days) or 14
 	event_days = cint(settings.event_retention_days) or 90
-	frappe.db.delete("Wolf Metric Sample", {"timestamp": ("<", add_days(now, -metric_days))})
+	# metric samples and rollups: purge_metrics (hourly)
 	# Keep events attached to an unresolved incident, or linked as its deployment.
 	frappe.db.sql(
 		"""delete from `tabWolf Event`

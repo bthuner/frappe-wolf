@@ -48,7 +48,7 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 
 | Field | Meaning |
 |---|---|
-| Signal | `metric` (aggregate Wolf Metric Samples) or `event` (count Wolf Events) |
+| Signal | `metric` (aggregate metric samples, or their rollups for windows over 3 h, see [Metric storage](#metric-storage)) or `event` (count Wolf Events) |
 | Aggregation | `avg`, `min`, `max`, `sum`, `count`, `last`. Use `min` for "stayed above for Z minutes" and `sum` for counters such as `http_5xx` |
 | Window | look-back in minutes |
 | Group by | `host`, `bench`, `site`, `host_label` (for example per disk mount) or `none`: one incident per group |
@@ -197,6 +197,51 @@ Identified / Resolved) and times. Hosts, rules, summaries and payloads never lea
 Internal titles often name hosts, so an incident is shown as "Degraded performance" or "Service
 disruption" unless you fill its **Public Title**.
 
+## Metric storage
+
+At 50 hosts × 15 metrics every 30 s, raw samples are about 2 M rows a day, so Wolf keeps three
+resolutions, each with its own retention (**Wolf Settings → Retention**):
+
+| Resolution | DocType | Default retention | Read by |
+|---|---|---|---|
+| raw samples | Wolf Metric Sample | 48 hours | rule windows up to 3 h, the 1 h chart |
+| 1-minute rollups | Wolf Metric Rollup (`resolution` 60) | 30 days | windows up to 2 days (6 h and 24 h charts) |
+| 1-hour rollups | Wolf Metric Rollup (`resolution` 3600) | 365 days | longer windows (7 d chart) |
+
+- A rollup row stores count, sum, min, max and the last value (with its time) of one series
+  (metric, host, bench, site, labels) in one bucket, so `avg`, `min`, `max`, `sum`, `count` and
+  `last` over whole buckets equal the raw answer. A read takes the coarsest resolution allowed
+  for its window up to the last rolled bucket, then finer rollups, then the raw samples not
+  rolled up yet, so the newest minutes are always there. A long window loses at most one bucket
+  at its start (under a minute for 1-minute reads, under an hour for 1-hour reads).
+- The `rollup_metrics` job (every minute) rolls closed minutes (2 minutes after they end) and
+  closed hours. Its progress is in **Wolf Rollup State**. It recomputes whole buckets, so
+  running it again never double counts. Samples that arrive late (an agent replaying its spool)
+  move the progress back and their buckets are rolled again, up to the raw retention.
+- `purge_metrics` (hourly) applies the retention and never deletes raw samples or 1-minute
+  rollups that are not rolled up yet. Event retention (`event_retention_days`) is unchanged.
+- **Ingest mode** (Wolf Settings → Agents): `async` (default) validates a push, queues the inserts
+  on the `short` queue and answers at once; a worker inserts the batch and attaches its events
+  to open incidents. If the queue is unreachable the push is stored inline. `sync` stores during
+  the request, as before. The agent's last seen time, clock skew and Wolf's health are updated
+  during the request in both modes.
+
+[`ci/load_test.py`](ci/load_test.py) fills a throwaway site with N hosts × M metrics × D days
+and times push and the overview. CI does not run it. Run it on a bench from `sites/`
+(`../env/bin/python /path/to/ci/load_test.py <site>`), or in the CI container by adding
+`-e WOLF_LOAD_TEST=1` (and optionally `-e WOLF_LOAD_ARGS="--hosts 20 --days 2"`) to the
+`docker run ... integration.sh` command below. At 100 hosts × 7 days it writes about 20 M rows,
+which takes 15 to 25 minutes on a GitHub runner before any timing starts.
+
+**Optional time-series backend (design, not built).** The read path goes through two functions,
+`rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through
+`events.insert_metrics()`. A ClickHouse or TimescaleDB backend would implement those three: raw
+samples in a `MergeTree` table (ClickHouse) or a hypertable (TimescaleDB), the minute and hour
+rollups as materialized views (`AggregatingMergeTree` with `sumState/minState/maxState/argMaxState`,
+or continuous aggregates with `first/last`), and retention as TTL or `add_retention_policy`. The
+watermark logic and the purge job would then be the database's job. Until a site needs more than
+a few hundred hosts, the Frappe tables above are enough and keep Wolf a plain Frappe app.
+
 ## Signals captured on the Wolf site itself
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),
@@ -265,7 +310,7 @@ rows (`/app/wolf-user-scope`, Wolf Managers only): one row per grant, `scope` = 
 | jane@client.com | site | shop.client.com |
 | ops-team@dokos.io | host | bench-02 |
 
-A restricted user then sees only the Wolf Events, Metric Samples, Incidents, Silences and Agents
+A restricted user then sees only the Wolf Events, Metric Samples and Rollups, Incidents, Silences and Agents
 whose site, bench or host matches one of their rows, in list views, reports, forms, link
 searches, the Wolf Overview page, charts and incident timelines. Rows are OR-ed. Host-wide
 records (CPU, disk, SSH logins: no site) need a `host` row. A Wolf User without any row is not

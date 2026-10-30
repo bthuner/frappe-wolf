@@ -49,6 +49,19 @@ class TestHeartbeat(unittest.TestCase):
 		# context alone is not a problem
 		self.assertEqual(hb.assess(health(rules_age=10, queues={"workers": 0})), [])
 
+	def test_ingest_backlog(self):
+		queues = {"ingest_queue": "short", "ingest_backlog_seconds": 420, "workers": 0}
+		self.assertEqual(
+			hb.assess(health(rules_age=10, queues=queues)),
+			["pushes waiting 7 min in the short queue, not stored yet; no background worker running"],
+		)
+		self.assertIsNone(hb.staleness(health(rules_age=10, queues=queues)))  # not a scheduler stall
+		self.assertEqual(hb.assess(health(rules_age=10, queues={"ingest_backlog_seconds": 60})), [])
+		self.assertEqual(hb.assess(health(rules_age=10, queues={"ingest_backlog_seconds": None})), [])
+		# both at once: staleness first
+		problems = hb.assess(health(rules_age=600, queues={"ingest_backlog_seconds": 600, "workers": 1}))
+		self.assertEqual(problems, ["alert rules not evaluated for 10 min", "pushes waiting 10 min in the ingest queue, not stored yet"])
+
 
 if __name__ == "__main__":
 	unittest.main()

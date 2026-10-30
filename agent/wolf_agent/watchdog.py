@@ -30,27 +30,34 @@ def assess(health, stale_minutes=DEFAULT_STALE_MINUTES):
 	if not isinstance(health, dict):
 		return []
 	limit = max(float(stale_minutes or DEFAULT_STALE_MINUTES), 0.1) * 60
+	queues = health.get("queues") or {}
+	problems = []
 	rules_age = (health.get("rules") or {}).get("age_seconds")
 	scheduler = health.get("scheduler") or {}
 	what, age = ("alert rules", rules_age) if rules_age is not None else ("scheduled jobs", scheduler.get("age_seconds"))
-	if not isinstance(age, (int, float)):
-		return []
-	if age >= limit:
+	problem = None
+	if isinstance(age, (int, float)) and age >= limit:
 		problem = f"{what} not evaluated for {int(age // 60)} min"
-	elif age <= -limit:
+	elif isinstance(age, (int, float)) and age <= -limit:
 		problem = f"last run of {what} is {int(-age // 60)} min in the future (time zone changed?)"
-	else:
-		return []
+	if problem:
+		notes = []
+		if scheduler.get("enabled") is False:
+			notes.append(f"scheduler disabled ({scheduler.get('reason') or 'unknown reason'})")
+		if queues.get("error"):
+			notes.append(f"job queue unreachable: {queues['error']}")
+		elif queues.get("workers") == 0:
+			notes.append("no background worker running")
+		problems.append(problem + (f"; {', '.join(notes)}" if notes else ""))
 
-	queues = health.get("queues") or {}
-	notes = []
-	if scheduler.get("enabled") is False:
-		notes.append(f"scheduler disabled ({scheduler.get('reason') or 'unknown reason'})")
-	if queues.get("error"):
-		notes.append(f"job queue unreachable: {queues['error']}")
-	elif queues.get("workers") == 0:
-		notes.append("no background worker running")
-	return [problem + (f"; {', '.join(notes)}" if notes else "")]
+	# queued pushes not stored yet: the heartbeat stays fresh, the telemetry does not arrive
+	backlog = queues.get("ingest_backlog_seconds")
+	if isinstance(backlog, (int, float)) and backlog >= limit:
+		problem = f"pushes waiting {int(backlog // 60)} min in the {queues.get('ingest_queue') or 'ingest'} queue, not stored yet"
+		if queues.get("workers") == 0:
+			problem += "; no background worker running"
+		problems.append(problem)
+	return problems
 
 
 def _fmt(ts):

@@ -13,6 +13,7 @@ _SCOPED = {"site": "site", "bench": "bench", "host": "host"}
 COLUMNS = {
 	"Wolf Event": _SCOPED,
 	"Wolf Metric Sample": _SCOPED,
+	"Wolf Metric Rollup": _SCOPED,
 	"Wolf Incident": _SCOPED,
 	"Wolf Silence": _SCOPED,
 	# an agent's hostname is its host; a satellite's hostname is its site name

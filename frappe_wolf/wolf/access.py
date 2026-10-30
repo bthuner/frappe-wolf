@@ -64,6 +64,10 @@ def metric_query(user=None, doctype=None, **kwargs):
 	return query_condition("Wolf Metric Sample", user) or ""
 
 
+def rollup_query(user=None, doctype=None, **kwargs):
+	return query_condition("Wolf Metric Rollup", user) or ""
+
+
 def incident_query(user=None, doctype=None, **kwargs):
 	return query_condition("Wolf Incident", user) or ""
 

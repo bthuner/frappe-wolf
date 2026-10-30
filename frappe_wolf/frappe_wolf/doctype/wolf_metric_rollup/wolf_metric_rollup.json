@@ -1,0 +1,154 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 09:00:00.000000",
+ "description": "1-minute and 1-hour aggregates of Wolf Metric Samples, written by the rollup job.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "metric_name",
+  "resolution",
+  "bucket_start",
+  "cb_1",
+  "host",
+  "bench",
+  "site",
+  "label_key",
+  "values_section",
+  "value_count",
+  "value_sum",
+  "value_min",
+  "cb_2",
+  "value_max",
+  "value_last",
+  "last_ts"
+ ],
+ "fields": [
+  {
+   "fieldname": "metric_name",
+   "fieldtype": "Data",
+   "label": "Metric Name",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "resolution",
+   "fieldtype": "Int",
+   "label": "Resolution (seconds)",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "60 (1 minute) or 3600 (1 hour)"
+  },
+  {
+   "fieldname": "bucket_start",
+   "fieldtype": "Datetime",
+   "label": "Bucket Start",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "label": "Bench",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "label_key",
+   "fieldtype": "Data",
+   "label": "Label Key"
+  },
+  {
+   "fieldname": "values_section",
+   "fieldtype": "Section Break",
+   "label": "Values"
+  },
+  {
+   "fieldname": "value_count",
+   "fieldtype": "Int",
+   "label": "Count"
+  },
+  {
+   "fieldname": "value_sum",
+   "fieldtype": "Float",
+   "label": "Sum"
+  },
+  {
+   "fieldname": "value_min",
+   "fieldtype": "Float",
+   "label": "Min"
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "value_max",
+   "fieldtype": "Float",
+   "label": "Max"
+  },
+  {
+   "fieldname": "value_last",
+   "fieldtype": "Float",
+   "label": "Last"
+  },
+  {
+   "fieldname": "last_ts",
+   "fieldtype": "Datetime",
+   "label": "Last Sample At"
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Metric Rollup",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "read_only": 1,
+ "sort_field": "bucket_start",
+ "sort_order": "DESC",
+ "states": []
+}

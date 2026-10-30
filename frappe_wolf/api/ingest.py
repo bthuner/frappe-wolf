@@ -8,13 +8,27 @@ from frappe_wolf.wolf import events, health, rate, schema, silences
 from frappe_wolf.wolf.incidents import attach_to_open_incident
 
 
+INGEST_QUEUE = health.INGEST_QUEUE
+STORE_METHOD = "frappe_wolf.api.ingest.store_batch"
+STORE_ATTEMPTS = 3
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def push():
 	"""Receive a batch of metrics and events from an agent (docs/protocol.md §2)."""
 	agent = authenticate_agent()
 	settings = frappe.get_cached_doc("Wolf Settings")
 	rate.check_push_rate(agent, cint(settings.max_pushes_per_minute))
-	data = _request_json()
+	return accept(agent, _request_json())
+
+
+def accept(agent, data, now=None):
+	"""Validate and normalize one push, then store it (queued, or inline in sync mode).
+
+	The agent's last_seen / clock skew and Wolf's health are always handled here, so the
+	heartbeat does not depend on the ingest queue.
+	"""
+	settings = frappe.get_cached_doc("Wolf Settings")
 	metrics_in = data.get("metrics") or []
 	events_in = data.get("events") or []
 	if not isinstance(metrics_in, list) or not isinstance(events_in, list):
@@ -25,11 +39,10 @@ def push():
 	):
 		frappe.throw(_("Batch too large, split it"), frappe.ValidationError)
 
-	tz, now = events.system_tz(), now_datetime()
+	tz, now = events.system_tz(), now or now_datetime()
 	max_skew = cint(settings.max_clock_skew_seconds)
 	skew = schema.clock_skew_seconds(data.get("sent_at"), tz, now)
 	clamped = 0
-	correlate = not satellite.is_satellite()  # a satellite opens no incidents
 	hostname = (data.get("hostname") or "").strip()[:140] or None
 	rejected = []
 
@@ -43,9 +56,8 @@ def push():
 		metric["timestamp"], was_clamped = schema.clamp_future(metric["timestamp"], now, max_skew)
 		clamped += was_clamped
 		metrics.append(metric)
-	accepted_metrics = events.insert_metrics(metrics, agent=agent)
 
-	accepted_events = 0
+	events_ok = []
 	for raw in events_in:
 		try:
 			event = schema.normalize_event(raw, tz, now, default_host=hostname)
@@ -55,10 +67,14 @@ def push():
 		event["timestamp"], was_clamped = schema.clamp_future(event["timestamp"], now, max_skew)
 		event["last_seen"] = event["timestamp"]
 		clamped += was_clamped
-		name = events.insert_event(event, agent=agent)
-		if correlate:
-			attach_to_open_incident(name, event)
-		accepted_events += 1
+		events_ok.append(event)
+
+	queued = False
+	if metrics or events_ok:
+		if (settings.get("ingest_mode") or "async") == "async":
+			queued = enqueue_batch(agent, metrics, events_ok)
+		if not queued:
+			store_batch(agent, metrics, events_ok)
 
 	frappe.db.set_value(
 		"Wolf Agent",
@@ -81,14 +97,68 @@ def push():
 	frappe.db.commit()
 
 	return {
-		"metrics": accepted_metrics,
-		"events": accepted_events,
+		"metrics": len(metrics),
+		"events": len(events_ok),
 		"rejected": rejected[:20],
 		"push_interval": push_interval(),
 		"health": wolf_health,
 		"clock_skew_seconds": skew,
 		"clamped": clamped,
+		"queued": queued,
 	}
+
+
+def enqueue_batch(agent, metrics, events_in, attempt=1, correlate=None):
+	"""Queue the inserts for a worker. False if the queue is unavailable (store inline then)."""
+	if correlate is None:
+		correlate = not satellite.is_satellite()  # a satellite opens no incidents
+	try:
+		frappe.enqueue(
+			STORE_METHOD,
+			queue=INGEST_QUEUE,
+			agent=agent,
+			metrics=metrics,
+			events_in=events_in,
+			correlate=correlate,
+			attempt=attempt,
+		)
+		return True
+	except Exception:
+		frappe.logger("frappe_wolf").warning("ingest queue unavailable, storing inline", exc_info=True)
+		return False
+
+
+def store_batch(agent, metrics, events_in, correlate=None, attempt=None):
+	"""Insert normalized metrics and events, attaching events to open incidents.
+
+	Runs in a worker for queued pushes (`attempt` set), inline in sync mode. The agent has
+	dropped a queued push from its spool already, so a failure is not left to the agent: the
+	batch is queued again (deadlocks, lock waits), and recorded in the Error Log once
+	STORE_ATTEMPTS have failed.
+	"""
+	if correlate is None:
+		correlate = not satellite.is_satellite()  # a satellite opens no incidents
+	try:
+		events.insert_metrics(metrics, agent=agent)
+		for event in events_in:
+			name = events.insert_event(event, agent=agent)
+			if correlate:
+				attach_to_open_incident(name, event)
+		frappe.db.commit()
+	except Exception:
+		if attempt is None:
+			raise
+		frappe.db.rollback()
+		if attempt < STORE_ATTEMPTS and enqueue_batch(agent, metrics, events_in, attempt + 1, correlate):
+			return None
+		frappe.log_error(
+			title="[Wolf] queued push not stored",
+			message=f"{len(metrics)} metrics and {len(events_in)} events from {agent} were dropped "
+			f"after {attempt} attempts.\n\n{frappe.get_traceback()}",
+		)
+		frappe.db.commit()
+		return None
+	return {"metrics": len(metrics), "events": len(events_in)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "POST"])

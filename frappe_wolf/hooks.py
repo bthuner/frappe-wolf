@@ -35,13 +35,14 @@ override_doctype_class = {
 permission_query_conditions = {
 	"Wolf Event": "frappe_wolf.wolf.access.event_query",
 	"Wolf Metric Sample": "frappe_wolf.wolf.access.metric_query",
+	"Wolf Metric Rollup": "frappe_wolf.wolf.access.rollup_query",
 	"Wolf Incident": "frappe_wolf.wolf.access.incident_query",
 	"Wolf Silence": "frappe_wolf.wolf.access.silence_query",
 	"Wolf Agent": "frappe_wolf.wolf.access.agent_query",
 }
 has_permission = {
 	doctype: "frappe_wolf.wolf.access.has_permission"
-	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Incident", "Wolf Silence", "Wolf Agent")
+	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Incident", "Wolf Silence", "Wolf Agent")
 }
 
 doc_events = {
@@ -56,8 +57,10 @@ scheduler_events = {
 			"frappe_wolf.tasks.evaluate_rules",
 			"frappe_wolf.tasks.check_incidents",
 			"frappe_wolf.tasks.forward_outbox",
+			"frappe_wolf.tasks.rollup_metrics",
 		],
 		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
+		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],
 		"*/5 * * * *": ["frappe_wolf.tasks.check_agents", "frappe_wolf.tasks.check_email_queue"],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
 	},

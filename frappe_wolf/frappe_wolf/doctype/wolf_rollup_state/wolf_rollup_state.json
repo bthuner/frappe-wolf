@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "autoname": "field:resolution",
+ "creation": "2026-10-30 09:00:00.000000",
+ "description": "Progress of the metric rollup job, one row per resolution.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "resolution",
+  "done_until",
+  "cb_1",
+  "last_run_at",
+  "last_run_rows",
+  "last_run_seconds"
+ ],
+ "fields": [
+  {
+   "fieldname": "resolution",
+   "fieldtype": "Data",
+   "label": "Resolution",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "1m or 1h"
+  },
+  {
+   "fieldname": "done_until",
+   "fieldtype": "Datetime",
+   "label": "Rolled Up Until",
+   "in_list_view": 1,
+   "description": "Buckets before this time are rolled up. Late samples move it back."
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_run_at",
+   "fieldtype": "Datetime",
+   "label": "Last Run At",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "last_run_rows",
+   "fieldtype": "Int",
+   "label": "Rows Written In Last Run"
+  },
+  {
+   "fieldname": "last_run_seconds",
+   "fieldtype": "Float",
+   "label": "Last Run Duration (s)"
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-30 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Rollup State",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager"
+  }
+ ],
+ "read_only": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

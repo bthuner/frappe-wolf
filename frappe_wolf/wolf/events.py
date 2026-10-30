@@ -40,6 +40,10 @@ def insert_metrics(rows, agent=None):
 		for r in rows
 	]
 	frappe.db.bulk_insert("Wolf Metric Sample", fields, values)
+	# samples for minutes that are rolled up already (spool replay) get them rolled again
+	from frappe_wolf.wolf import rollups
+
+	rollups.note_samples([r["timestamp"] for r in rows], now)
 	return len(values)
 
 

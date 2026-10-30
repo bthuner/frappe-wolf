@@ -4,7 +4,7 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import access
+from frappe_wolf.wolf import access, rollups, storage
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 from frappe_wolf.wolf.workflow import get_activity
@@ -98,34 +98,29 @@ def _known_scopes():
 
 @frappe.whitelist()
 def get_metric_series(host, metrics=None, range="6h", site=None):
-	"""Time series per metric (and label) for charts, bucketed to at most ~120 points."""
+	"""Time series per metric (and label) for charts, bucketed to at most ~120 points.
+
+	Reads raw samples for the 1 h range and minute or hour rollups for longer ones
+	(plus the raw samples not rolled up yet), see wolf/rollups.py.
+	"""
 	frappe.only_for(READ_ROLES)
 	metrics = frappe.parse_json(metrics) if metrics else ["cpu_usage", "memory_used_percent", "disk_used_percent", "load_per_core"]
 	minutes = RANGES.get(range, 360)
-	bucket = max(60, minutes * 60 // 120)
-	params = {
-		"host": host,
-		"metrics": tuple(metrics),
-		"since": _since(range),
-		"until": add_to_date(now_datetime(), minutes=1),
-	}
-	site_clause = ""
+	resolution = rollups.resolution_for(minutes * 60)
+	bucket = storage.chart_bucket(minutes * 60, resolution)
+	params = {"host": host, "metrics": tuple(metrics)}
+	where = ["host = %(host)s", "metric_name in %(metrics)s"]
 	if site:
-		site_clause = " and site = %(site)s"
+		where.append("site = %(site)s")
 		params["site"] = site
+	# restricted Wolf Users: same scope columns on samples and rollups
 	allowed, allowed_params = access.sql_condition("Wolf Metric Sample")
-	site_clause += allowed
-	params.update(allowed_params)
-	rows = frappe.db.sql(
-		f"""select metric_name, label_key, `timestamp`, `value`
-		from `tabWolf Metric Sample`
-		where host = %(host)s and metric_name in %(metrics)s
-			and `timestamp` between %(since)s and %(until)s {site_clause}""",
-		params,
-		as_dict=True,
-	)
+	if allowed:
+		where.append(allowed.removeprefix(" and "))
+		params.update(allowed_params)
+	rows = rollups.series_rows(where, params, resolution, _since(range), add_to_date(now_datetime(), minutes=1))
 	series = bucket_series(rows, bucket)
-	return {"bucket_seconds": bucket, "series": series}
+	return {"bucket_seconds": bucket, "resolution": storage.LABELS[resolution], "series": series}
 
 
 @frappe.whitelist()

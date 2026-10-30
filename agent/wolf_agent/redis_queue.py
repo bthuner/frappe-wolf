@@ -177,6 +177,9 @@ class RedisProbe:
 		self.long_job_seconds = max(float(long_job_minutes or DEFAULT_LONG_JOB_MINUTES), 1) * 60
 		self.prev_failed = None
 		self.prev_evicted = None
+		# Redis deletes a list once it is empty: a queue seen before and gone now has 0 jobs,
+		# which is reported, so the site sees "0" instead of a series that stopped
+		self.known_queues = set()
 
 	def collect(self, now=None):
 		now = now or datetime.now(timezone.utc)
@@ -188,7 +191,10 @@ class RedisProbe:
 
 		with RedisClient(self.url) as r:
 			lengths = _queue_lengths(r)
-			for name, length in lengths.items():
+			for name in self.known_queues - set(lengths):
+				lengths[name] = 0
+			self.known_queues |= set(lengths)
+			for name, length in sorted(lengths.items()):
 				add("queue_length", length, {"queue": name})
 			try:
 				self._rq(r, now, set(lengths), add)

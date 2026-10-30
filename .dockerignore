@@ -1,0 +1,6 @@
+# The demo image (dev/demo/Dockerfile) installs and builds the Wolf UI itself.
+.git
+frontend/node_modules
+frappe_wolf/public/frontend
+frappe_wolf/www/wolf.html
+**/__pycache__

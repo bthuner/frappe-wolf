@@ -1,14 +1,20 @@
 """Time bucketing for metric charts, done in Python so the SQL stays portable."""
 
+from frappe_wolf.wolf import catalog
 from frappe_wolf.wolf.storage import floor as bucket_start  # charts and rollups share one floor
 
 
-def bucket_series(rows, seconds, counter=lambda name: name.startswith("http_")):
+def is_interval_count(name):
+	"""Summed per bucket when the catalog says it counts things per push (not by name prefix)."""
+	return catalog.CATALOG.get(name, {}).get("kind") == "interval_count"
+
+
+def bucket_series(rows, seconds, counter=is_interval_count):
 	"""rows: dicts with metric_name, label_key, timestamp, value (any order).
 
 	A row may carry `count`: it then stands for that many samples whose sum is `value` (a
 	rollup bucket), so averages stay weighted by samples. Returns {"metric [label]": [["YYYY-MM-DD HH:MM:SS", value], ...]} sorted by time, where
-	value is the bucket's sum for counters (http_*) and its average otherwise.
+	value is the bucket's sum for interval counts (wolf/catalog.py) and its average otherwise.
 	"""
 	acc = {}
 	for r in rows:

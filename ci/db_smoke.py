@@ -1123,6 +1123,75 @@ def main():
 		return ("group of 9 records (8 in the window) on 2 sites, 48 occurrences, same newest record in list and page, literal % _ search, "
 		        "9 events paged by 2 without repeats, scoped user sees 6 records on 1 site")
 
+	def metrics_explorer():
+		"""Catalog rules, groups by label, interval sums, gaps, clipping and a scoped user."""
+		from frappe_wolf.api import metrics
+		from frappe_wolf.wolf import access
+
+		mhost = "smoke-metrics"
+
+		def sample(name, value, minutes_ago, **kw):
+			return schema.normalize_metric({"metric_name": name, "value": value, "host": mhost, **kw}, tz,
+			                               now - timedelta(minutes=minutes_ago))
+
+		samples = []
+		for m in range(3, 30):  # the last half hour: no data before it, so earlier buckets are gaps
+			for mount, level in (("/", 50), ("/data", 91), ("/boot", 20)):
+				samples.append(sample("disk_used_percent", level + (m % 3), m, labels={"mount": mount}))
+			for site, count in (("ma.localhost", 3), ("mb.localhost", 5)):
+				samples.append(sample("http_5xx", count, m, site=site, bench="b1"))
+		samples.append(sample("smoke_custom_gauge", 7, 40))
+		events.insert_metrics(samples)
+		frappe.db.commit()
+		rollups.run()  # the custom metric's minute is rolled: the catalog lists it as seen
+
+		cat = {m["metric"]: m for m in metrics.get_metric_catalog()["metrics"]}
+		assert cat["smoke_custom_gauge"]["kind"] == "unknown" and cat["smoke_custom_gauge"]["seen"], cat.get("smoke_custom_gauge")
+		assert cat["http_5xx"]["default_aggregation"] == "sum" and "last" not in cat["http_5xx"]["aggregations"]
+
+		disk = metrics.query_metric("disk_used_percent", "max", "host_label", range="1h", host=mhost)
+		names = [s["name"] for s in disk["series"]]
+		assert names == [f"{mhost} · mount=/data", f"{mhost} · mount=/", f"{mhost} · mount=/boot"], names  # highest first
+		points = disk["series"][0]["points"]
+		assert points[0][1] is None and any(v is not None for _, v in points), "early buckets are gaps, not zeros"
+		assert disk["resolution"] == "raw" and disk["bucket_seconds"] == 60 and not disk["retention"]["clipped"], disk
+		one = metrics.query_metric("disk_used_percent", "avg", "host", label="mount=/boot", range="1h", host=mhost)
+		assert len(one["series"]) == 1 and one["series"][0]["value"] < 25, one["series"]
+
+		http = metrics.query_metric("http_5xx", "sum", "site", range="1h", host=mhost)
+		totals = {s["group"]["site"]: s["value"] for s in http["series"]}
+		in_window = sum(1 for _, v in http["series"][0]["points"] if v is not None)
+		assert set(totals) == {"ma.localhost", "mb.localhost"} and totals["mb.localhost"] > totals["ma.localhost"], totals
+		assert sum(v for _, v in next(s for s in http["series"] if s["group"]["site"] == "mb.localhost")["points"] if v) == 5 * in_window
+		for bad in (("disk_used_percent", "sum", None), ("http_5xx", "last", None), ("cpu_usage", "avg", "site")):
+			try:
+				metrics.query_metric(bad[0], bad[1], bad[2], range="1h")
+				raise AssertionError(f"accepted {bad}")
+			except frappe.ValidationError:
+				pass
+		assert metrics.query_metric("disk_used_percent", range="400d", host=mhost)["retention"]["clipped"], "clipping"
+		from frappe_wolf.wolf import window as win_mod
+
+		past = metrics.query_metric("disk_used_percent", host=mhost, since=win_mod.to_utc(now - timedelta(minutes=40), tz),
+		                            until=win_mod.to_utc(now - timedelta(minutes=20), tz))
+		assert not past["live"] and not any(s["stale"] for s in past["series"]), "a past window called stale"
+		labels = metrics.get_labels("disk_used_percent", host=mhost)  # hourly rollups: none closed yet for these
+		assert isinstance(labels["labels"], list), labels
+
+		user = "smoke-scoped@example.com"
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "host", "value": "smoke-host"}).insert()
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			assert not metrics.query_metric("disk_used_percent", range="1h", host=mhost)["series"], "another host leaked"
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Wolf User Scope", {"user": user})
+			access.clear_cache()
+		return (f"3 mounts ranked by max with early gaps, mb 5xx summed per bucket, wrong aggregations refused, "
+		        f"custom metric listed, 400d clipped, scoped user sees nothing of {mhost}")
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1133,7 +1202,7 @@ def main():
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
-	                 ("explorers", explorers)]:
+	                 ("explorers", explorers), ("metrics explorer", metrics_explorer)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

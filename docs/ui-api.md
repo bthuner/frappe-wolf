@@ -246,3 +246,42 @@ Every visible record of one group, whatever its age:
 
 A restricted user sees only the records of their sites, benches or hosts, and counts over
 those.
+
+## Metrics explorer
+
+### `frappe_wolf.api.metrics.get_metric_catalog`
+
+Every catalogued metric (`wolf/catalog.py`) and the custom metrics seen in the last 7 days.
+Each one has:
+- its `kind`, `unit`, `level` (host, bench or site) and `label_key` (mount, queue, domain, db,
+  of, manager);
+- the `aggregations` and `group_bys` it allows;
+- `seen`: whether the caller has data for it.
+
+Gauges are read as `avg`, `min`, `max` or `last`. Interval counts are read as `sum` (the total
+per bucket), `avg` or `max` (per push interval). A custom metric is read as a level. Grouping
+follows the metric's level: a host metric has no bench or site. Metrics with a label also
+group by `host_label`. `get_labels(metric, scope)` lists a metric's label values (at most
+100).
+
+### `frappe_wolf.api.metrics.query_metric`
+
+Arguments:
+- `metric`, `aggregation` (default per kind), `group_by` (default `none`) and `label`;
+- the common window and scope arguments.
+
+A combination the catalog does not allow is refused: a sum of disk levels, the last value of
+an interval count, a host metric grouped by site.
+
+The answer reads whole buckets at the resolution of the window (`resolution`,
+`bucket_seconds`; `window` is what was read, `requested_window` what was asked). It is exact
+across raw samples and rollups. Each of `series` has:
+- `points` per bucket, with `null` for a bucket without samples (a gap, not a zero);
+- `value`, the aggregation over the whole window;
+- `samples` and `last_sample`;
+- `stale`, judged only when the window reaches now (`live`); in a past window the last sample
+  is just where the window ends.
+
+`groups` says how many groups exist and which `MAX_GROUPS` (20) are shown, ranked by the
+aggregation, highest first (lowest for `min`). `retention.clipped` is true when the window
+starts before the data kept at this resolution (`kept_from`): those buckets are gaps.

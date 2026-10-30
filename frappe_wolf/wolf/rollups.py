@@ -415,3 +415,37 @@ def series_rows(where, params, resolution, since, until):
 			as_dict=True,
 		)
 	return rows
+
+
+def bucket_rows(where, params, group_cols, resolution, since, until):
+	"""(group, time, partial) rows over [since, until), for storage.bucket_partials.
+
+	Raw samples become one-sample partials; rollup rows keep their count, sum, min, max and
+	last, so any aggregation of a chart bucket stays exact across the raw/rollup boundary.
+	"""
+	cols = [f"`{c}`" for c in group_cols]
+	out = []
+	for res, start, end in segments(resolution, since, until):
+		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+		if res == RAW:
+			select = ", ".join([*cols, "`value` as v", "`timestamp` as t"])
+		else:
+			select = ", ".join([*cols, "bucket_start as t", "value_count as c", "value_sum as s", "value_min as mn",
+								"value_max as mx", "value_last as l", "last_ts as lt"])  # fmt: skip
+		rows = frappe.db.sql(
+			f"select {select} from `{table}` where {' and '.join([*where, seg_where])}",
+			{**params, **seg_params},
+			as_dict=True,
+		)
+		for r in rows:
+			group = tuple(r.get(c) for c in group_cols)
+			at = get_datetime(r.t)
+			if res == RAW:
+				if at >= until:
+					continue  # [since, until): the raw segment's end is inclusive
+				part = storage.new_partial(float(r.v), at)
+			else:
+				part = {"count": int(r.c), "sum": float(r.s), "min": float(r.mn), "max": float(r.mx),
+						"last": float(r.l), "last_ts": get_datetime(r.lt)}  # fmt: skip
+			out.append((group, at, part))
+	return out

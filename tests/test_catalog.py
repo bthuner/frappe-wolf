@@ -71,5 +71,33 @@ class TestState(unittest.TestCase):
 		self.assertEqual(catalog.state(data, NOW, [self.RULE], [host_wide]), "firing")
 
 
+class TestExplore(unittest.TestCase):
+	def test_aggregations_follow_the_kind(self):
+		self.assertEqual(catalog.validate("disk_used_percent", None, None), ("avg", "none"))
+		self.assertEqual(catalog.validate("http_5xx", None, None), ("sum", "none"))
+		with self.assertRaises(ValueError):
+			catalog.validate("disk_used_percent", "sum", None)  # a sum of disk levels means nothing
+		with self.assertRaises(ValueError):
+			catalog.validate("http_5xx", "last", None)  # one push's count is not "the" count
+
+	def test_grouping_follows_the_level_and_label(self):
+		self.assertIn("host_label", catalog.describe("disk_used_percent")["group_bys"])
+		self.assertEqual(catalog.describe("disk_used_percent")["label_key"], "mount")
+		with self.assertRaises(ValueError):
+			catalog.validate("cpu_usage", "avg", "site")  # a host metric has no site
+		self.assertEqual(catalog.validate("http_requests", "sum", "site"), ("sum", "site"))
+
+	def test_custom_metric_is_read_as_a_level(self):
+		d = catalog.describe("my_custom_gauge")
+		self.assertEqual((d["kind"], d["group"], d["default_aggregation"]), ("unknown", "custom", "avg"))
+		with self.assertRaises(ValueError):
+			catalog.validate("my_custom_gauge", "sum", None)
+
+	def test_every_catalog_metric_describes(self):
+		for m in catalog.CATALOG:
+			d = catalog.describe(m)
+			self.assertIn(d["default_aggregation"], d["aggregations"], m)
+
+
 if __name__ == "__main__":
 	unittest.main()

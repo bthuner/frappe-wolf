@@ -222,10 +222,16 @@ in the list; `get_event(name)` returns one record with its payload.
 
 ### `frappe_wolf.api.explore.list_error_groups`
 
-Error records grouped by fingerprint, for groups active in the window, latest first. Each group
-has `records`, `occurrences` (the sum of its records' counts, inside the window or not),
-`first_seen`, `last_seen`, the number of `sites`, whether some records are host-wide, the number
-of linked `incidents`, and its newest record's title, which stands for the group. A fingerprint
+Groups of error records, by fingerprint, that have a record active in the window, latest
+first. The window and `q` choose the groups. Their figures cover every record of the group the
+caller may see, whatever its age, as on the group's page, so a recurring error isn't
+presented as new:
+- `records`, and `records_in_window`;
+- `occurrences`, the sum of the records' counts;
+- `first_seen` and `last_seen`;
+- the number of `sites`, and whether some records are host-wide;
+- the number of linked `incidents`;
+- the title of the most recently seen record, which stands for the group. A fingerprint
 includes the site unless the agent sends its own, so most groups concern one site.
 
 ### `frappe_wolf.api.explore.get_error_group`
@@ -234,8 +240,9 @@ Every visible record of one group, whatever its age:
 - where it happened, by site, bench and host;
 - the incidents it is linked to that the caller may read (`incidents_not_visible` counts the
   others);
-- its newest record with the payload (the representative traceback);
-- its 50 newest records.
+- its most recently seen record with the payload (the representative traceback, the same
+  record the list shows);
+- its 50 most recently seen records.
 
 A restricted user sees only the records of their sites, benches or hosts, and counts over
 those.

@@ -6,13 +6,14 @@ import ExploreFilters from '@/components/ExploreFilters.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useExplore } from '@/composables/useExplore'
 import { call } from '@/services/api'
+import { EVENT_TYPES, SEVERITIES, pick } from '@/services/filters'
 import { clock, day, full } from '@/services/time'
 
 const boot = inject('boot')
 const tz = boot.time_zone
 const list = useExplore('frappe_wolf.api.explore.list_events', 'events', {
   itemKey: (e) => e.name,
-  extraArgs: (q) => ({ event_type: q.type, severity: q.severity }),
+  extraArgs: (q) => ({ event_type: pick(q.type, EVENT_TYPES), severity: pick(q.severity, SEVERITIES) }),
 })
 
 // payloads load when a row opens, and show as text

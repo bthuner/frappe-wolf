@@ -74,6 +74,7 @@ def insert_event(data, agent=None, dedupe_minutes=None):
 			)
 			return existing.name
 
+	data.setdefault("last_seen", data.get("timestamp"))  # window queries filter on it
 	doc = frappe.get_doc({"doctype": "Wolf Event", "agent": agent, **data})
 	doc.flags.ignore_permissions = True
 	doc.flags.ignore_links = True

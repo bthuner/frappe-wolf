@@ -22,7 +22,8 @@ def _filters(win, scope, event_type=None, severity=None, category=None, q=None, 
 	"""WHERE parts and params shared by the event list and error groups."""
 	allowed, params = access.sql_condition("Wolf Event")
 	# records active in the window: first seen before its end, last seen after its start
-	where = ["coalesce(last_seen, `timestamp`) >= %(since)s", "`timestamp` <= %(until)s", *extra]
+	# (every record has last_seen: events.insert_event, patches/event_last_seen.py)
+	where = ["last_seen >= %(since)s", "`timestamp` <= %(until)s", *extra]
 	params.update(scope, since=win.since, until=win.until)
 	where += [f"`{k}` = %({k})s" for k in scope]
 	for field, value, allowed_values in (
@@ -117,32 +118,34 @@ def list_error_groups(range=None, since=None, until=None, site=None, bench=None,
 			at, _rank, fp = timeline.decode_cursor(cursor)
 		except ValueError as e:
 			frappe.throw(str(e), frappe.ValidationError)
-		having = "having max(coalesce(last_seen, `timestamp`)) < %(c_at)s or (max(coalesce(last_seen, `timestamp`)) = %(c_at)s and fingerprint < %(c_fp)s)"
+		having = "having max(last_seen) < %(c_at)s or (max(last_seen) = %(c_at)s and fingerprint < %(c_fp)s)"
 		params.update(c_at=at, c_fp=fp)
+	# the window (and search) choose which groups are listed and their order...
 	groups = frappe.db.sql(
-		f"""select fingerprint, count(*) as records, sum(`count`) as occurrences, min(`timestamp`) as first_seen,
-			max(coalesce(last_seen, `timestamp`)) as last_seen, count(distinct site) as sites,
-			count(distinct case when coalesce(site, '') = '' then host end) as hosts_without_site,
-			count(distinct incident) as incidents
+		f"""select fingerprint, max(last_seen) as last_seen, count(*) as in_window
 		from `tabWolf Event` where {where}
 		group by fingerprint {having}
-		order by max(coalesce(last_seen, `timestamp`)) desc, fingerprint desc
+		order by max(last_seen) desc, fingerprint desc
 		limit %(limit)s""",
 		{**params, "limit": limit + 1},
 		as_dict=True,
 	)
 	more = len(groups) > limit
 	groups = groups[:limit]
-	latest = _latest_records([g.fingerprint for g in groups], where, params)
+	# ...their figures cover every visible record of the group, as on its own page: a recurring
+	# error is not presented as new because its older records lie outside the window
+	fps = [g.fingerprint for g in groups]
+	totals = _group_totals(fps, scope)
+	latest = _latest_records(fps, scope)
 	out = []
 	for g in groups:
-		rep = latest.get(g.fingerprint) or {}
+		t, rep = totals.get(g.fingerprint), latest.get(g.fingerprint) or {}
 		out.append({
 			"fingerprint": g.fingerprint, "title": rep.get("title"), "severity": rep.get("severity"),
 			"category": rep.get("category"), "source": rep.get("source"),
-			"records": cint(g.records), "occurrences": cint(g.occurrences),
-			"first_seen": window.to_utc(get_datetime(g.first_seen), tz), "last_seen": window.to_utc(get_datetime(g.last_seen), tz),
-			"sites": cint(g.sites), "host_wide": cint(g.hosts_without_site) > 0, "incidents": cint(g.incidents),
+			"records": cint(t.records), "records_in_window": cint(g.in_window), "occurrences": cint(t.occurrences),
+			"first_seen": window.to_utc(get_datetime(t.first_seen), tz), "last_seen": window.to_utc(get_datetime(t.last_seen), tz),
+			"sites": cint(t.sites), "host_wide": cint(t.hosts_without_site) > 0, "incidents": cint(t.incidents),
 			"latest": {k: rep.get(k) for k in ("name", "site", "bench", "host")},
 		})  # fmt: skip
 	last = groups[-1] if more else None
@@ -154,26 +157,55 @@ def list_error_groups(range=None, since=None, until=None, site=None, bench=None,
 		},
 		"window": window.describe(win),
 		"scope": scope,
-		"basis": "error records active in the window, grouped by fingerprint; occurrences add up each record's "
-		"reported count, so a record spanning the window's edge counts all its repeats",
+		"basis": "groups with error records active in the window, latest first; their figures cover every record of "
+		"the group you may see, whatever its age (records_in_window: those active in the window); occurrences add "
+		"up each record's reported count",
 		"time_zone": tz,
 	}
 
 
-def _latest_records(fingerprints, where, params):
-	"""The newest visible record of each group: its title stands for the group."""
+def _group_where(fingerprints, scope):
+	allowed, params = access.sql_condition("Wolf Event")
+	params.update(scope, fps=tuple(fingerprints))
+	where = "event_type = 'error' and fingerprint in %(fps)s" + "".join(f" and `{k}` = %({k})s" for k in scope)
+	return where + allowed, params
+
+
+def _group_totals(fingerprints, scope):
+	"""Figures of each group over every record the caller may see (in the scope, any age)."""
 	if not fingerprints:
 		return {}
+	where, params = _group_where(fingerprints, scope)
 	rows = frappe.db.sql(
-		f"""select name, fingerprint, title, severity, category, source, site, bench, host,
-			coalesce(last_seen, `timestamp`) as seen
-		from `tabWolf Event` where {where} and fingerprint in %(fps)s""",
-		{**params, "fps": tuple(fingerprints)},
+		f"""select fingerprint, count(*) as records, sum(`count`) as occurrences, min(`timestamp`) as first_seen,
+			max(last_seen) as last_seen, count(distinct site) as sites,
+			count(distinct case when coalesce(site, '') = '' then host end) as hosts_without_site,
+			count(distinct incident) as incidents
+		from `tabWolf Event` where {where} group by fingerprint""",
+		params,
+		as_dict=True,
+	)
+	return {r.fingerprint: r for r in rows}
+
+
+def _latest_records(fingerprints, scope):
+	"""The most recently seen visible record of each group, picked in SQL: its title stands for
+	the group, as on the group's page."""
+	if not fingerprints:
+		return {}
+	where, params = _group_where(fingerprints, scope)
+	rows = frappe.db.sql(
+		f"""select e.name, e.fingerprint, e.title, e.severity, e.category, e.source, e.site, e.bench, e.host, e.last_seen
+		from (select name, fingerprint, title, severity, category, source, site, bench, host, last_seen
+			from `tabWolf Event` where {where}) e
+		join (select fingerprint as fp, max(last_seen) as m from `tabWolf Event` where {where} group by fingerprint) x
+		on e.fingerprint = x.fp and e.last_seen = x.m""",
+		params,
 		as_dict=True,
 	)
 	best = {}
-	for r in rows:
-		if r.fingerprint not in best or (r.seen, r.name) > (best[r.fingerprint].seen, best[r.fingerprint].name):
+	for r in rows:  # ties on last_seen: the later name, as get_error_group orders
+		if r.fingerprint not in best or r.name > best[r.fingerprint].name:
 			best[r.fingerprint] = r
 	return best
 
@@ -190,24 +222,25 @@ def get_error_group(fingerprint, limit=50):
 	base = f"fingerprint = %(fp)s and event_type = 'error'{allowed}"
 	by_scope = frappe.db.sql(
 		f"""select site, bench, host, count(*) as records, sum(`count`) as occurrences, min(`timestamp`) as first_seen,
-			max(coalesce(last_seen, `timestamp`)) as last_seen
+			max(last_seen) as last_seen
 		from `tabWolf Event` where {base} group by site, bench, host
-		order by max(coalesce(last_seen, `timestamp`)) desc""",
+		order by max(last_seen) desc""",
 		params,
 		as_dict=True,
 	)
 	if not by_scope:
 		frappe.throw(_("No error group {0} that you can see.").format(fingerprint), frappe.DoesNotExistError)
 	rows = frappe.db.sql(
-		f"select {EVENT_FIELDS}, payload from `tabWolf Event` where {base} order by `timestamp` desc, name desc limit %(limit)s",
+		# newest = most recently seen, as in the list of groups
+		f"select {EVENT_FIELDS}, payload from `tabWolf Event` where {base} order by last_seen desc, name desc limit %(limit)s",
 		{**params, "limit": limit + 1},
 		as_dict=True,
 	)
 	total = sum(cint(s.records) for s in by_scope)
 	newest = rows[0]
-	incident_names = sorted({r.incident for r in rows if r.incident} | set(
-		frappe.db.sql_list(f"select distinct incident from `tabWolf Event` where {base} and coalesce(incident, '') != ''", params)
-	))  # fmt: skip
+	incident_names = frappe.db.sql_list(
+		f"select distinct incident from `tabWolf Event` where {base} and coalesce(incident, '') != ''", params
+	)
 	# incidents the caller may read; the others are counted, not named
 	visible = frappe.get_list(
 		"Wolf Incident", filters={"name": ("in", incident_names or [""])}, fields=["name", "title", "status", "severity"], limit_page_length=0

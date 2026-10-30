@@ -45,6 +45,14 @@ describe('EventsPage', () => {
     expect(page.text()).toContain('inside the window or not')
   })
 
+  it('falls back to 24h for a range the controls do not offer, in the request and on screen', async () => {
+    const fetchFn = server({ 'frappe_wolf.api.explore.list_events': () => ({ events: [], paging: { has_more: false } }) })
+    const { page } = await open(EventsPage, '/events?range=48h&type=gossip')
+    expect(fetchFn.mock.calls[0][0]).toContain('range=24h')
+    expect(fetchFn.mock.calls[0][0]).not.toContain('event_type')
+    expect(page.find('[role=radio][data-state=checked], [role=radio][aria-checked=true]').text()).toBe('24h')
+  })
+
   it('drops a bench without its host', async () => {
     const fetchFn = server({ 'frappe_wolf.api.explore.list_events': () => ({ events: [], paging: { has_more: false } }) })
     await open(EventsPage, '/events?bench=b1')
@@ -68,14 +76,14 @@ describe('ErrorsPage', () => {
   it('keeps records and reported occurrences apart, and says occurrences are not a window count', async () => {
     server({
       'frappe_wolf.api.explore.list_error_groups': () => ({
-        groups: [{ fingerprint: 'fp1', title: 'KeyError', severity: 'critical', records: 8, occurrences: 47, sites: 2, host_wide: false,
+        groups: [{ fingerprint: 'fp1', title: 'KeyError', severity: 'critical', records: 8, records_in_window: 3, occurrences: 47, sites: 2, host_wide: false,
           incidents: 1, first_seen: AT, last_seen: AT, latest: { site: 'a.example.com' } }],
         paging: { has_more: false },
       }),
     })
     const { page } = await open(ErrorsPage, '/errors')
     const cells = page.findAll('tbody td').map((td) => td.text())
-    expect(cells).toContain('8')
+    expect(cells).toContain('8 (3 in window)') // the group's records, and those in the window
     expect(cells).toContain('47')
     expect(page.text()).toContain('they are not a count for the window')
   })

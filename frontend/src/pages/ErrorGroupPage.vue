@@ -97,10 +97,10 @@ const where = (s) => [s.site, s.bench, s.host].filter(Boolean).join(' · ')
     </section>
 
     <section class="wolf-card space-y-1" aria-label="Records">
-      <h2 class="text-base font-semibold text-ink-gray-9">Records, newest first</h2>
+      <h2 class="text-base font-semibold text-ink-gray-9">Records, most recently seen first</h2>
       <ul class="text-sm">
         <li v-for="r in group.recent_records" :key="r.name" class="flex flex-wrap gap-x-3 py-0.5">
-          <time class="wolf-data text-ink-gray-6" :title="full(r.first_seen, tz)">{{ day(r.first_seen, tz) }} {{ clock(r.first_seen, tz) }}</time>
+          <time class="wolf-data text-ink-gray-6" :title="`last seen ${full(r.last_seen, tz)}`">{{ day(r.last_seen, tz) }} {{ clock(r.last_seen, tz) }}</time>
           <span>{{ where(r) }}</span>
           <span v-if="r.count > 1" class="wolf-data text-ink-gray-6">{{ r.count }} reported</span>
           <RouterLink v-if="r.incident" class="wolf-link" :to="{ name: 'incident', params: { incident: r.incident } }">{{ r.incident }}</RouterLink>

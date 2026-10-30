@@ -20,8 +20,8 @@ const list = useExplore('frappe_wolf.api.explore.list_error_groups', 'groups', {
   <div class="mx-auto max-w-6xl space-y-3 p-5">
     <ExploreFilters />
     <p class="text-sm text-ink-gray-6">
-      Error records grouped by fingerprint, for groups active in the window. Occurrences add up each record's
-      reported count, including repeats outside the window; they are not a count for the window.
+      Groups with error records active in the window. Their figures cover all their records you may see, whatever
+      their age; occurrences add up each record's reported count, so they are not a count for the window.
     </p>
     <p v-if="list.error.value" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ list.error.value }}</p>
     <table v-if="list.items.value.length" class="wolf-card w-full text-left text-sm">
@@ -43,11 +43,11 @@ const list = useExplore('frappe_wolf.api.explore.list_error_groups', 'groups', {
             <RouterLink class="text-ink-gray-9 hover:underline" :to="{ name: 'error-group', params: { fingerprint: g.fingerprint } }">{{ g.title }}</RouterLink>
             <div class="text-ink-gray-6">{{ [g.latest.site, g.latest.bench, g.latest.host].filter(Boolean).join(' · ') }}</div>
           </td>
-          <td class="wolf-data">{{ g.records }}</td>
+          <td class="wolf-data">{{ g.records }}<span v-if="g.records_in_window !== g.records" class="text-ink-gray-6"> ({{ g.records_in_window }} in window)</span></td>
           <td class="wolf-data">{{ g.occurrences }}</td>
           <td class="wolf-data">{{ g.sites }}<span v-if="g.host_wide" class="text-ink-gray-6"> + host-wide</span></td>
-          <td class="wolf-data"><time :datetime="g.first_seen">{{ full(g.first_seen, tz).replace(` (${tz})`, '') }}</time></td>
-          <td class="wolf-data"><time :datetime="g.last_seen">{{ full(g.last_seen, tz).replace(` (${tz})`, '') }}</time></td>
+          <td class="wolf-data"><time :datetime="g.first_seen">{{ full(g.first_seen, tz, { zone: false }) }}</time></td>
+          <td class="wolf-data"><time :datetime="g.last_seen">{{ full(g.last_seen, tz, { zone: false }) }}</time></td>
           <td class="wolf-data">{{ g.incidents || '' }}</td>
         </tr>
       </tbody>

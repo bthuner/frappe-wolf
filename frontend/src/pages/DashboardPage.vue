@@ -1,9 +1,10 @@
 <script setup>
 import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
+import { useQueryParam } from '@/composables/useQueryParam'
 import CountTiles from '@/components/dash/CountTiles.vue'
 import HttpChart from '@/components/dash/HttpChart.vue'
 import MonitoringPanel from '@/components/dash/MonitoringPanel.vue'
@@ -13,15 +14,11 @@ import { clock, full } from '@/services/time'
 
 // The overview (no scope) and the site, host and bench dashboards (scope from the route).
 const route = useRoute()
-const router = useRouter()
 const boot = inject('boot')
 const tz = boot.time_zone
 
 const RANGES = ['1h', '6h', '24h', '7d'].map((r) => ({ value: r, label: r }))
-const range = computed({
-  get: () => (RANGES.some((r) => r.value === route.query.range) ? route.query.range : '24h'),
-  set: (value) => router.replace({ query: { ...route.query, range: value === '24h' ? undefined : value } }),
-})
+const range = useQueryParam('range', '24h', RANGES.map((r) => r.value))
 const scope = computed(() => {
   const { site, host, bench } = route.params
   return Object.fromEntries(Object.entries({ site, host, bench }).filter(([, v]) => v))

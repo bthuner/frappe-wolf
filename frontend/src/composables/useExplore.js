@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { call } from '@/services/api'
+import { RANGES, pick } from '@/services/filters'
 
 // A paged list driven by the URL's filters: a newer filter's answer always wins, and
 // "Load more" appends without repeating a row.
@@ -17,7 +18,8 @@ export function useExplore(method, key, { extraArgs = () => ({}), itemKey }) {
 
   const args = computed(() => {
     const q = route.query
-    const out = { range: q.range || '24h', q: q.q, site: q.site, host: q.host, bench: q.host ? q.bench : undefined, ...extraArgs(q) }
+    // the same values the filter controls show: an unknown one falls back to the default
+    const out = { range: pick(q.range, RANGES, '24h'), q: q.q, site: q.site, host: q.host, bench: q.host ? q.bench : undefined, ...extraArgs(q) }
     return Object.fromEntries(Object.entries(out).filter(([, v]) => v != null && v !== ''))
   })
 

@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "Builds the Wolf UI (frontend/) during `bench build` and `bench setup requirements --node`",
+  "scripts": {
+    "postinstall": "cd frontend && yarn install --frozen-lockfile",
+    "dev": "cd frontend && yarn dev",
+    "build": "cd frontend && yarn build"
+  }
+}

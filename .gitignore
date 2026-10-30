@@ -6,3 +6,7 @@ dist/
 .venv/
 node_modules/
 .claude/
+
+# Wolf UI build output (frontend/, written by `bench build --app frappe_wolf`)
+frappe_wolf/public/frontend/
+frappe_wolf/www/wolf.html

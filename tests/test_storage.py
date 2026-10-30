@@ -202,6 +202,36 @@ class TestLateRestart(unittest.TestCase):
 		oldest = self.now - timedelta(hours=47)
 		self.assertIsNone(storage.late_restart([self.now - timedelta(days=3)], recent, oldest, MINUTE))
 
+	def test_samples_behind_the_watermark_are_late(self):
+		# DST fall-back (Europe/Paris, 03:00 -> 02:00): the watermark is at 02:58 and the clock
+		# reads 02:05 again; fresh samples of the repeated hour land in rolled buckets
+		now = datetime(2026, 10, 25, 2, 5, 10)
+		recent = now - timedelta(seconds=90)
+		oldest = now - timedelta(hours=47)
+		ts = [now - timedelta(seconds=10)]
+		self.assertIsNone(storage.late_restart(ts, recent, oldest, MINUTE))  # what `recent` alone sees
+		watermark = datetime(2026, 10, 25, 2, 58)
+		self.assertEqual(storage.late_restart(ts, recent, oldest, MINUTE, watermark), datetime(2026, 10, 25, 2, 5))
+		self.assertEqual(storage.late_restart(ts, recent, oldest, HOUR, datetime(2026, 10, 25, 2)), None)
+		self.assertEqual(storage.late_restart(ts, recent, oldest, HOUR, datetime(2026, 10, 25, 3)), datetime(2026, 10, 25, 2))
+
+	def test_late_horizon(self):
+		self.assertEqual(storage.late_horizon(self.now, 48), self.now - timedelta(hours=47))
+		# a short raw retention keeps a window for late samples (was: none at 1 h)
+		self.assertEqual(storage.late_horizon(self.now, 1), self.now - timedelta(minutes=45))
+		recent = self.now - timedelta(seconds=90)
+		late = [self.now - timedelta(minutes=5)]
+		self.assertIsNotNone(storage.late_restart(late, recent, storage.late_horizon(self.now, 1), MINUTE))
+
+
+class TestLastLabel(unittest.TestCase):
+	def test_merge_keeps_the_label_of_the_latest_value(self):
+		a = dict(storage.new_partial(91.0, T0), last_label="mount=/data")
+		b = dict(storage.new_partial(40.0, T0 - timedelta(minutes=1)), last_label="mount=/")
+		self.assertEqual(storage.merge(a, b)["last_label"], "mount=/data")
+		self.assertEqual(storage.merge(b, a)["last_label"], "mount=/data")
+		self.assertNotIn("last_label", storage.merge(storage.new_partial(1.0, T0), storage.new_partial(2.0, T0)))
+
 
 class TestWeightedSeries(unittest.TestCase):
 	def test_rollup_rows_average_by_samples(self):

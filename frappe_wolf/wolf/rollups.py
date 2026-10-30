@@ -149,9 +149,25 @@ def replace_buckets(res, start, end, partials):
 		)  # fmt: skip
 		for key, p in partials.items()
 	]
-	if values:
-		frappe.db.bulk_insert(ROLLUP_DOCTYPE, ROLLUP_FIELDS, values)
+	insert_rows(f"tab{ROLLUP_DOCTYPE}", ROLLUP_FIELDS, values)
 	return len(values)
+
+
+def insert_rows(table, fields, rows, chunk=1000):
+	"""Multi-row INSERT with plain placeholders (MariaDB and Postgres).
+
+	frappe.db.bulk_insert builds its query with the query builder, which costs seconds per
+	10,000 rows; a minute of 100 hosts is about 1,500 rollup rows, a 15-minute backfill
+	chunk 20,000.
+	"""
+	cols = ", ".join(f"`{f}`" for f in fields)
+	row_ph = "(" + ", ".join(["%s"] * len(fields)) + ")"
+	for i in range(0, len(rows), chunk):
+		part = rows[i : i + chunk]
+		frappe.db.sql(
+			f"insert into `{table}` ({cols}) values {', '.join([row_ph] * len(part))}",
+			[v for row in part for v in row],
+		)
 
 
 def roll(res, now=None, deadline=None):

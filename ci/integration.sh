@@ -64,7 +64,7 @@ if [ "$status" -ne 0 ] || grep -q '^FAIL' /tmp/db_smoke.log || ! grep -q '^all c
 	exit 1
 fi
 
-# Optional synthetic load (workflow_dispatch input load_test), on the same throwaway site.
+# Optional synthetic load (docker run -e WOLF_LOAD_TEST=1), on the same throwaway site. Not used by CI.
 if [ "${WOLF_LOAD_TEST:-0}" = 1 ]; then
 	echo "Running load_test.py on $SITE ($DB_TYPE) ${WOLF_LOAD_ARGS:-}"
 	# shellcheck disable=SC2086 # WOLF_LOAD_ARGS is a list of flags

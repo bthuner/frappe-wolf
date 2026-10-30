@@ -15,8 +15,8 @@ Then it times, server side (no HTTP, no agent authentication):
     mode (validate + enqueue) and in sync mode (validate + insert + correlate);
   * the queued jobs (store_batch), as a worker would run them;
   * the overview: get_overview and get_metric_series for every range, and rule queries.
-Prints p50 / p95 / max per operation. Not run in CI by default (see the workflow's
-`load_test` input).
+Prints p50 / p95 / max per operation. Not run in CI; ci/integration.sh runs it after
+db_smoke.py when WOLF_LOAD_TEST=1 (flags in WOLF_LOAD_ARGS).
 """
 
 import argparse

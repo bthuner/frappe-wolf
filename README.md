@@ -227,9 +227,11 @@ resolutions, each with its own retention (**Wolf Settings → Retention**):
   during the request in both modes.
 
 [`ci/load_test.py`](ci/load_test.py) fills a throwaway site with N hosts × M metrics × D days
-and times push and the overview. It is not part of the normal CI run; run the CI workflow by hand
-with `load_test` checked to get numbers on MariaDB and Postgres. Measured results are in the pull
-request that added it (#10).
+and times push and the overview. CI does not run it. Run it on a bench from `sites/`
+(`../env/bin/python /path/to/ci/load_test.py <site>`), or in the CI container by adding
+`-e WOLF_LOAD_TEST=1` (and optionally `-e WOLF_LOAD_ARGS="--hosts 20 --days 2"`) to the
+`docker run ... integration.sh` command below. At 100 hosts × 7 days it writes about 20 M rows,
+which takes 15 to 25 minutes on a GitHub runner before any timing starts.
 
 **Optional time-series backend (design, not built).** The read path goes through two functions,
 `rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through

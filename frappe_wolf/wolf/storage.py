@@ -26,6 +26,9 @@ DEFAULT_HOUR_DAYS = 365
 
 SERIES_KEY = ("metric_name", "host", "bench", "site", "label_key")
 
+# Rollup values are decimal(21,9) columns, like raw values (schema.MAX_METRIC_VALUE bounds those).
+MAX_STORED = 999_999_999_999
+
 
 def floor(ts, seconds):
 	"""Floor a naive datetime to a multiple of `seconds` (wall-clock arithmetic, no tz shift)."""
@@ -135,6 +138,19 @@ def rollup_rollups(rows, seconds):
 		}
 		out[key] = merge(out.get(key), part)
 	return out
+
+
+def clamp_sum(partial):
+	"""Bound a partial's sum to the column range. True if it was clamped.
+
+	A sum of many large values (a custom metric in bytes) can exceed the column even when each
+	value fits; an INSERT error would stop the rollup job, and with it the purge, for good.
+	"""
+	total = partial["sum"]
+	if abs(total) <= MAX_STORED:
+		return False
+	partial["sum"] = MAX_STORED if total > 0 else -MAX_STORED
+	return True
 
 
 def rollup_name(resolution, key):

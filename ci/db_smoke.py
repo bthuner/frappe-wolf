@@ -598,12 +598,16 @@ def main():
 		cutoffs = rollups.purge()
 		left = {m: frappe.db.count("Wolf Metric Sample", {"metric_name": m}) for m in ("smoke_purge", "smoke_purge_keep")}
 		rolled = frappe.db.count("Wolf Metric Rollup", {"metric_name": "smoke_purge"})
+		# a satellite rolls nothing up: its raw samples follow the raw retention, watermark or not
+		rollups.purge(rolled=False)
+		satellite_left = frappe.db.count("Wolf Metric Sample", {"metric_name": "smoke_purge_keep"})
 		frappe.db.set_value("Wolf Rollup State", "1m", "done_until", marks[MINUTE])
 		frappe.db.commit()
 		assert left == {"smoke_purge": 0, "smoke_purge_keep": 1}, left
+		assert satellite_left == 0, "raw retention not applied without rollups"
 		assert rolled == 0, f"{rolled} expired rollups left"
 		assert frappe.db.count("Wolf Metric Rollup", {"host": ROLL_HOST, "metric_name": "smoke_roll"}), "recent rollups purged"
-		return f"expired raw/1m/1h purged, unrolled raw kept (cutoffs {', '.join(f'{k}<{v}' for k, v in cutoffs.items())})"
+		return f"expired raw/1m/1h purged, unrolled raw kept unless satellite (cutoffs {', '.join(f'{k}<{v}' for k, v in cutoffs.items())})"
 
 	from frappe_wolf.api import incident as inc_api
 

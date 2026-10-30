@@ -141,6 +141,13 @@ def replace_buckets(res, start, end, partials):
 	"""Replace the rollup rows of [start, end) at `res` by `partials` (storage.rollup_* output)."""
 	_delete_buckets(res, start, end)
 	now = now_datetime()
+	clamped = sorted({key[0] for key, p in partials.items() if storage.clamp_sum(p)})
+	if clamped:
+		frappe.log_error(
+			title=f"[Wolf] {STATE_NAMES[res]} rollup sum out of range",
+			message=f"Sums clamped to ±{storage.MAX_STORED} in [{start}, {end}), so avg and sum are wrong there: "
+			+ ", ".join(clamped),
+		)
 	values = [
 		(
 			storage.rollup_name(res, key), now, now, "Administrator", "Administrator", 0,
@@ -248,15 +255,19 @@ def _delete_before(table, column, cutoff, step, extra="", params=None):
 	return deleted_until
 
 
-def purge(now=None):
-	"""Apply raw / 1-minute / 1-hour retention. Never deletes data that is not rolled up yet."""
+def purge(now=None, rolled=True):
+	"""Apply raw / 1-minute / 1-hour retention. Never deletes data that is not rolled up yet.
+
+	`rolled` is False where rollups do not run (satellites): raw retention then applies as is.
+	"""
 	now = now or now_datetime()
 	raw_hours, minute_days, hour_days = retention()
 	marks = watermarks()
 
 	raw_cutoff = now - timedelta(hours=raw_hours)
-	# Unrolled raw samples are kept (up to the 1-minute retention, if rollups never run).
-	raw_cutoff = min(raw_cutoff, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
+	if rolled:
+		# Unrolled raw samples are kept (up to the 1-minute retention, if rollups never ran).
+		raw_cutoff = min(raw_cutoff, marks[MINUTE]) if marks[MINUTE] else now - timedelta(days=minute_days)
 	minute_cutoff = now - timedelta(days=minute_days)
 	minute_cutoff = min(minute_cutoff, marks[HOUR]) if marks[HOUR] else now - timedelta(days=hour_days)
 	hour_cutoff = now - timedelta(days=hour_days)

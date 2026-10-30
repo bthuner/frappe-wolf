@@ -4,13 +4,13 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import satellite
-from frappe_wolf.wolf import access, rollups, storage
+from frappe_wolf.wolf import access, rollups, spa, storage
 from frappe_wolf.wolf.incidents import get_timeline, parse_payload
 from frappe_wolf.wolf.series import bucket_series
 from frappe_wolf.wolf.workflow import get_activity
 
 RANGES = {"1h": 60, "6h": 360, "24h": 1440, "7d": 10080}
-READ_ROLES = ("System Manager", "Wolf Manager", "Wolf User")
+READ_ROLES = spa.READ_ROLES
 
 
 def _since(range_key):

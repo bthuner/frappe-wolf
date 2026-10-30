@@ -22,6 +22,8 @@ class WolfOverview {
 		this.page.set_primary_action(__("Refresh"), () => this.refresh(), "refresh");
 		this.page.add_inner_button(__("Alert Rules"), () => frappe.set_route("List", "Wolf Alert Rule"));
 		this.page.add_inner_button(__("Agents"), () => frappe.set_route("List", "Wolf Agent"));
+		// the Wolf UI (frontend/, #19) is being built view by view; Desk keeps working meanwhile
+		this.page.add_menu_item(__("Open Wolf UI (preview)"), () => window.open("/wolf", "_self"));
 		this.timer = setInterval(() => {
 			if (frappe.get_route_str() === "wolf-overview" && !document.hidden) this.refresh();
 		}, 30000);

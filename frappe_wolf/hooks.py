@@ -15,13 +15,16 @@ add_to_apps_screen = [
 		"name": "frappe_wolf",
 		"logo": "/assets/frappe_wolf/images/wolf.png",
 		"title": "Wolf",
+		# stays on Desk until the Wolf UI (/wolf) has its overview (#19)
 		"route": "/app/wolf-overview",
 	}
 ]
 
 # Public, opt-in status pages (Wolf Status Page): www/wolf_status.py
+# The Wolf UI (frontend/, www/wolf.py) owns /wolf and every route under it.
 website_route_rules = [
 	{"from_route": "/wolf-status/<slug>", "to_route": "wolf_status"},
+	{"from_route": "/wolf/<path:app_path>", "to_route": "wolf"},
 ]
 
 after_install ="frappe_wolf.install.after_install"

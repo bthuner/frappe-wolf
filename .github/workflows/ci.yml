@@ -17,6 +17,7 @@ jobs:
   lint:
     name: Lint (ruff + shellcheck)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -32,6 +33,7 @@ jobs:
   app-tests:
     name: App unit tests (Python 3.12)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -43,6 +45,7 @@ jobs:
     name: Agent unit tests (Python ${{ matrix.python }})
     # Python 3.9 builds exist for Ubuntu 24.04 but not for 26.04 (the new ubuntu-latest).
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -57,7 +60,7 @@ jobs:
   integration:
     name: Bench integration (${{ matrix.db }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

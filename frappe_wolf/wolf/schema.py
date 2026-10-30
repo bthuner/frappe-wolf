@@ -13,6 +13,8 @@ SEVERITIES = ("info", "warning", "critical")
 SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
 
 MAX_PAYLOAD_BYTES = 32_000
+# Metric values are stored as decimal(21,9) (a Frappe Float): anything larger fails the insert.
+MAX_METRIC_VALUE = 999_999_999_999
 
 
 class PayloadError(ValueError):
@@ -94,6 +96,8 @@ def normalize_metric(raw, tz_name, now, default_host=None):
 		raise PayloadError(f"invalid value for {name}") from e
 	if value != value or value in (float("inf"), float("-inf")):
 		raise PayloadError(f"non-finite value for {name}")
+	if abs(value) > MAX_METRIC_VALUE:
+		raise PayloadError(f"value out of range for {name}")
 	labels = raw.get("labels") or {}
 	if not isinstance(labels, dict):
 		raise PayloadError("labels must be an object")

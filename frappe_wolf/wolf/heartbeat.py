@@ -40,17 +40,28 @@ def _context(health):
 def assess(health, stale_minutes=STALE_MINUTES):
 	"""Return the problems found in a health dict, as short sentences (empty = healthy).
 
-	Only staleness raises a problem: a paused scheduler or a Redis blip during a
-	deployment is normal for a minute or two, and shows up as staleness if it lasts.
+	Only lasting conditions raise a problem: a paused scheduler, a Redis blip or a burst of
+	pushes during a deployment is normal for a minute or two.
 	"""
 	if not isinstance(health, dict):
 		return []
-	limit = max(float(stale_minutes or STALE_MINUTES), 0.1) * 60
+	return [p for p in (staleness(health, stale_minutes), ingest_backlog(health, stale_minutes)) if p]
+
+
+def _limit(stale_minutes):
+	return max(float(stale_minutes or STALE_MINUTES), 0.1) * 60
+
+
+def staleness(health, stale_minutes=STALE_MINUTES):
+	"""Rules (or scheduled jobs) not run for `stale_minutes`, with context; None if fresh."""
+	if not isinstance(health, dict):
+		return None
+	limit = _limit(stale_minutes)
 	rules_age = (health.get("rules") or {}).get("age_seconds")
 	job_age = (health.get("scheduler") or {}).get("age_seconds")
 	what, age = ("alert rules", rules_age) if rules_age is not None else ("scheduled jobs", job_age)
 	if age is None:
-		return []
+		return None
 
 	if age >= limit:
 		problem = f"{what} not evaluated for {int(age // 60)} min"
@@ -59,6 +70,24 @@ def assess(health, stale_minutes=STALE_MINUTES):
 		# considers nothing due until that time is reached.
 		problem = f"last run of {what} is {int(-age // 60)} min in the future (time zone changed?)"
 	else:
-		return []
+		return None
 	notes = _context(health)
-	return [problem + (f"; {', '.join(notes)}" if notes else "")]
+	return problem + (f"; {', '.join(notes)}" if notes else "")
+
+
+def ingest_backlog(health, stale_minutes=STALE_MINUTES):
+	"""Queued pushes waiting `stale_minutes` for a worker; None otherwise.
+
+	Agents get their answer before a queued push is stored, so their heartbeat stays fresh
+	while the telemetry waits in Redis, and rules see none of it.
+	"""
+	if not isinstance(health, dict):
+		return None
+	queues = health.get("queues") or {}
+	age = queues.get("ingest_backlog_seconds")
+	if not isinstance(age, (int, float)) or age < _limit(stale_minutes):
+		return None
+	problem = f"pushes waiting {int(age // 60)} min in the {queues.get('ingest_queue') or 'ingest'} queue, not stored yet"
+	if queues.get("workers") == 0:
+		problem += "; no background worker running"
+	return problem

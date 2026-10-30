@@ -43,7 +43,14 @@ class TestMetric(unittest.TestCase):
 		self.assertEqual(json.loads(m["labels"]), {"mount": "/"})
 
 	def test_rejects_bad_values(self):
-		for bad in ({"value": 1}, {"metric_name": "x", "value": "abc"}, {"metric_name": "x", "value": float("nan")}, "x"):
+		bad_values = (
+			{"value": 1},
+			{"metric_name": "x", "value": "abc"},
+			{"metric_name": "x", "value": float("nan")},
+			{"metric_name": "x", "value": 1e13},  # beyond the decimal(21,9) column
+			"x",
+		)
+		for bad in bad_values:
 			with self.assertRaises(schema.PayloadError):
 				schema.normalize_metric(bad, "UTC", NOW)
 

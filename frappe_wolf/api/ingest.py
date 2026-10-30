@@ -8,8 +8,9 @@ from frappe_wolf.wolf import events, health, rate, schema, silences
 from frappe_wolf.wolf.incidents import attach_to_open_incident
 
 
-INGEST_QUEUE = "short"
+INGEST_QUEUE = health.INGEST_QUEUE
 STORE_METHOD = "frappe_wolf.api.ingest.store_batch"
+STORE_ATTEMPTS = 3
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -107,8 +108,10 @@ def accept(agent, data, now=None):
 	}
 
 
-def enqueue_batch(agent, metrics, events_in):
+def enqueue_batch(agent, metrics, events_in, attempt=1, correlate=None):
 	"""Queue the inserts for a worker. False if the queue is unavailable (store inline then)."""
+	if correlate is None:
+		correlate = not satellite.is_satellite()  # a satellite opens no incidents
 	try:
 		frappe.enqueue(
 			STORE_METHOD,
@@ -116,7 +119,8 @@ def enqueue_batch(agent, metrics, events_in):
 			agent=agent,
 			metrics=metrics,
 			events_in=events_in,
-			correlate=not satellite.is_satellite(),
+			correlate=correlate,
+			attempt=attempt,
 		)
 		return True
 	except Exception:
@@ -124,19 +128,36 @@ def enqueue_batch(agent, metrics, events_in):
 		return False
 
 
-def store_batch(agent, metrics, events_in, correlate=None):
+def store_batch(agent, metrics, events_in, correlate=None, attempt=None):
 	"""Insert normalized metrics and events, attaching events to open incidents.
 
-	Runs in a worker for queued pushes, inline in sync mode.
+	Runs in a worker for queued pushes (`attempt` set), inline in sync mode. The agent has
+	dropped a queued push from its spool already, so a failure is not left to the agent: the
+	batch is queued again (deadlocks, lock waits), and recorded in the Error Log once
+	STORE_ATTEMPTS have failed.
 	"""
 	if correlate is None:
 		correlate = not satellite.is_satellite()  # a satellite opens no incidents
-	events.insert_metrics(metrics, agent=agent)
-	for event in events_in:
-		name = events.insert_event(event, agent=agent)
-		if correlate:
-			attach_to_open_incident(name, event)
-	frappe.db.commit()
+	try:
+		events.insert_metrics(metrics, agent=agent)
+		for event in events_in:
+			name = events.insert_event(event, agent=agent)
+			if correlate:
+				attach_to_open_incident(name, event)
+		frappe.db.commit()
+	except Exception:
+		if attempt is None:
+			raise
+		frappe.db.rollback()
+		if attempt < STORE_ATTEMPTS and enqueue_batch(agent, metrics, events_in, attempt + 1, correlate):
+			return None
+		frappe.log_error(
+			title="[Wolf] queued push not stored",
+			message=f"{len(metrics)} metrics and {len(events_in)} events from {agent} were dropped "
+			f"after {attempt} attempts.\n\n{frappe.get_traceback()}",
+		)
+		frappe.db.commit()
+		return None
 	return {"metrics": len(metrics), "events": len(events_in)}
 
 

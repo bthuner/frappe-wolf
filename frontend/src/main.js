@@ -10,7 +10,7 @@ loadBoot()
     if (!boot) return // on its way to the login page
     const app = createApp(App)
     app.provide('boot', boot)
-    app.use(makeRouter())
+    app.use(makeRouter(undefined, boot))
     app.mount('#app')
   })
   .catch((error) => {

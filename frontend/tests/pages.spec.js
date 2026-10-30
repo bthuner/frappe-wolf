@@ -7,7 +7,7 @@ import PendingPage from '@/pages/PendingPage.vue'
 import { makeRouter } from '@/router'
 
 const BOOT = {
-  desk: { home: '/app', fallbacks: { incidents: '/app/wolf-incident' } },
+  desk: { home: '/app', fallbacks: { incidents: '/app/wolf-incident', errors: '/app/wolf-event?event_type=error' } },
   capabilities: { logs: { available: false, reason: 'No raw log lines are stored.' }, incidents: { available: true } },
 }
 
@@ -19,11 +19,11 @@ async function render(component, path) {
 }
 
 describe('PendingPage', () => {
-  it('says the view is not built and links the Desk form of the record', async () => {
-    const page = await render(PendingPage, '/incidents/WINC-00012')
+  it('says the view is not built and links the Desk page that covers it', async () => {
+    const page = await render(PendingPage, '/errors/abc123')
     expect(page.text()).toContain('This view is not built yet')
-    expect(page.text()).toContain('incident timeline')
-    expect(page.get('a.wolf-link').attributes('href')).toBe('/app/wolf-incident/WINC-00012')
+    expect(page.text()).toContain('representative traceback')
+    expect(page.get('a.wolf-link').attributes('href')).toBe('/app/wolf-event?event_type=error')
   })
 })
 
@@ -37,14 +37,15 @@ describe('LogsPage', () => {
 })
 
 describe('on a satellite', () => {
-  it('explains where incidents live instead of linking a Desk list', async () => {
-    const router = makeRouter(createMemoryHistory('/wolf'))
+  it('sends incident links to an explanation instead of an empty page', async () => {
+    const boot = { ...BOOT, capabilities: { ...BOOT.capabilities, incidents: { available: false } } }
+    const router = makeRouter(createMemoryHistory('/wolf'), boot)
     await router.push('/incidents/WINC-00012')
     await router.isReady()
-    const boot = { ...BOOT, capabilities: { ...BOOT.capabilities, incidents: { available: false } } }
+    expect(router.currentRoute.value.name).toBe('unavailable')
+    expect(router.currentRoute.value.query.from).toBe('/incidents/WINC-00012')
     const page = mount(PendingPage, { global: { plugins: [router], provide: { boot } } })
     expect(page.text()).toContain('This site is a satellite')
-    expect(page.find('a.wolf-link').exists()).toBe(false)
   })
 })
 

@@ -370,6 +370,7 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 		partial = entry.pop("partial")
 		entry.value = storage.finalize(partial, aggregation)
 		entry.samples = partial["count"]
+		entry.last_at = partial["last_ts"]  # time of the newest sample read
 		if aggregation == "last" and "label_key" not in group_cols:
 			entry.label_key = partial.get("last_label")
 		out.append(entry)
@@ -377,9 +378,18 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 
 
 def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_last):
+	"""Value (and label) at the newest time of each group, picked in SQL: only the rows at each
+	group's own newest time come back, however long ago another group stopped."""
+	cols = ", ".join(f"`{c}`" for c in group_cols)
+	keys = ", ".join(f"coalesce(`{c}`, '') as g{i}" for i, c in enumerate(group_cols))
+	join = " and ".join([*(f"coalesce(a.`{c}`, '') = x.g{i}" for i, c in enumerate(group_cols)), "a.t = x.m"])
 	rows = frappe.db.sql(
-		f"""select {', '.join([*(f'`{c}`' for c in group_cols), f'{value_col} as v', f'{last_col} as t', 'label_key as l'])}
-		from `{table}` where {conds} and {last_col} >= %(oldest_last)s""",
+		f"""select {', '.join([*(f'a.`{c}`' for c in group_cols), 'a.v', 'a.t', 'a.l'])}
+		from (select {cols + ', ' if cols else ''}{value_col} as v, {last_col} as t, label_key as l
+			from `{table}` where {conds} and {last_col} >= %(oldest_last)s) a
+		join (select {keys + ', ' if keys else ''}max({last_col}) as m
+			from `{table}` where {conds} and {last_col} >= %(oldest_last)s {'group by ' + cols if cols else ''}) x
+		on {join}""",
 		{**params, "oldest_last": oldest_last},
 		as_dict=True,
 	)

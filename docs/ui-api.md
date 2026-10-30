@@ -164,3 +164,42 @@ incident's own method, so Frappe's write permission applies, and returns the new
 and resolving or taking needs an unresolved one. A page left open on a stale incident gets
 an error instead of reopening it. Merged incidents refuse every action. Merge, split and
 postmortems stay in Desk for now.
+
+## Dashboards
+
+### `frappe_wolf.api.dashboard.get_signals`
+
+The newest value of every signal series in scope (`site`, `bench` with `host`, `host`), one
+series per metric, host, bench, site and label. Each series has a `state`:
+
+| State | Meaning |
+|---|---|
+| `firing` | An enabled rule on this metric applies to the series and has an open incident for its scope and, for rules grouped by label, its label (`incidents`). A firing series whose samples stopped stays firing, with `stale: true`. |
+| `stale` | Samples stopped: none in the last 2 hours, or none for three collection intervals, at least 5 minutes (backups: 30 min). The old value is not presented as current. The cadences are the agent's defaults: an agent set to probe TLS or backups less often looks stale sooner. |
+| `watched` | Rules apply (`rules`: aggregation, operator, threshold, window) and none has an open incident. |
+| `unwatched` | A value, but no rule watches it. The dashboard does not invent a threshold. |
+
+`missing` lists the signals with no series at all in the last 7 days: not collected for this
+scope, not set up, or not available here. They are never shown as zero. `counts` gives exact
+states per group whatever the 300-series limit. `email` reports the email queue problems the
+site recorded about itself in the last 24 hours. A restricted user sees what each rule checks,
+but not the host, bench or site filters it names. The metric meanings (unit, kind, cadence)
+are in `wolf/catalog.py`.
+
+### `frappe_wolf.api.dashboard.get_http`
+
+Requests, 5xx and 502 per bucket over the window (the common window and scope arguments),
+summed across labels and read at the resolution of the window (`resolution`). Only whole
+buckets are read (`window`; `requested_window` is what was asked): the bucket still filling
+shows once it closes, instead of drawing a drop in traffic. 502 is part of 5xx and is never
+added to it. A bucket without samples is `null`: a gap, not a zero. `has_data` tells "no
+data" from "zero". `deployments` lists the deployments in the requested window. On a site's
+dashboard that includes deployments recorded for its whole bench (no site), as incidents link
+them.
+
+### `frappe_wolf.api.dashboard.get_monitoring`
+
+Whether Wolf itself works: the site's health (rules, scheduler, ingest queue), rollup
+watermarks, every agent and satellite with its state, last contact, clock skew and version,
+and this site's mode. Each part is reported on its own. An online agent says nothing about
+its watchdog's fallback channel.

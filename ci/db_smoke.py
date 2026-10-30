@@ -959,6 +959,92 @@ def main():
 		        f"other site hidden, comments as text, 2 accepted + 1 failed deliveries, Wolf User denied, "
 		        f"acknowledged and assigned, stale acknowledge refused, deleted deployment kept, bare incident has no context")
 
+	def dashboards():
+		"""Signals with honest states, HTTP series with gaps and deployments, monitoring."""
+		from frappe_wolf.api import dashboard
+		from frappe_wolf.wolf import access
+
+		dash, dsite = "smoke-dash", "dash.localhost"
+
+		def sample(name, value, minutes_ago, **scope):
+			return schema.normalize_metric({"metric_name": name, "value": value, "host": dash, **scope}, tz,
+			                               now - timedelta(minutes=minutes_ago))
+
+		events.insert_metrics([
+			sample("disk_used_percent", 93, 0.2, labels={"mount": "/"}),
+			sample("disk_used_percent", 40, 0.2, labels={"mount": "/data"}),
+			sample("cpu_usage", 12, 20),  # stopped 20 min ago: stale
+			sample("tls_days_left", 40, 30, site=dsite, bench="b1", labels={"domain": dsite}),  # hourly: fresh
+			*[sample("http_requests", 100, m, site=dsite, bench="b1") for m in (50, 49, 5)],
+			*[sample("http_5xx", 6, m, site=dsite, bench="b1") for m in (50, 5)],
+			sample("http_502", 4, 5, site=dsite, bench="b1"),
+		])
+		rule = frappe.get_doc({"doctype": "Wolf Alert Rule", "rule_name": "smoke dash disk", "enabled": 1,
+		                       "signal_type": "metric", "metric_name": "disk_used_percent", "aggregation": "max",
+		                       "operator": ">", "threshold": 90, "window_minutes": 5, "group_by": "host_label",
+		                       "filter_host": dash, "severity": "warning"}).insert(ignore_permissions=True)
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke dash disk", "alert_rule": rule.name, "host": dash,
+		                      "group_key": f"host={dash},label_key=mount=/", "severity": "warning", "status": "Open",
+		                      "started_at": now}).insert(ignore_permissions=True)
+		deploy = events.insert_event(schema.normalize_event(
+			{"type": "deployment", "host": dash, "bench": "b1", "site": dsite, "title": "smoke dash deploy"}, tz,
+			now - timedelta(minutes=30)))
+		# a bench-wide deployment (several sites updated at once): no site
+		bench_deploy = events.insert_event(schema.normalize_event(
+			{"type": "deployment", "host": dash, "bench": "b1", "title": "smoke dash bench update"}, tz,
+			now - timedelta(minutes=20)))
+		frappe.db.commit()
+
+		sig = dashboard.get_signals(host=dash)
+		by_metric = {s["metric_name"]: s for s in sig["series"] if s["label_key"] != "mount=/data"}
+		data_disk = next(s for s in sig["series"] if s["label_key"] == "mount=/data")
+		assert data_disk["state"] == "watched" and not data_disk["incidents"], data_disk  # / is full, /data is not
+		assert by_metric["disk_used_percent"]["state"] == "firing", by_metric["disk_used_percent"]
+		assert by_metric["disk_used_percent"]["incidents"] == [inc.name], by_metric["disk_used_percent"]
+		assert by_metric["disk_used_percent"]["value"] == 93, by_metric["disk_used_percent"]
+		assert by_metric["cpu_usage"]["state"] == "stale", by_metric["cpu_usage"]
+		assert by_metric["tls_days_left"]["state"] in ("watched", "unwatched"), by_metric["tls_days_left"]  # not stale
+		missing = {m["metric"] for m in sig["missing"]}
+		assert "backup_age_hours" in missing and "redis_used_memory_percent" in missing, missing
+		assert "http_5xx" not in by_metric, "HTTP belongs to the HTTP chart"
+		assert sig["counts"]["host"]["firing"] == 1 and sig["counts"]["host"]["stale"] == 1, sig["counts"]
+
+		http = dashboard.get_http(range="1h", host=dash, site=dsite)
+		points = {m: [v for _, v in http["series"][m]] for m in http["series"]}
+		assert sum(v for v in points["http_5xx"] if v) == 12 and sum(v for v in points["http_502"] if v) == 4, points
+		assert None in points["http_5xx"], "an empty bucket became a zero"
+		assert len(points["http_requests"]) == len(points["http_502"]), "series of different lengths"
+		assert [d["name"] for d in http["deployments"]] == [deploy], http["deployments"]
+		site_only = dashboard.get_http(range="1h", site=dsite)
+		assert {d["name"] for d in site_only["deployments"]} == {deploy, bench_deploy}, site_only["deployments"]
+		assert http["window"]["relative"] == "1h" and http["resolution"] == "raw", http["window"]
+
+		mon = dashboard.get_monitoring()
+		assert {"health", "rollups", "agents", "mode"} <= set(mon), sorted(mon)
+
+		user = "smoke-scoped@example.com"
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "host", "value": dash}).insert()
+		access.clear_cache()
+		frappe.set_user(user)
+		try:
+			scoped = dashboard.get_signals(host=dash)
+			rules = [r for s in scoped["series"] for r in s["rules"]]
+			assert rules and all("filter_host" not in r for r in rules), rules  # what it checks, not whom it names
+			other = dashboard.get_signals(host="smoke-host")
+			assert not other["series"], "another host's signals leaked"
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("Wolf User Scope", {"user": user})
+			access.clear_cache()
+		frappe.delete_doc("Wolf Incident", inc.name, force=True)
+		frappe.delete_doc("Wolf Alert Rule", rule.name, force=True)
+		frappe.db.delete("Wolf Event", {"name": ("in", [deploy, bench_deploy])})
+		frappe.db.commit()
+		return (f"disk / firing ({inc.name}), /data not, cpu stale, tls fresh at 30 min, {len(missing)} signals missing; "
+		        f"site dashboard has the bench-wide deployment; "
+		        f"5xx 12 with 502 4 inside it, gaps kept; restricted user sees no rule filters")
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -968,7 +1054,7 @@ def main():
 	                 ("metrics report", metrics), ("status page", status_page),
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
-	                 ("incident view", incident_view)]:
+	                 ("incident view", incident_view), ("dashboards", dashboards)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

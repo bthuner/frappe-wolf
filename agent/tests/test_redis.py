@@ -202,6 +202,19 @@ class TestRedisProbe(unittest.TestCase):
 		self.assertNotIn(("rq_failed_jobs_added", "b1:long"), got)
 		self.assertNotIn(("redis_evicted_keys", None), got)
 
+	def test_emptied_queue_reports_zero(self):
+		probe = RedisProbe(self.server.url, "h1", "b1")
+		self.assertEqual(self.collect(probe)[("queue_length", "b1:long")]["value"], 4)
+		del self.server.keys["rq:queue:b1:long"]  # RQ drained it; Redis deleted the empty list
+		got = self.collect(probe)
+		self.assertEqual(got[("queue_length", "b1:long")]["value"], 0)
+		self.assertIn(("rq_long_running_jobs", "b1:long"), got)
+		# a queue never seen is not invented
+		self.assertNotIn(("queue_length", "b1:default"), got)
+		# a queue gone for a day (removed from the bench) is no longer reported
+		later = {(m["metric_name"], m["labels"].get("queue")): m for m in probe.collect(self.NOW + timedelta(hours=25))}
+		self.assertNotIn(("queue_length", "b1:long"), later)
+
 	def test_long_job_threshold(self):
 		got = self.collect(RedisProbe(self.server.url, "h1", "b1", long_job_minutes=60))
 		self.assertEqual(got[("rq_long_running_jobs", "b1:long")]["value"], 0)

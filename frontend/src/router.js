@@ -5,8 +5,7 @@ const Pending = () => import('@/pages/PendingPage.vue')
 // Every view of #19. `fallback` names the Desk page (boot.desk.fallbacks) that covers a view
 // until it is built here; `planned` tells the reader what the view will show.
 export const routes = [
-  { path: '/', name: 'overview', component: Pending,
-    meta: { title: 'Overview', fallback: 'overview', planned: 'Open incidents, unacknowledged and critical counts, sites with problems and monitoring freshness.' } },
+  { path: '/', name: 'overview', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Overview' } },
   { path: '/incidents', name: 'incidents', component: () => import('@/pages/IncidentsPage.vue'),
     meta: { title: 'Incidents', capability: 'incidents' } },
   { path: '/incidents/:incident', name: 'incident', component: () => import('@/pages/IncidentPage.vue'),
@@ -20,15 +19,11 @@ export const routes = [
   { path: '/metrics', name: 'metrics', component: Pending,
     meta: { title: 'Metrics', fallback: 'metrics', planned: 'Metric explorer with grouping, the resolution read and gaps kept as gaps.' } },
   { path: '/logs', name: 'logs', component: () => import('@/pages/LogsPage.vue'), meta: { title: 'Logs' } },
-  { path: '/sites/:site', name: 'site', component: Pending,
-    meta: { title: 'Site', fallback: 'overview', planned: 'One site: HTTP failures with deployments, jobs, backups, TLS and incidents.' } },
+  { path: '/sites/:site', name: 'site', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Site' } },
+  { path: '/hosts/:host', name: 'host', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Host' } },
   // bench names repeat across hosts, so a bench is always addressed through its host
-  { path: '/hosts/:host', name: 'host', component: Pending,
-    meta: { title: 'Host', fallback: 'monitoring', planned: 'One host: CPU, memory, disk, load, its benches and its agent.' } },
-  { path: '/hosts/:host/benches/:bench', name: 'bench', component: Pending,
-    meta: { title: 'Bench', fallback: 'overview', planned: 'One bench on one host: workers, queues, Redis, scheduler and its sites.' } },
-  { path: '/monitoring', name: 'monitoring', component: Pending,
-    meta: { title: 'Monitoring', fallback: 'monitoring', planned: 'Is Wolf itself working: agents, satellites, clock skew, rule and scheduler freshness.' } },
+  { path: '/hosts/:host/benches/:bench', name: 'bench', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Bench' } },
+  { path: '/monitoring', name: 'monitoring', component: () => import('@/pages/MonitoringPage.vue'), meta: { title: 'Monitoring' } },
   // where a view this site cannot have leads (incidents on a satellite); ?from= keeps the link
   { path: '/unavailable/:path(.*)*', name: 'unavailable', component: Pending,
     meta: { title: 'Incidents', capability: 'incidents', noSubject: true } },

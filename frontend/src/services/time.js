@@ -30,3 +30,15 @@ export function duration(fromIso, toIso) {
   if (hours < 48) return `${hours} h ${String(minutes % 60).padStart(2, '0')} min`
   return `${Math.floor(hours / 24)} d ${hours % 24} h`
 }
+
+// chart axis label in the site's zone: the clock for a day or less, else the date too
+export function axisLabel(iso, timeZone, withDate) {
+  const options = withDate
+    ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+    : { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+  return parts(iso, timeZone, options)
+}
+
+export function ago(iso, now = new Date()) {
+  return iso ? duration(iso, now.toISOString()) : ''
+}

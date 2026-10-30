@@ -7,8 +7,7 @@ from frappe.utils import get_fullname
 
 from frappe_wolf.wolf import incident_ops
 from frappe_wolf.wolf.incidents import get_timeline, latest_deployment, refresh_event_count
-
-MANAGER_ROLES = ("System Manager", "Wolf Manager")
+from frappe_wolf.wolf.spa import MANAGER_ROLES  # the Wolf UI offers what these roles may do
 MOVED_COMMENT_TYPES = ("Comment", "Info")
 
 

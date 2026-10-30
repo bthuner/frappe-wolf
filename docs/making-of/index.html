@@ -659,6 +659,7 @@ X-Wolf-Agent-Secret: ••••••••
           <li class="wip"><time>2026-10-29 · Desk</time><b>Overview page, incident timeline, workspace, presets.</b><p>The three rooms of chapter 06, the Dokos preset rules and local signals from the Wolf site itself (failed scheduled jobs, error logs, logins, privileged roles).</p></li>
           <li class="done"><time>2026-10-29 · Identity</time><b>Official logo adopted.</b><p>The founder's mark replaces the placeholder drawn for the first draft of this page: a single-line wolf head with an angular eye slit on a <code>#035AEC</code> rounded square. The palette was rebuilt around that blue. Info moved to lilac so it can't read as the brand, and amber now means only warning.</p></li>
           <li class="done"><time>2026-10-29 · Publishing</time><b>Making-of published on GitHub Pages.</b><p>This page and its <code>assets/</code> ship as a static site, with Open Graph image and favicons. Relative paths keep it portable.</p></li>
+          <li class="wip"><time>2026-10-30 · Wolf UI</time><b>A frappe-ui app at <code>/wolf</code>.</b><p>The daily operator views move out of Desk (#19). The shell, routes, light and dark themes and access checks are in; each view replaces its Desk page as it lands, and a view not built yet says so.</p></li>
         </ol>
       </div>
     </div>
@@ -676,7 +677,7 @@ X-Wolf-Agent-Secret: ••••••••
           <div><h3>Python, not Rust, for the agent</h3><p>The brief recommends it, and we agree: Frappe contributors can read it on day one. The protocol is generic enough that a Rust agent can replace it later without touching the app.</p></div>
           <div><h3>DocTypes, not ClickHouse</h3><p>Storage you already back up, with retention settings to keep it lean. That is the right size for an MVP on Dokos stacks. A columnar store is a later conversation, not a launch requirement.</p></div>
           <div><h3>Thresholds, not anomaly ML</h3><p>A rule you can read is a rule you can trust at 2AM. Datadog and SigNoz inspired the <em>shape</em> of alerting, not its opacity.</p></div>
-          <div><h3>Desk, not a separate SPA</h3><p>We gave up some art direction for zero new logins, native permissions and familiar list views. The craft lives in the timeline and the copy.</p></div>
+          <div><h3>Desk, not a separate SPA (superseded)</h3><p>We first gave up some art direction for zero new logins, native permissions and familiar list views. #19 moves the daily views to a frappe-ui app at <code>/wolf</code> that keeps the Frappe session and permissions; Desk keeps configuration.</p></div>
         </div>
         <div class="prose" style="margin-top:32px">
           <h3>Next</h3>

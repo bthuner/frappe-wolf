@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "Builds the Wolf UI (frontend/) during `bench build` and `bench setup requirements --node`",
+  "scripts": {
+    "postinstall": "node frontend/bench-build.mjs --install-only",
+    "dev": "cd frontend && yarn dev",
+    "build": "node frontend/bench-build.mjs"
+  }
+}

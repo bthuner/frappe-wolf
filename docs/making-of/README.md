@@ -97,10 +97,11 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 - **2026-10-29 · Desk** *(in progress)*: overview page, incident timeline, workspace, Dokos presets, local signals.
 - **2026-10-29 · Identity**: official logo adopted. The palette was rebuilt around `#035AEC` and info moved to lilac.
 - **2026-10-29 · Publishing**: making-of published on [GitHub Pages](https://bthuner.github.io/frappe-wolf/) (`docs/making-of/`, relative assets, OG image).
+- **2026-10-30 · Wolf UI** *(in progress)*: a frappe-ui app at `/wolf` for daily operation (#19). The shell, routes, themes and access are in; each view replaces its Desk page as it lands.
 
 ## 09 · Trade-offs
 
 - **Python, not Rust, for the agent:** contributors can read it on day one. The protocol allows a Rust agent later.
 - **DocTypes, not ClickHouse:** storage you already back up, with retention settings.
 - **Thresholds, not ML:** a rule you can read is a rule you can trust at 2AM.
-- **Desk, not a separate SPA:** no new logins, native permissions. The craft lives in the timeline and the copy.
+- **Desk, not a separate SPA** (superseded by #19): no new logins, native permissions. The daily operator views now move to a frappe-ui app at `/wolf` that reuses the Frappe session and permissions; Desk keeps configuration.

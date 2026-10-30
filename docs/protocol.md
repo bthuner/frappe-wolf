@@ -204,7 +204,8 @@ for `wolf-agent check` and scripts. Read-only: it does not update the agent's la
   "rules": {"last_evaluated": "2026-10-29T02:00:01Z", "age_seconds": 749},
   "scheduler": {"enabled": false, "reason": "pause_scheduler",
                 "last_job_run": "2026-10-29T02:00:00Z", "age_seconds": 750},
-  "queues": {"lengths": {"short": 0, "default": 3, "long": 0}, "workers": 2}
+  "queues": {"lengths": {"short": 0, "default": 3, "long": 0}, "workers": 2,
+             "ingest_queue": "short", "ingest_backlog_seconds": null}
 }
 ```
 
@@ -215,13 +216,15 @@ for `wolf-agent check` and scripts. Read-only: it does not update the agent's la
 | `scheduler.last_job_run` | latest `Scheduled Job Type.last_execution` (stamped when a worker starts a job) |
 | `*.age_seconds` | server-side `now - timestamp`, so agent clock skew does not matter. **Negative** when the stored time lies in the future, which happens after a system time-zone change and stalls the scheduler until that time |
 | `queues` | RQ queue lengths and worker count for the bench, or `{"error": "..."}` if Redis is unreachable |
+| `queues.ingest_backlog_seconds` | how long the oldest job of the ingest queue (`ingest_queue`) has waited; `null` when it is empty. Queued pushes are answered before they are stored, so this is the only sign that telemetry is not arriving |
 | `ok` / `problems` | the server's own reading with a 5 minute threshold |
 
-Only staleness is a problem: `abs(age) >= stale threshold` on `rules` (or on `scheduler` when no
-rule is enabled). Scheduler and queue state are context appended to the problem text. The agent
+Two things are problems: staleness, `abs(age) >= stale threshold` on `rules` (or on `scheduler`
+when no rule is enabled), and an ingest backlog, `ingest_backlog_seconds >= stale threshold`.
+Scheduler and queue state are context appended to the staleness text. The agent
 applies its own threshold (`watchdog.stale_minutes`) to the raw ages rather than trusting `ok`.
 
-While `ok` is false, each push also records a `host_metric_alert` / `scheduler_stalled` event on
+While rules are stale, each push also records a `host_metric_alert` / `scheduler_stalled` event on
 the site (bumped, not duplicated, for 15 minutes). The **Scheduler stalled** preset turns it into
 an incident once the scheduler runs again. A stalled site cannot alert about itself, so the live
 alert is raised by the agent watchdog through its own fallback channel (see `agent/README.md`).

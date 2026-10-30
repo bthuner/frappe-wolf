@@ -201,6 +201,8 @@ its own **fallback channel**, which does not go through the site:
   database down), or when the site reports its alert rules (or, with no rule enabled, its
   scheduled jobs) have not run for `stale_minutes`: scheduler stopped or paused, no
   worker, Redis down, or stored times pushed into the future by a time-zone change;
+- it also raises one when queued pushes have waited `stale_minutes` for a worker: the site
+  answers the agent before storing them, so pushes look fine while nothing is stored;
 - one alert per outage, then one recovery notice when pushes work and rules run again.
   The state lives in `<spool_dir>/watchdog-state.json`, so a restart neither repeats the
   alert nor forgets the outage. A delivery that fails is retried every minute.

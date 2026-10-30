@@ -14,7 +14,9 @@ not cached, so each one is the caller's own.
 | `range` | Relative window ending now: a number and `m`, `h` or `d`, such as `15m`, `24h`, `7d`. Default `24h`. |
 | `since`, `until` | Explicit window, ISO 8601. A time without an offset is read as UTC, as in the agent protocol. `until` defaults to now and needs `since`. They win over `range`. |
 
-Windows longer than 400 days, or with `since` after `until`, are refused. Every response that
+A relative window is measured in real time, so across a DST change `24h` is 24 hours, not 23
+or 25 hours of wall clock. Windows longer than 400 days, or with `since` after `until`, are
+refused. The Desk overview APIs (`api/ui.py`) accept the same `range` values. Every response that
 reads a window returns what it actually read, in UTC:
 
 ```json
@@ -66,8 +68,9 @@ Exact counts for the overview and entity dashboards. Arguments: window and scope
   reported `count`. A deduplicated record keeps counting repeats, including repeats after the
   window, so `occurrences` is not a count of occurrences inside the window.
 - **Agents:** agents are hosts, so `site` and `bench` do not filter them. A satellite is not
-  a host and is counted apart. `fresh` means seen within the agent silence threshold of Wolf
-  Settings.
+  a host and is counted apart; with `host`, it counts when one of its registered benches runs on
+  that host. `fresh` means seen within the agent silence threshold of Wolf Settings, the same rule
+  as the Desk overview's online flag.
 
 ## `frappe_wolf.api.scope.get_inventory`
 
@@ -89,8 +92,10 @@ telemetry window.
 }
 ```
 
-Sources: `agent` and `satellite` (what an agent declared when it registered), `events`,
-`metrics` (rollups) and `incidents` (unresolved ones). Neither kind is complete on its own: a
+Sources: `agent` and `satellite` (what an agent declared when it registered), `events` (by
+when they last happened, so a recurring deduplicated event keeps its site listed), `metrics`
+(rollups) and `incidents` (unresolved ones, whatever their age). A registration names every
+site of a bench; a restricted user sees only the granted ones. Neither kind is complete on its own: a
 bench added after its agent registered appears once it sends telemetry, and a quiet site only
 through its agent's registration. The UI shows `sources` and `note` rather than presenting the
 list as complete.

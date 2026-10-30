@@ -45,8 +45,10 @@ def parse(now, time_zone, range=None, since=None, until=None):
 	else:
 		if until:
 			raise PayloadError("until needs since")
-		relative = (range or DEFAULT_RANGE).strip()
-		end, start = now, now - parse_range(relative)
+		relative = str(range or DEFAULT_RANGE).strip()
+		# subtract in UTC: across a DST change, 24h of wall clock is 23 or 25 real hours
+		end = now
+		start = from_utc(as_utc(now, time_zone) - parse_range(relative), time_zone)
 	if start >= end:
 		raise PayloadError("since must be before until")
 	if end - start > MAX_SPAN:
@@ -54,10 +56,18 @@ def parse(now, time_zone, range=None, since=None, until=None):
 	return Window(start, end, relative, time_zone)
 
 
+def as_utc(dt, time_zone):
+	return dt.replace(tzinfo=ZoneInfo(time_zone)).astimezone(timezone.utc)
+
+
+def from_utc(dt, time_zone):
+	return dt.astimezone(ZoneInfo(time_zone)).replace(tzinfo=None)
+
+
 def to_utc(dt, time_zone):
 	if dt is None:
 		return None
-	return dt.replace(tzinfo=ZoneInfo(time_zone)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+	return as_utc(dt, time_zone).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def describe(window):

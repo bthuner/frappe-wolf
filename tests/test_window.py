@@ -38,6 +38,18 @@ class TestParse(unittest.TestCase):
 		with self.assertRaises(PayloadError):
 			window.parse(NOW, "UTC", until="2026-10-30T11:00:00Z")
 
+	def test_relative_window_is_real_hours_across_dst(self):
+		# 2026-10-25 12:00 CET; 24 h earlier is 2026-10-24 13:00 CEST (wall clock 25 h apart)
+		win = window.parse(datetime(2026, 10, 25, 12, 0), "Europe/Paris", range="24h")
+		self.assertEqual(win.since, datetime(2026, 10, 24, 13, 0))
+		self.assertEqual(window.describe(win)["since"], "2026-10-24T11:00:00Z")
+		self.assertEqual(window.describe(win)["until"], "2026-10-25T11:00:00Z")
+
+	def test_non_string_range_is_a_payload_error(self):
+		with self.assertRaises(PayloadError):
+			window.parse(NOW, "UTC", range=24)
+		self.assertEqual(window.parse(NOW, "UTC", range=None).relative, "24h")
+
 	def test_describe_is_utc(self):
 		win = window.parse(NOW, "Europe/Paris", range="1h")
 		self.assertEqual(

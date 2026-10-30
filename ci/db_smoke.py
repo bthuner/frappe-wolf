@@ -774,9 +774,28 @@ def main():
 		assert explicit["window"]["relative"] is None and explicit["window"]["since"] == since_utc, explicit["window"]
 		assert explicit["incidents"]["opened_in_window"] == 12, explicit["incidents"]  # 11 started 0..10 min ago, plus the resolved one
 
-		user = "smoke-scoped@example.com"  # restricted to smoke.localhost by the scoped user check
+		full = scope_api.get_inventory()
+		kpi = [h for h in full["hosts"] if h["host"] == kpi_host]
+		assert kpi and kpi[0]["sources"] == ["incidents"], kpi  # learnt from telemetry only, and says so
+		assert [b["bench"] for b in kpi[0]["benches"]] == ["frappe-bench"], kpi
+
+		# the host's agent registers its bench: a quiet site (no telemetry) and a sibling site;
+		# a satellite on the same host is counted with it
+		quiet, hidden = "quiet.localhost", "hidden.localhost"
+		frappe.db.delete("Wolf Agent", {"hostname": ("in", (kpi_host, "sat.kpi.localhost"))})
+		for doc in (
+			{"hostname": kpi_host, "kind": "agent", "benches": json.dumps([{"name": "frappe-bench", "sites": [kpi_site, quiet, hidden]}])},
+			{"hostname": "sat.kpi.localhost", "kind": "satellite", "benches": json.dumps([{"name": "frappe-bench", "host": kpi_host, "sites": []}])},
+		):
+			frappe.get_doc({"doctype": "Wolf Agent", "status": "Active", "last_seen": now, **doc}).insert(ignore_permissions=True)
+		frappe.db.commit()
+		agents = scope_api.get_counts(host=kpi_host)["agents"]
+		assert agents["agent"]["fresh"] == 1 and agents["satellite"]["fresh"] == 1, agents
+
+		user = "smoke-scoped@example.com"
 		frappe.db.delete("Wolf User Scope", {"user": user})
-		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site", "value": kpi_site}).insert()
+		for site in (kpi_site, quiet):
+			frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "site", "value": site}).insert()
 		from frappe_wolf.wolf import access
 
 		access.clear_cache()
@@ -788,18 +807,16 @@ def main():
 			inv = scope_api.get_inventory()
 			sites = {s["site"] for h in inv["hosts"] for b in h["benches"] for s in b["sites"]}
 			sites |= {s["site"] for h in inv["hosts"] for s in h["sites"]} | {s["site"] for s in inv["unplaced_sites"]}
-			assert sites == {kpi_site}, f"inventory leaked {sorted(sites)}"
+			# the quiet site comes from the agent's registration; the sibling site is not granted
+			assert sites == {kpi_site, quiet}, f"inventory {sorted(sites)}"
 		finally:
 			frappe.set_user("Administrator")
 			frappe.db.delete("Wolf User Scope", {"user": user})
 			access.clear_cache()
-		full = scope_api.get_inventory()
-		kpi = [h for h in full["hosts"] if h["host"] == kpi_host]
-		assert kpi and kpi[0]["sources"] == ["incidents"], kpi  # learnt from telemetry only, and says so
-		assert [b["bench"] for b in kpi[0]["benches"]] == ["frappe-bench"], kpi
+		frappe.db.delete("Wolf Agent", {"hostname": ("in", (kpi_host, "sat.kpi.localhost"))})
 		frappe.db.delete("Wolf Incident", {"host": kpi_host})
 		return (f"60 unresolved counted past the 50-row list (7 critical, 40 unacknowledged), bench filter {bench_only}, "
-		        f"scoped user sees 55 and only {kpi_site}; inventory {len(full['hosts'])} hosts")
+		        f"satellite counted on its host, scoped user sees 55 and only {kpi_site} + the quiet {quiet}")
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),

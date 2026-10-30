@@ -12,7 +12,7 @@ import json
 
 from frappe_wolf.wolf import scopes
 
-COLUMNS = {"site": "site", "bench": "bench", "host": "host"}
+COLUMNS = scopes.COLUMNS["Wolf Event"]  # same scope columns as every Wolf record
 
 NOTE = (
 	"Hosts and benches come from agent registrations and from telemetry in the window. A bench "
@@ -46,6 +46,8 @@ def agent_triples(agents):
 			out.append((host, None, None, kind, seen))
 		elif kind == "satellite" and agent.get("hostname") and not any(b.get("host") for b in benches):
 			out.append((None, None, agent["hostname"], kind, seen))  # its site, host unknown
+			continue
+		placed = set()
 		for bench in benches:
 			bench_host = host or bench.get("host")
 			if not bench_host:
@@ -53,7 +55,27 @@ def agent_triples(agents):
 			sites = [s for s in bench.get("sites") or [] if s] or [None]
 			for site in sites:
 				out.append((bench_host, bench.get("name") or None, site, kind, seen))
+			placed.update(sites)
+		if kind == "satellite" and agent.get("hostname") and agent["hostname"] not in placed:
+			# the satellite's own site, not listed on its benches: on its (first) host if known
+			first = next((b for b in benches if b.get("host")), None)
+			if first:
+				out.append((first["host"], first.get("name") or None, agent["hostname"], kind, seen))
 	return out
+
+
+def satellite_hosts(agent):
+	"""Hosts a satellite runs on, from its registered benches."""
+	return {b.get("host") for b in _benches(agent.get("benches")) if isinstance(b, dict) and b.get("host")}
+
+
+def agent_state(status, last_seen, cutoff):
+	"""'disabled', 'never_seen', 'fresh' (seen since `cutoff`) or 'stale'."""
+	if status != "Active":
+		return "disabled"
+	if not last_seen:
+		return "never_seen"
+	return "fresh" if last_seen >= cutoff else "stale"
 
 
 def observed_triples(rows, source):

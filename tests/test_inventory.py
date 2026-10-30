@@ -31,6 +31,18 @@ class TestTriples(unittest.TestCase):
 		self.assertIn(("h3", "bench-x", "sat.example.com", "satellite", T2), triples)
 		self.assertIn((None, None, "old.example.com", "satellite", None), triples)  # host unknown
 
+	def test_satellite_site_is_kept_when_its_benches_do_not_list_it(self):
+		sat = {"hostname": "sat.example.com", "kind": "satellite", "last_seen": T2,
+			   "benches": [{"name": "bench-x", "host": "h3", "sites": []}]}  # fmt: skip
+		self.assertIn(("h3", "bench-x", "sat.example.com", "satellite", T2), inventory.agent_triples([sat]))
+		self.assertEqual(inventory.satellite_hosts(sat), {"h3"})
+
+	def test_agent_state(self):
+		self.assertEqual(inventory.agent_state("Disabled", T2, T1), "disabled")
+		self.assertEqual(inventory.agent_state("Active", None, T1), "never_seen")
+		self.assertEqual(inventory.agent_state("Active", T2, T1), "fresh")
+		self.assertEqual(inventory.agent_state("Active", T1, T2), "stale")
+
 	def test_observed_rows_need_a_host_or_site(self):
 		rows = [{"host": "h1", "bench": "frappe-bench", "site": None, "last_seen": T2}, {"host": None, "site": None}]
 		self.assertEqual(inventory.observed_triples(rows, "events"), [("h1", "frappe-bench", None, "events", T2)])

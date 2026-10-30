@@ -8,7 +8,7 @@ answer is the caller's own.
 import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
-from frappe_wolf.api.ui import READ_ROLES
+from frappe_wolf.api.ui import READ_ROLES, agent_cutoff
 from frappe_wolf.wolf import access, events, inventory, schema, window
 
 UNRESOLVED = ("Open", "Acknowledged")
@@ -58,7 +58,8 @@ def _incident_counts(scope, win):
 	opened, resolved = frappe.db.sql(
 		f"""select sum(case when started_at >= %(since)s and started_at <= %(until)s then 1 else 0 end),
 			sum(case when resolved_at >= %(since)s and resolved_at <= %(until)s then 1 else 0 end)
-		from `tabWolf Incident` where 1=1 {where}""",
+		from `tabWolf Incident`
+		where (started_at between %(since)s and %(until)s or resolved_at between %(since)s and %(until)s) {where}""",
 		params,
 	)[0]
 	return {
@@ -103,20 +104,18 @@ def _event_counts(scope, win):
 
 
 def _agent_counts(scope):
-	silence = cint(frappe.db.get_single_value("Wolf Settings", "agent_silence_minutes")) or 5
-	cutoff = add_to_date(now_datetime(), minutes=-silence)
-	filters = {"hostname": scope["host"]} if "host" in scope else {}
+	silence, cutoff = agent_cutoff()
+	host = scope.get("host")
 	out = {kind: {"fresh": 0, "stale": 0, "never_seen": 0, "disabled": 0} for kind in ("agent", "satellite")}
-	for a in frappe.get_list("Wolf Agent", filters=filters, fields=["kind", "status", "last_seen"], limit_page_length=0):
-		counts = out.setdefault(a.kind or "agent", {"fresh": 0, "stale": 0, "never_seen": 0, "disabled": 0})
-		if a.status != "Active":
-			counts["disabled"] += 1
-		elif not a.last_seen:
-			counts["never_seen"] += 1
-		elif a.last_seen >= cutoff:
-			counts["fresh"] += 1
-		else:
-			counts["stale"] += 1
+	# Wolf Agent rows the caller may read (agent_query); with a host scope, an agent is that
+	# host and a satellite counts when one of its benches runs there
+	rows = frappe.get_list("Wolf Agent", fields=["hostname", "kind", "status", "last_seen", "benches"], limit_page_length=0)
+	for a in rows:
+		kind = a.kind or "agent"
+		if host and (a.hostname != host if kind == "agent" else host not in inventory.satellite_hosts(a)):
+			continue
+		counts = out.setdefault(kind, {"fresh": 0, "stale": 0, "never_seen": 0, "disabled": 0})
+		counts[inventory.agent_state(a.status, a.last_seen, cutoff)] += 1
 	return {**out, "silence_minutes": silence, "basis": "agents are hosts: site and bench filters do not apply"}
 
 
@@ -136,10 +135,12 @@ def get_counts(range=None, since=None, until=None, site=None, bench=None, host=N
 
 
 def _observed(doctype, ts_col, since, extra=""):
+	"""(host, bench, site, last_seen) seen in `doctype` since `since` (None: no time bound)."""
 	allowed, params = access.sql_condition(doctype)
+	bound = f"{ts_col} >= %(since)s" if since else "1=1"
 	return frappe.db.sql(
 		f"""select host, bench, site, max({ts_col}) as last_seen from `tab{doctype}`
-		where {ts_col} >= %(since)s {extra}{allowed} group by host, bench, site""",
+		where {bound} {extra}{allowed} group by host, bench, site""",
 		{**params, "since": since},
 		as_dict=True,
 	)
@@ -152,9 +153,13 @@ def get_inventory(days=INVENTORY_DAYS):
 	days = min(max(cint(days) or INVENTORY_DAYS, 1), 90)
 	since = add_to_date(now_datetime(), days=-days)
 	tz = events.system_tz()
-	agents = frappe.get_list("Wolf Agent", fields=["hostname", "kind", "benches", "last_seen"], limit_page_length=0)
+	# every registration, not only the Wolf Agent rows the caller may read: a host agent's row
+	# names a host, yet its benches list the sites a site-scoped user is granted. Each triple is
+	# checked against the grants below.
+	agents = frappe.get_all("Wolf Agent", fields=["hostname", "kind", "benches", "last_seen"])
 	triples = inventory.agent_triples(agents)
-	triples += inventory.observed_triples(_observed("Wolf Event", "`timestamp`", since), "events")
+	# a deduplicated event keeps its first `timestamp`; `last_seen` is when it last happened
+	triples += inventory.observed_triples(_observed("Wolf Event", "coalesce(last_seen, `timestamp`)", since), "events")
 	# hourly rollups cover the window cheaply; minute rollups the hours not closed yet
 	triples += inventory.observed_triples(
 		_observed("Wolf Metric Rollup", "bucket_start", since, "and resolution = 3600"), "metrics"
@@ -163,8 +168,9 @@ def get_inventory(days=INVENTORY_DAYS):
 		_observed("Wolf Metric Rollup", "bucket_start", add_to_date(now_datetime(), hours=-2), "and resolution = 60"),
 		"metrics",
 	)
+	# unresolved incidents whatever their age, as get_counts counts them
 	triples += inventory.observed_triples(
-		_observed("Wolf Incident", "coalesce(last_event_at, started_at)", since, "and status in ('Open', 'Acknowledged')"),
+		_observed("Wolf Incident", "coalesce(last_event_at, started_at)", None, "and status in ('Open', 'Acknowledged')"),
 		"incidents",
 	)
 	# Wolf Agent rows went through permission_query_conditions; registered benches still name

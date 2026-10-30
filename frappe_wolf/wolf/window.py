@@ -86,3 +86,17 @@ def scope_filters(site=None, bench=None, host=None):
 	if "bench" in scope and "host" not in scope:
 		raise PayloadError("bench needs host: bench names repeat across hosts")
 	return scope
+
+
+MAX_QUERY = 100
+
+
+def like_pattern(q):
+	"""A LIKE pattern matching `q` as a plain substring (%, _ and \\ match themselves), or None.
+
+	Searches are bounded: a substring of at most MAX_QUERY characters, never a regex.
+	"""
+	q = str(q or "").strip()[:MAX_QUERY]
+	if not q:
+		return None
+	return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

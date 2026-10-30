@@ -203,3 +203,39 @@ Whether Wolf itself works: the site's health (rules, scheduler, ingest queue), r
 watermarks, every agent and satellite with its state, last contact, clock skew and version,
 and this site's mode. Each part is reported on its own. An online agent says nothing about
 its watchdog's fallback channel.
+
+## Explorers
+
+Wolf Events are deduplicated: one record holds its first time (`first_seen`), last time
+(`last_seen`) and the number of repeats it absorbed (`count`). Explorer lists are lists of
+records. They never say how many times something happened inside a window when a record
+spans the window's edge, and each response says so in `basis`. Searches (`q`) match a plain
+substring of the title, at most 100 characters: `%` and `_` match themselves, and there is no
+regex.
+
+### `frappe_wolf.api.explore.list_events`
+
+Event records active in the window (first seen before its end, last seen after its start),
+newest first, paged by `(first seen, name)`. Arguments: the common window and scope arguments,
+`event_type`, `severity`, `category`, `q`, `limit` (at most 200) and `cursor`. Payloads are not
+in the list; `get_event(name)` returns one record with its payload.
+
+### `frappe_wolf.api.explore.list_error_groups`
+
+Error records grouped by fingerprint, for groups active in the window, latest first. Each group
+has `records`, `occurrences` (the sum of its records' counts, inside the window or not),
+`first_seen`, `last_seen`, the number of `sites`, whether some records are host-wide, the number
+of linked `incidents`, and its newest record's title, which stands for the group. A fingerprint
+includes the site unless the agent sends its own, so most groups concern one site.
+
+### `frappe_wolf.api.explore.get_error_group`
+
+Every visible record of one group, whatever its age:
+- where it happened, by site, bench and host;
+- the incidents it is linked to that the caller may read (`incidents_not_visible` counts the
+  others);
+- its newest record with the payload (the representative traceback);
+- its 50 newest records.
+
+A restricted user sees only the records of their sites, benches or hosts, and counts over
+those.

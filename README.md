@@ -406,7 +406,15 @@ yarn install
 yarn dev        # Vite on the bench port + 80 (8080 for 8000), proxied to the bench
 yarn test       # unit and component tests (Vitest)
 yarn build      # writes frappe_wolf/public/frontend and frappe_wolf/www/wolf.html
+yarn e2e        # browser tests of that build (Playwright + axe), after `yarn build`
 ```
+
+The browser tests (`frontend/e2e/`) serve the production build as a bench would
+(`e2e/server.mjs`) and answer every API call in the page (`e2e/api.js`), so no Frappe is
+needed. Each view must render with no console error and no unanswered call, and pass axe with no
+serious or critical WCAG 2 A/AA finding in the light and the dark theme; keyboard navigation,
+reduced motion and acknowledging an incident are checked too. They need Chromium: `npx playwright
+install chromium`, or point `WOLF_CHROMIUM` at an installed one.
 
 Node 20.19 or newer is required. The build output is not committed; `bench build --app frappe_wolf`
 produces it on the bench.
@@ -415,7 +423,8 @@ produces it on the bench.
 
 Every pull request and every push to `main` runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
 lint (ruff, shellcheck), the app tests on Python 3.12, the agent tests on Python 3.9 and 3.14, the
-Wolf UI tests and build on Node 20.19 and 24, and a bench integration job on MariaDB 10.6 and on
+Wolf UI tests and build on Node 20.19 and 24, the Wolf UI browser tests (Playwright + axe), and a
+bench integration job on MariaDB 10.6 and on
 Postgres 16. To run the same checks locally:
 
 ```bash

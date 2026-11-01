@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import get_fullname
 
-from frappe_wolf.wolf import incident_ops
+from frappe_wolf.wolf import incident_ops, live
 from frappe_wolf.wolf.incidents import get_timeline, latest_deployment, refresh_event_count
 from frappe_wolf.wolf.spa import MANAGER_ROLES  # the Wolf UI offers what these roles may do
 MOVED_COMMENT_TYPES = ("Comment", "Info")
@@ -92,6 +92,7 @@ def sync_assignment(doc, previous):
 				}
 			)
 		frappe.db.set_value(doc.doctype, doc.name, "assigned_to", doc.assigned_to, update_modified=False)
+		live.incident_changed(doc.name)
 		# assign_to.add bumps `modified`; keep the in-memory doc saveable in this request
 		doc.modified = frappe.db.get_value(doc.doctype, doc.name, "modified")
 	finally:
@@ -334,5 +335,6 @@ def create_postmortem(incident):
 	doc = frappe.get_doc({"doctype": "Wolf Postmortem", "incident": inc.name, "status": "Draft", **fetched, **values})
 	doc.insert()
 	frappe.db.set_value("Wolf Incident", inc.name, "postmortem", doc.name, update_modified=False)
+	live.incident_changed(inc.name)
 	note(inc.name, f"Postmortem {doc.name} started.")
 	return doc.name

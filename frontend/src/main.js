@@ -3,6 +3,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { makeRouter } from './router'
 import { loadBoot } from './services/boot'
+import { createLive } from './services/live'
 import './style.css'
 
 loadBoot()
@@ -10,6 +11,7 @@ loadBoot()
     if (!boot) return // on its way to the login page
     const app = createApp(App)
     app.provide('boot', boot)
+    app.provide('live', createLive(boot))
     app.use(makeRouter(undefined, boot))
     app.mount('#app')
   })

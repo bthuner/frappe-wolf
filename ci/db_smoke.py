@@ -1196,6 +1196,47 @@ def main():
 		return (f"3 mounts ranked by max with early gaps, mb 5xx summed per bucket, wrong aggregations refused, "
 		        f"custom metric listed, 400d clipped, scoped user sees nothing of {mhost}")
 
+	def live_updates():
+		from frappe_wolf.wolf import live
+
+		sent = []
+		original = frappe.publish_realtime
+		frappe.publish_realtime = lambda event, message=None, room=None, **kw: sent.append((event, message, room))
+		cache = frappe.cache()
+		for kind in live.LIST_DOCTYPES:
+			cache.delete_value(live._THROTTLE_KEY + kind)
+			cache.delete_value(live._DIRTY_KEY + kind)
+		frappe.flags.wolf_live_sent = None
+		inc = None
+		try:
+			inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke live", "severity": "warning"})
+			inc.insert(ignore_permissions=True)
+			room = live.doc_room("Wolf Incident", inc.name)
+			assert (live.EVENT, {"kind": "incident", "incident": inc.name}, room) in sent, sent
+			assert (live.EVENT, {"kind": "incidents"}, live.doctype_room("Wolf Incident")) in sent, sent
+			assert all(m.get("incident") in (None, inc.name) for _, m, _ in sent), "a list message names an incident"
+			n = len(sent)
+			inc.add_comment("Comment", "live smoke")
+			assert len(sent) == n, f"second message to a room in one request: {sent[n:]}"
+
+			frappe.flags.wolf_live_sent = None  # a new request, within the throttle window
+			sent.clear()
+			inc.add_comment("Comment", "live smoke 2")
+			assert [r for _, _, r in sent] == [room], sent
+			assert cache.get_value(live._DIRTY_KEY + "incidents"), "a throttled list message was dropped"
+
+			frappe.flags.wolf_live_sent = None
+			sent.clear()
+			live.flush()
+			assert [m for _, m, _ in sent] == [{"kind": "incidents"}], sent
+			assert not cache.get_value(live._DIRTY_KEY + "incidents")
+		finally:
+			frappe.publish_realtime = original
+			frappe.flags.wolf_live_sent = None
+			if inc:
+				frappe.delete_doc("Wolf Incident", inc.name, force=True, ignore_permissions=True)
+		return "doc and DocType rooms, one message per room and request, held list message flushed"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1206,7 +1247,8 @@ def main():
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
-	                 ("explorers", explorers), ("metrics explorer", metrics_explorer)]:
+	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
+	                 ("live updates", live_updates)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

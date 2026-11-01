@@ -292,3 +292,40 @@ has:
 aggregation, highest first (lowest for `min`). `retention.clipped` is true when the window
 starts before the data kept at this resolution (`kept_from`, the cutoff purge applies): those
 buckets are gaps.
+
+## Live updates
+
+The Wolf UI stays current over Frappe's own socket.io server (`frappe_wolf/wolf/live.py`,
+`frontend/src/services/live.js`). The server never pushes telemetry: it sends an
+**invalidation**, the event `wolf_invalidate`, and the page fetches again through the APIs
+above, which check permissions as usual.
+
+| Room | Joined with | Frappe checks | Message |
+|---|---|---|---|
+| `doc:Wolf Incident/<name>` | `doc_subscribe` | read permission on that incident (Wolf User Scope applies) | `{"kind": "incident", "incident": "<name>"}` |
+| `doctype:Wolf Incident` | `doctype_subscribe` | read permission on the DocType | `{"kind": "incidents"}` |
+| `doctype:Wolf Event` | `doctype_subscribe` | read permission on the DocType | `{"kind": "events"}` |
+
+- **Sent when**: an incident is created, saved, updated by the engine (new linked events, reopen,
+  auto-resolve, silence, escalation, assignment, postmortem) or deleted; a comment on an incident
+  is added, edited or deleted; a delivery is recorded; an event is stored.
+- **At most one message per room and request**, after commit. List messages are also
+  throttled to one per 5 s per kind. One held back is sent by `flush_live_updates` (every minute):
+  it can be delayed, never lost.
+- **No names in list rooms**: a restricted reader only learns that something changed somewhere.
+- **Boot**: `capabilities.realtime` gives `namespace` (`/<site>`), `port` (`socketio_port`, for
+  `bench start`), `dev_server` and `poll_seconds`. Behind nginx the socket uses the site's own
+  origin (`/socket.io` is proxied, as for Desk).
+
+What each page does with a message:
+
+| Page | On a message | Without a socket |
+|---|---|---|
+| Incident | header refreshed; new timeline rows are added without scrolling, and a "N new rows: show" button takes the reader to the first one. Loaded rows and expanded rows stay | polls every 60 s |
+| Incidents | refreshed, unless "Load more" was used: then "Incidents changed · Refresh" | polls, same rule |
+| Overview and dashboards | refreshed (relative windows move); also polled every 60 s while live, because metrics are not announced | polls |
+| Events, Errors | never reshuffled under the reader: "New events recorded · Refresh" (the new events may not match the filters) | Refresh button only |
+
+After a reconnect every page reconciles once, since messages sent while offline are lost. A
+poll or a reconnect never shows "changed": nothing is known to have changed. **Pause** holds
+messages (the page says changes are waiting) until **Resume**. Polling skips hidden tabs.

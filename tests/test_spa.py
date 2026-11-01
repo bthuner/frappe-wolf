@@ -45,6 +45,14 @@ class TestBoot(unittest.TestCase):
 		self.assertFalse(logs["available"])
 		self.assertIn("raw log lines", logs["reason"])
 
+	def test_realtime(self):
+		off = self.boot()["capabilities"]["realtime"]
+		self.assertFalse(off["available"])
+		self.assertIn("socket.io", off["reason"])
+		on = self.boot(socketio={"site": "wolf.example.com", "port": None, "dev_server": False})["capabilities"]["realtime"]
+		self.assertEqual(on, {"available": True, "namespace": "/wolf.example.com", "port": 9000,
+		                      "dev_server": False, "poll_seconds": 60})  # fmt: skip
+
 	def test_satellite_has_no_incidents(self):
 		self.assertFalse(self.boot(is_satellite=True)["capabilities"]["incidents"]["available"])
 		self.assertTrue(self.boot(is_satellite=True)["satellite"])

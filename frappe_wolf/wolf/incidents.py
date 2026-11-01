@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
+from frappe_wolf.wolf import live
 from frappe_wolf.wolf.conditions import describe_group
 from frappe_wolf.wolf.events import scope_clause
 
@@ -68,6 +69,7 @@ def open_incident(rule, key, scope, summary, started_at=None):
 		target = merge_target_for(rule.name, key)
 		if target:
 			frappe.db.set_value("Wolf Incident", target, "last_event_at", now, update_modified=False)
+			live.incident_changed(target)
 			return target, None
 		name = find_recently_resolved(rule.name, key, rule.cooldown_minutes)
 		if name:
@@ -76,6 +78,7 @@ def open_incident(rule, key, scope, summary, started_at=None):
 
 	if name:
 		frappe.db.set_value("Wolf Incident", name, {"last_event_at": now, "summary": summary})
+		live.incident_changed(name)
 		return name, kind
 
 	settings = frappe.get_cached_doc("Wolf Settings")
@@ -114,6 +117,7 @@ def resolve(name, reason="Condition cleared"):
 		name,
 		{"status": "Resolved", "resolved_at": now_datetime(), "resolved_by": None, "summary": reason},
 	)
+	live.incident_changed(name)
 
 
 def link_events(incident, names):
@@ -130,6 +134,7 @@ def link_events(incident, names):
 def refresh_event_count(incident):
 	count = frappe.db.count("Wolf Event", {"incident": incident})
 	frappe.db.set_value("Wolf Incident", incident, "event_count", count, update_modified=False)
+	live.incident_changed(incident)
 
 
 def attach_to_open_incident(event_name, event):

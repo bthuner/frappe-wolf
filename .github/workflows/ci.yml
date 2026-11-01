@@ -82,6 +82,37 @@ jobs:
       - name: Build output
         run: test -s ../frappe_wolf/www/wolf.html && test -s ../frappe_wolf/public/frontend/index.html
 
+  browser:
+    name: Wolf UI in a browser (Playwright + axe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install --frozen-lockfile --non-interactive
+      - run: yarn build
+      - run: npx playwright install --with-deps chromium
+      # every view on the production build, API mocked in the page: no console error, keyboard,
+      # reduced motion, and no serious/critical WCAG 2 A/AA finding in the light and dark themes
+      - run: yarn e2e
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+
   integration:
     name: Bench integration (${{ matrix.db }})
     runs-on: ubuntu-latest

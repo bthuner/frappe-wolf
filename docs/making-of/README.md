@@ -137,7 +137,7 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 - **2026-10-30 · Incident page**: the timeline of chapter 05 in the Wolf UI, paged with a cursor, with actions checked against the incident's state on the server.
 - **2026-10-30 · Dashboards**: overview, site, host and bench pages. Signals in five honest states, and HTTP with gaps kept and deployments marked.
 - **2026-10-30 · Explorers**: events, error groups and metrics. The catalog governs how a metric is read, two points on a chart become a window, and every chart can be read as a table.
-- **2026-10-30 · Wolf UI** *(in progress)*: accessibility and browser tests in CI.
+- **2026-11-01 · Browser and accessibility tests**: every view of the production build in Chromium, API mocked in the page, axe (WCAG 2 A/AA) in the light and dark themes, keyboard, reduced motion. They found two contrast failures (sidebar section labels, dimmed timeline times), now fixed.
 - **2026-11-01 · Live updates**: invalidations over Frappe's socket.io, in rooms Frappe guards with the reader's permissions; pages refetch, never scroll on their own, and poll when there is no socket.
 
 ## 09 · Trade-offs
@@ -150,7 +150,6 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 
 ## 10 · Next
 
-- **Accessibility and browser tests in CI.**
 - **Log search:** waits for raw-line storage, which Wolf deliberately doesn't have yet.
 - **A real Press server and Pilot host:** the integrations still need to run on one.
 - **A load test at 100 hosts:** it will put numbers on the storage's promises.

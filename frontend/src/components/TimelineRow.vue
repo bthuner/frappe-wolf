@@ -31,7 +31,7 @@ const detailText = computed(() => (details.value ? JSON.stringify(details.value,
 </script>
 
 <template>
-  <li :id="anchor" class="wolf-row" :class="{ 'wolf-row-context': row.family === 'context', 'wolf-row-targeted': targeted }">
+  <li :id="anchor" tabindex="-1" class="wolf-row" :class="{ 'wolf-row-context': row.family === 'context', 'wolf-row-targeted': targeted }">
     <time class="wolf-data wolf-row-time" :datetime="row.at" :title="full(row.at, timeZone)">{{ clock(row.at, timeZone) }}</time>
     <span class="wolf-row-icon size-4" :class="ICONS[row.kind]" aria-hidden="true" />
     <div class="min-w-0 flex-1">

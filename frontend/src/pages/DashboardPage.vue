@@ -1,9 +1,10 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
+import { Button, PageHeader, TabButtons } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
@@ -102,7 +103,7 @@ const live = useLive(hub, {
 
 <template>
   <PageHeader>
-    <PageHeaderTitle :title="title" />
+    <PageTitle :title="title" />
     <div class="flex items-center gap-2">
       <TabButtons v-model="range" :options="RANGES" />
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />

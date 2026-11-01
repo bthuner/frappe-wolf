@@ -1,8 +1,9 @@
 <script setup>
-import { PageHeader, PageHeaderTitle } from 'frappe-ui'
+import { PageHeader } from 'frappe-ui'
 import { computed, inject } from 'vue'
 import { useRoute } from 'vue-router'
 
+import PageTitle from '@/components/PageTitle.vue'
 import { deskFallback } from '@/services/boot'
 
 // A view of #19 that is not built yet. It says so and hands over to the Desk page that does
@@ -19,7 +20,7 @@ const subject = computed(() =>
 
 <template>
   <PageHeader>
-    <PageHeaderTitle :title="subject ? `${route.meta.title}: ${subject}` : route.meta.title" />
+    <PageTitle :title="subject ? `${route.meta.title}: ${subject}` : route.meta.title" />
   </PageHeader>
   <section v-if="unavailable" class="max-w-2xl space-y-3 p-5 text-base text-ink-gray-8">
     <p>

@@ -139,6 +139,7 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 - **2026-10-30 · Explorers**: events, error groups and metrics. The catalog governs how a metric is read, two points on a chart become a window, and every chart can be read as a table.
 - **2026-11-01 · Browser and accessibility tests**: every view of the production build in Chromium, API mocked in the page, axe (WCAG 2 A/AA) in the light and dark themes, keyboard, reduced motion. They found two contrast failures (sidebar section labels, dimmed timeline times), now fixed.
 - **2026-11-01 · Live updates**: invalidations over Frappe's socket.io, in rooms Frappe guards with the reader's permissions; pages refetch, never scroll on their own, and poll when there is no socket.
+- **2026-11-01 · Focus restoration**: each page has a real `<h1>`, and a route change moves focus there. A button that frappe-ui disables while it works (Refresh, Comment) gets the focus back; an action that goes away (Acknowledge, Approve…) hands it to what is left nearby. Measured in Chromium before the fix: focus fell to `<body>`, and Tab started again from the top of the page.
 
 ## 09 · Trade-offs
 

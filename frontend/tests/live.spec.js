@@ -313,6 +313,8 @@ describe('IncidentPage live', () => {
       delete Element.prototype.scrollIntoView
     }
     expect(scrolled).toEqual(['row-event-E2'])
+    // the row takes the focus too, so Tab goes on from the new row, not from the gone button
+    expect(document.activeElement.id).toBe('row-event-E2')
     expect(page.findAll('button').some((b) => b.text().includes('new row'))).toBe(false)
   })
 })

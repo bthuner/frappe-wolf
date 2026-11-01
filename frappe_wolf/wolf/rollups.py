@@ -431,47 +431,40 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 	return out
 
 
-def _join_keys(group_cols):
-	"""(select list, join conditions) matching rows to their group's newest time, NULL-safe.
+def _newest_rows(table, select, partition, newest, conds, params):
+	"""Rows holding the newest `newest` of each `partition`, in one pass over the rows read.
 
-	metric_name is never NULL: compared as is, so the join can use (metric_name, timestamp). A
-	join on the time alone looks up every sample of that second, of every host and metric:
-	at 100 hosts pushing together, 3.9 s instead of 0.3 s for the signals' raw tail.
+	A self-join on the newest time (rows joined to a group-by of the same rows) lets MariaDB
+	merge the row side into a lookup per group, through the (resolution, metric_name) index:
+	each of the signals' 400 series then walked all of its metric's minute rollups, 233 s
+	instead of 0.1 s. A window function reads the rows once, and keeps exactly the group-by's
+	groups (NULL apart from '', unlike a join on coalesce).
 	"""
-	keys, join = [], []
-	for i, c in enumerate(group_cols):
-		if c == "metric_name":
-			keys.append(f"`{c}` as g{i}")
-			join.append(f"a.`{c}` = x.g{i}")
-		else:
-			keys.append(f"coalesce(`{c}`, '') as g{i}")
-			join.append(f"coalesce(a.`{c}`, '') = x.g{i}")
-	return ", ".join(keys), join
+	over = f"partition by {', '.join(partition)} " if partition else ""
+	return frappe.db.sql(
+		f"""select * from (select {', '.join(select)},
+			row_number() over ({over}order by {', '.join(f'{c} desc' for c in newest)}) as rn
+			from `{table}` where {conds}) z where rn = 1""",
+		params,
+		as_dict=True,
+	)
 
 
 def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_last):
-	"""Value (and label) at the newest time of each group, picked in SQL: only the rows at each
-	group's own newest time come back, however long ago another group stopped."""
-	cols = ", ".join(f"`{c}`" for c in group_cols)
-	keys, join = _join_keys(group_cols)
-	join = " and ".join([*join, "a.t = x.m"])
-	rows = frappe.db.sql(
-		f"""select {', '.join([*(f'a.`{c}`' for c in group_cols), 'a.v', 'a.t', 'a.l'])}
-		from (select {cols + ', ' if cols else ''}{value_col} as v, {last_col} as t, label_key as l
-			from `{table}` where {conds} and {last_col} >= %(oldest_last)s) a
-		join (select {keys + ', ' if keys else ''}max({last_col}) as m
-			from `{table}` where {conds} and {last_col} >= %(oldest_last)s {'group by ' + cols if cols else ''}) x
-		on {join}""",
+	"""Value (and label) at the newest time of each group, picked in SQL: only the newest row of
+	each group comes back, however long ago another group stopped. Ties go to the higher value,
+	then label, as storage.merge picks."""
+	cols = [f"`{c}`" for c in group_cols]
+	label = "coalesce(label_key, '')"
+	rows = _newest_rows(
+		table,
+		[*cols, f"{value_col} as v", f"{last_col} as t", f"{label} as l"],
+		cols,
+		[last_col, value_col, label],
+		f"{conds} and {last_col} >= %(oldest_last)s",
 		{**params, "oldest_last": oldest_last},
-		as_dict=True,
 	)
-	best = {}
-	for r in rows:
-		key = tuple(r.get(c) for c in group_cols)
-		cand = (get_datetime(r.t), float(r.v), r.l or "")
-		if key not in best or cand > best[key]:
-			best[key] = cand
-	return {key: (value, label or None) for key, (_, value, label) in best.items()}
+	return {tuple(r.get(c) for c in group_cols): (float(r.v), r.l or None) for r in rows}
 
 
 def series_rows(where, params, resolution, since, until, metrics=None):
@@ -541,23 +534,6 @@ def bucket_cells(where, params, group_cols, resolution, since, until, bucket_sec
 
 def _bucket_lasts(table, value_col, last_col, idx, where_sql, params, group_cols, bucket_seconds):
 	"""Value at the newest time of each group and bucket: {(group, bucket_start): value}."""
-	cols = ", ".join(f"`{c}`" for c in group_cols)
-	keys, join = _join_keys(group_cols)
-	join = " and ".join([*join, "a.b = x.b", "a.t = x.m"])
-	rows = frappe.db.sql(
-		f"""select {', '.join([*(f'a.`{c}`' for c in group_cols), 'a.b', 'a.v', 'a.t'])}
-		from (select {cols + ', ' if cols else ''}{idx} as b, {value_col} as v, {last_col} as t
-			from `{table}` where {where_sql}) a
-		join (select {keys + ', ' if keys else ''}{idx} as b, max({last_col}) as m
-			from `{table}` where {where_sql} group by {cols + ', ' if cols else ''}{idx}) x
-		on {join}""",
-		params,
-		as_dict=True,
-	)
-	best = {}
-	for r in rows:
-		key = (tuple(r.get(c) for c in group_cols), _bucket_start(r.b, bucket_seconds))
-		cand = (get_datetime(r.t), float(r.v))
-		if key not in best or cand > best[key]:
-			best[key] = cand
-	return {key: value for key, (_, value) in best.items()}
+	cols = [f"`{c}`" for c in group_cols]
+	rows = _newest_rows(table, [*cols, f"{idx} as b", f"{value_col} as v"], [*cols, idx], [last_col, value_col], where_sql, params)
+	return {(tuple(r.get(c) for c in group_cols), _bucket_start(r.b, bucket_seconds)): float(r.v) for r in rows}

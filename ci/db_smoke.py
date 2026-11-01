@@ -151,9 +151,14 @@ def main():
 		note = frappe.db.get_value("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc,
 		                                       "comment_type": "Info"}, "content")  # fmt: skip
 		assert note and note.startswith("Reopened by rule smoke reopen"), note
+		# without a cooldown the same events would open a brand-new incident: they must not either
+		incidents.resolve(inc, "smoke: handled again")
+		# resolved after the newer failure (stamped 2 s ahead): it was seen too
+		frappe.db.set_value("Wolf Incident", inc, "resolved_at", now_datetime() + timedelta(seconds=3))
+		doc.cooldown_minutes = 0
+		assert not rules.evaluate(doc, now_datetime() + timedelta(seconds=4))["fired"], "new incident on seen events"
 		frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
-		incidents.resolve(inc, "smoke: done")
-		return f"{inc}: same events kept it resolved; a newer one reopened it, with a note"
+		return f"{inc}: seen events kept it resolved (with or without cooldown); a newer one reopened it, with a note"
 
 	def skew():
 		future = schema.normalize_metric({"metric_name": "smoke_skew", "value": 99, "host": HOST}, tz,
@@ -906,7 +911,7 @@ def main():
 		detail = view.get_incident(inc.name)
 		assert detail["deployment"]["available"] and detail["event_records"] == 7, detail
 		# records and the occurrences they report are not the same number
-		assert detail["event_count"] == 11, (detail["event_records"], detail["event_count"])
+		assert (detail["event_count"], detail["event_occurrences"]) == (7, 11), detail
 		assert detail["can"]["acknowledge"] and detail["can"]["resolve"], detail["can"]
 		full = view.get_timeline(inc.name, limit=500)
 		ids = [r["id"] for r in full["rows"]]

@@ -176,9 +176,10 @@ def _linked_counts(incident):
 	"""Records linked to the incident, and the occurrences they report, read now (repeats keep
 	coming after an event is linked)."""
 	records, occurrences = frappe.db.sql(
-		"select count(*), coalesce(sum(`count`), 0) from `tabWolf Event` where incident = %s", incident
+		"select count(*), coalesce(sum(coalesce(`count`, 1)), 0) from `tabWolf Event` where incident = %s", incident
 	)[0]
-	return {"event_records": cint(records), "event_count": cint(occurrences)}
+	# event_count keeps its meaning everywhere (records, Wolf Incident.event_count)
+	return {"event_records": cint(records), "event_count": cint(records), "event_occurrences": cint(occurrences)}
 
 
 def _activity(doc, tz):

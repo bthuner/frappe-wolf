@@ -121,8 +121,8 @@ The incident header in one call: title, status, severity, scope, start, acknowle
 resolution and owner, rule, silence, notification and escalation times, merge and split links,
 and the timeline window. `deployment` gives the time of the deployment before the incident,
 with `available: false` when retention deleted its event but the incident kept the time.
-`event_records` (linked Wolf Events) and `event_count` (the repeats they absorbed) are
-different numbers. `can` says which actions the caller may take: Wolf Users read and comment,
+`event_records` (linked Wolf Events; `event_count` is the same number, as on Wolf Incident) and
+`event_occurrences` (the occurrences they report, repeats included) are different numbers. `can` says which actions the caller may take: Wolf Users read and comment,
 and Wolf Managers also acknowledge, resolve, take the incident and work on it in Desk.
 
 ### `frappe_wolf.api.incident_view.get_timeline`

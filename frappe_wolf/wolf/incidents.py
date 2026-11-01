@@ -53,6 +53,18 @@ def latest_deployment(host=None, bench=None, site=None, minutes=30, before=None)
 	return rows[0] if rows else None
 
 
+def seen_when_resolved(rule, key, newest_at):
+	"""True when the last resolved incident of (rule, key) was resolved after `newest_at`, the
+	newest matching record: whoever resolved it had it in front of them. Any cooldown."""
+	resolved_at = frappe.db.get_value(
+		"Wolf Incident",
+		{"alert_rule": rule, "group_key": key, "status": "Resolved", "merged_into": ("is", "not set")},
+		"resolved_at",
+		order_by="resolved_at desc",
+	)
+	return bool(resolved_at) and get_datetime(newest_at) <= get_datetime(resolved_at)
+
+
 def open_incident(rule, key, scope, summary, started_at=None, newest_at=None):
 	"""Create, update or reopen the incident for (rule, key).
 
@@ -73,11 +85,9 @@ def open_incident(rule, key, scope, summary, started_at=None, newest_at=None):
 			frappe.db.set_value("Wolf Incident", target, "last_event_at", now, update_modified=False)
 			live.incident_changed(target)
 			return target, None
+		if newest_at and seen_when_resolved(rule.name, key, newest_at):
+			return None, None
 		name = find_recently_resolved(rule.name, key, rule.cooldown_minutes)
-		if name and newest_at:
-			resolved_at = frappe.db.get_value("Wolf Incident", name, "resolved_at")
-			if resolved_at and get_datetime(newest_at) <= get_datetime(resolved_at):
-				return None, None
 		if name:
 			kind = "reopened"
 			frappe.db.set_value("Wolf Incident", name, {"status": "Open", "resolved_at": None, "resolved_by": None})
@@ -97,12 +107,12 @@ def open_incident(rule, key, scope, summary, started_at=None, newest_at=None):
 	settings = frappe.get_cached_doc("Wolf Settings")
 	# the change that preceded the incident: a rule evaluates after the fact, and a deployment
 	# made since the incident started (a fix, a migrate on restart) is not what came before it
-	deploy = latest_deployment(
-		scope.get("host"),
-		scope.get("bench"),
-		scope.get("site"),
-		minutes=cint(settings.deployment_window_minutes) or 30,
-		before=min(get_datetime(started_at), now) if started_at else now,
+	# made since the incident started (a fix, a migrate on restart) is not what came before it.
+	# started_at can be early (a metric window's first sample): then the latest before now.
+	where = (scope.get("host"), scope.get("bench"), scope.get("site"))
+	minutes = cint(settings.deployment_window_minutes) or 30
+	deploy = (started_at and latest_deployment(*where, minutes=minutes, before=min(get_datetime(started_at), now))) or (
+		latest_deployment(*where, minutes=minutes, before=now)
 	)
 	doc = frappe.get_doc(
 		{

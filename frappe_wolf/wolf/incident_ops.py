@@ -247,7 +247,7 @@ def describe_activity(entry, user_label=None):
 	if kind == "field":
 		field = entry.get("field") or ""
 		if field == "merged_into" and entry.get("to"):
-			return f"{who} merged it into {entry['to']}".strip()
+			return f"{who} merged it into {entry['to']}" if who else f"Merged into {entry['to']}"
 		label = FIELD_LABELS.get(field) or field.replace("_", " ")
 		if not entry.get("to"):
 			return f"{who} cleared {label}".strip()

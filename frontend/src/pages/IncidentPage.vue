@@ -268,7 +268,7 @@ watch(name, () => {
           <dd>Yes: no notifications are sent for it</dd>
         </template>
         <dt>Linked events</dt>
-        <dd>{{ count(incident.event_records, 'record') }}, {{ count(incident.event_count, 'reported occurrence') }}</dd>
+        <dd>{{ count(incident.event_records, 'record') }}, {{ count(incident.event_occurrences, 'reported occurrence') }}</dd>
       </dl>
       <section v-if="incident.regulatory" class="space-y-2 border-t border-outline-gray-1 pt-2" aria-label="Regulatory reporting">
         <h2 class="text-sm font-semibold text-ink-gray-9">

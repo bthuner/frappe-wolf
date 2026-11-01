@@ -100,10 +100,11 @@ def main():
 	if moved_back:
 		# no zone ahead is at night now: every job's last run is now in the future, so Frappe's
 		# scheduler (and Wolf's rule evaluation with it) would wait hours for real time to catch up
-		step("The clock moved back: mark every scheduled job as just run, so they stay due")
+		step("The clock moved back: jobs whose last run is now in the future are marked as run now")
 		local_now = f"{datetime.now(ZoneInfo(zone)):%Y-%m-%d %H:%M:%S}"
-		compose("exec", "-T", "backend", "bench", "--site", SITE, "execute", "frappe.db.sql",
-		        "--args", json.dumps(["update `tabScheduled Job Type` set last_execution = %s", [local_now]]))
+		compose("exec", "-T", "backend", "bench", "--site", SITE, "execute", "frappe.db.sql", "--args", json.dumps([
+			"update `tabScheduled Job Type` set last_execution = %s"
+			" where coalesce(last_execution, creation) > %s", [local_now, local_now]]))
 
 	step("Route the demo rules to the webhook sink")
 	for rule in RULES:

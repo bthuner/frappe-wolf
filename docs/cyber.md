@@ -249,9 +249,24 @@ result; read-only for everyone) and a comment on the incident.
   - Wolf does not decide whether an incident is significant or a breach, and sends nothing to
     an authority. Not built: the intermediate report an authority may ask for (NIS2
     Art. 23(4)(c)), DORA's timelines.
-- **Tamper-evident journal**: each security event and incident action is chained with an HMAC
-  of the previous entry. A `bench --site … wolf-verify-journal` command proves nothing was
-  removed or edited.
+- **Tamper-evident journal (built)** (`wolf/journal.py`, `api/journal.py`, DocType *Wolf
+  Journal Entry*). Captured, in the transaction that made the change: security events (their
+  payload by SHA-256), incident decisions (status, owner, merge, NIS2 / GDPR fields, including
+  auto-resolve and reopen), response actions and their results, comments on incidents, and Wolf
+  Settings changes (the names of the fields changed and who changed them, never the values).
+  - Every minute `chain_journal` signs the waiting entries in creation order, under a lock:
+    `mac = HMAC-SHA256(key, seq|at|kind|record|digest|prev_mac)`. Signing in one job means two
+    requests can never fork the chain; an entry waits a minute at most.
+  - The key is `wolf_journal_key` in the site config, created on first use, never in the
+    database: someone who can only write the database cannot forge a chain. Back it up with the
+    site config; without it the chain cannot be verified.
+  - `bench --site <site> wolf-verify-journal [--anchor seq:mac]` (or *Verify* on Wolf →
+    Security) recomputes every digest and mac and finds an edited, removed or reordered entry.
+    Deleting the newest entries leaves a valid shorter chain: copy the **anchor** (newest
+    `seq:mac`, shown on the Security page) somewhere Wolf cannot write, and check it with
+    `--anchor`. The SIEM export below sends every entry out, which is the best anchor.
+  - Entries are read-only through Frappe (edits and deletions are refused) and kept forever:
+    there is no purge yet.
 - **SOC export**: syslog (RFC 5424) with CEF or OCSF JSON per event, so UniSOC, Wazuh or any
   SIEM can ingest Wolf with no custom connector.
 

@@ -171,6 +171,11 @@ def record_results(agent, results):
 		frappe.db.set_value("Wolf Response Action", item["id"], {
 			"status": "Applied" if ok else "Failed", "result": detail, "applied_at": now_datetime() if ok else None,
 		})  # fmt: skip
+		from frappe_wolf.api import journal
+
+		journal.capture("response_action", "Wolf Response Action", item["id"],
+		                {"status": "Applied" if ok else "Failed", "result": detail, "agent": agent},
+		                f"{item['id']} reported by {agent}: {'applied' if ok else 'failed'}")  # fmt: skip
 		if row.incident:
 			frappe.get_doc("Wolf Incident", row.incident).add_comment(
 				"Comment", f"Response action {item['id']} {'applied' if ok else 'failed'} on the host: {detail}"
@@ -185,6 +190,9 @@ def expire_actions(now=None):
 		filters={"action": "block_ip", "status": ("in", ("Approved", "Applied")), "expires_at": ("<=", now)},
 		pluck="name",
 	)
+	from frappe_wolf.api import journal
+
 	for name in names:
 		frappe.db.set_value("Wolf Response Action", name, "status", "Expired")
+		journal.capture("response_action", "Wolf Response Action", name, {"status": "Expired"}, f"{name} expired")
 	return names

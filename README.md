@@ -225,6 +225,12 @@ touched*). With **Use IP reputation lists** on, blocklists (FireHOL level 1 and 
 prefilled) are downloaded daily and security events from a listed IP are tagged and raised one
 severity step. See [`docs/cyber.md`](docs/cyber.md#step-4-deception-and-threat-intelligence-built-except-crowdsec).
 
+**Tamper-evident journal**: security events, incident decisions, response actions, comments and
+Wolf Settings changes are recorded in **Wolf Journal Entry** and chained with an HMAC whose key
+stays in the site config. `bench --site <site> wolf-verify-journal [--anchor seq:mac]` proves
+nothing was edited, removed or reordered; copy the anchor shown on **Wolf → Security**
+somewhere Wolf cannot write. See [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
+
 **Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
 history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
 ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the

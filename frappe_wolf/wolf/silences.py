@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
-from frappe_wolf.wolf import conditions
+from frappe_wolf.wolf import conditions, live
 
 MAX_MINUTES = 24 * 60
 
@@ -32,6 +32,7 @@ def hold(incident, silence, kind):
 	if kind != "resolved":
 		values["silenced"] = 1
 	frappe.db.set_value("Wolf Incident", incident, values, update_modified=False)
+	live.incident_changed(incident)
 	_comment(
 		incident,
 		f"{kind.capitalize()} notification held back by maintenance window {silence.name}"
@@ -42,6 +43,7 @@ def hold(incident, silence, kind):
 
 def release(incident, note):
 	frappe.db.set_value("Wolf Incident", incident, "silenced", 0, update_modified=False)
+	live.incident_changed(incident)
 	_comment(incident, note)
 
 

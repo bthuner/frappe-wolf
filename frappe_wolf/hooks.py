@@ -66,12 +66,22 @@ doc_events = {
 	"Role Profile": {"on_update": "frappe_wolf.wolf.local_signals.on_role_profile"},
 	"System Settings": {"on_update": "frappe_wolf.wolf.local_signals.on_system_settings"},
 	"Webhook": {"on_update": "frappe_wolf.wolf.local_signals.on_webhook"},
+	# live updates for the Wolf UI (wolf/live.py): invalidations only, never telemetry;
 	# tamper-evident journal (api/journal.py): unsigned entries, chained every minute
-	"Wolf Event": {"after_insert": "frappe_wolf.api.journal.on_event"},
-	"Wolf Incident": {"on_update": "frappe_wolf.api.journal.on_incident"},
+	"Wolf Incident": {
+		"after_insert": "frappe_wolf.wolf.live.on_incident",
+		"on_update": ["frappe_wolf.wolf.live.on_incident", "frappe_wolf.api.journal.on_incident"],
+		"on_trash": "frappe_wolf.wolf.live.on_incident",
+	},
+	"Wolf Event": {"after_insert": ["frappe_wolf.wolf.live.on_event", "frappe_wolf.api.journal.on_event"]},
+	"Wolf Delivery": {"after_insert": "frappe_wolf.wolf.live.on_delivery"},
 	"Wolf Response Action": {"on_update": "frappe_wolf.api.journal.on_response_action"},
 	"Wolf Settings": {"on_update": "frappe_wolf.api.journal.on_settings"},
-	"Comment": {"after_insert": "frappe_wolf.api.journal.on_comment"},
+	"Comment": {
+		"after_insert": ["frappe_wolf.wolf.live.on_comment", "frappe_wolf.api.journal.on_comment"],
+		"on_update": "frappe_wolf.wolf.live.on_comment",
+		"on_trash": "frappe_wolf.wolf.live.on_comment",
+	},
 }
 
 # Role Permission Manager changes bypass doc events (raw SQL): read from the request
@@ -86,6 +96,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.check_incidents",
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
+			"frappe_wolf.tasks.flush_live_updates",
 			"frappe_wolf.api.journal.chain_journal",
 			"frappe_wolf.api.siem.export_siem",
 		],

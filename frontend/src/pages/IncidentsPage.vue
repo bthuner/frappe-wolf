@@ -2,7 +2,9 @@
 import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
 import { inject, ref, watch } from 'vue'
 
+import LiveStatus from '@/components/LiveStatus.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
+import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
 import { duration, full } from '@/services/time'
@@ -18,6 +20,7 @@ const STATUSES = [
 const status = useQueryParam('status', 'unresolved', STATUSES.map((s) => s.value))
 
 const incidents = ref([])
+const paged = ref(false) // "Load more" was used: a refresh would drop those rows
 const cursor = ref(null)
 const hasMore = ref(false)
 const loading = ref(false)
@@ -36,6 +39,7 @@ async function load(append = false) {
     if (mine !== ticket) return // an older filter answered late
     const seen = new Set(append ? incidents.value.map((i) => i.name) : [])
     incidents.value = [...(append ? incidents.value : []), ...page.incidents.filter((i) => !seen.has(i.name))]
+    paged.value = append
     cursor.value = page.paging.next_cursor
     hasMore.value = page.paging.has_more
   } catch (e) {
@@ -50,12 +54,26 @@ function scope(i) {
 }
 
 watch(status, () => load(), { immediate: true })
+
+const hub = inject('live', null)
+const live = useLive(hub, {
+  room: () => ({ doctype: 'Wolf Incident' }),
+  matches: (m) => m.kind === 'incidents',
+  refresh: async (reason) => {
+    if (paged.value && reason !== 'manual') return false
+    await load()
+    return true
+  },
+})
 </script>
 
 <template>
   <PageHeader>
     <PageHeaderTitle title="Incidents" />
-    <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="load()" />
+    <div class="flex items-center gap-2">
+      <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="Incidents changed" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="live.apply()" />
+    </div>
   </PageHeader>
   <div class="mx-auto max-w-5xl space-y-3 p-5">
     <TabButtons v-model="status" :options="STATUSES" />

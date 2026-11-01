@@ -3,19 +3,37 @@ import { Button, PageHeader, PageHeaderTitle } from 'frappe-ui'
 import { inject } from 'vue'
 
 import ExploreFilters from '@/components/ExploreFilters.vue'
+import LiveStatus from '@/components/LiveStatus.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useExplore } from '@/composables/useExplore'
+import { useLive } from '@/composables/useLive'
 import { full } from '@/services/time'
 
 const boot = inject('boot')
 const tz = boot.time_zone
 const list = useExplore('frappe_wolf.api.explore.list_error_groups', 'groups', { itemKey: (g) => g.fingerprint })
+
+// new events never reshuffle the list under the reader: a button offers them
+const hub = inject('live', null)
+const live = useLive(hub, {
+  room: () => ({ doctype: 'Wolf Event' }),
+  matches: (m) => m.kind === 'events',
+  refresh: async (reason) => {
+    if (reason !== 'manual') return false
+    await list.load()
+    return true
+  },
+  polls: false, // a poll would only reshuffle the list: the reader refreshes
+})
 </script>
 
 <template>
   <PageHeader>
     <PageHeaderTitle title="Errors" />
-    <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="list.loading.value" @click="list.load()" />
+    <div class="flex items-center gap-2">
+      <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="New events recorded" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="list.loading.value" @click="live.apply()" />
+    </div>
   </PageHeader>
   <div class="mx-auto max-w-6xl space-y-3 p-5">
     <ExploreFilters />

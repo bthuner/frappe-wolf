@@ -39,6 +39,13 @@ def check_incidents():
 	frappe.db.commit()
 
 
+def flush_live_updates():
+	"""Send the Wolf UI list invalidations the throttle held back (wolf/live.py)."""
+	from frappe_wolf.wolf import live
+
+	live.flush()
+
+
 def send_digests():
 	if satellite.is_satellite():
 		return

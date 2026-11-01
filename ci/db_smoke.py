@@ -1197,6 +1197,65 @@ def main():
 		return (f"3 mounts ranked by max with early gaps, mb 5xx summed per bucket, wrong aggregations refused, "
 		        f"custom metric listed, 400d clipped, scoped user sees nothing of {mhost}")
 
+	def live_updates():
+		from frappe_wolf.wolf import live
+
+		sent = []
+		original = frappe.publish_realtime
+
+		def record(event=None, message=None, room=None, **kw):
+			if event == live.EVENT:  # Frappe's own docinfo/doc/list updates are not Wolf's
+				sent.append((event, message, room))
+
+		frappe.publish_realtime = record
+		cache = frappe.cache()
+		for kind in live.LIST_DOCTYPES:
+			cache.delete_value(live._THROTTLE_KEY + kind)
+			cache.delete_value(live._DIRTY_KEY + kind)
+		frappe.db.commit()  # start from a fresh transaction: the bookkeeping is per transaction
+		inc = None
+		try:
+			inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke live", "severity": "warning"})
+			inc.insert(ignore_permissions=True)
+			room = live.doc_room("Wolf Incident", inc.name)
+			assert (live.EVENT, {"kind": "incident", "incident": inc.name}, room) in sent, sent
+			assert (live.EVENT, {"kind": "incidents"}, live.doctype_room("Wolf Incident")) in sent, sent
+			assert all(m.get("incident") in (None, inc.name) for _, m, _ in sent), "a list message names an incident"
+			n = len(sent)
+			inc.add_comment("Comment", "live smoke")
+			assert len(sent) == n, f"second message to a room in one transaction: {sent[n:]}"
+
+			frappe.db.commit()  # the next transaction, within the throttle window
+			sent.clear()
+			inc.add_comment("Comment", "live smoke 2")
+			assert [r for _, _, r in sent] == [room], sent
+			assert not cache.get_value(live._DIRTY_KEY + "incidents"), "marked dirty before the commit"
+			frappe.db.commit()
+			assert cache.get_value(live._DIRTY_KEY + "incidents"), "a throttled list message was dropped"
+
+			sent.clear()
+			live.flush()
+			assert [m for _, m, _ in sent] == [{"kind": "incidents"}], sent
+			assert not cache.get_value(live._DIRTY_KEY + "incidents")
+			frappe.db.commit()
+
+			sent.clear()
+			inc.add_comment("Comment", "live smoke 3 (rolled back)")
+			frappe.db.rollback()
+			assert not cache.get_value(live._DIRTY_KEY + "incidents"), "a rolled-back change was marked dirty"
+			inc.reload()
+			inc.add_comment("Comment", "live smoke 4")  # the room is announced again after a rollback
+			assert [r for _, _, r in sent].count(room) == 2, sent
+		finally:
+			frappe.publish_realtime = original
+			frappe.flags.wolf_live_sent = None
+			if inc:
+				# Frappe keeps the comments of a deleted doc and gives its name back to the series:
+				# the next incident would inherit them
+				frappe.db.delete("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name})
+				frappe.delete_doc("Wolf Incident", inc.name, force=True, ignore_permissions=True)
+		return "doc and DocType rooms, one message per room and transaction, dirty only after commit, flushed"
+
 	def app_security():
 		from types import SimpleNamespace
 
@@ -1323,7 +1382,7 @@ def main():
 		assert all(frappe.db.get_value("Wolf Event", n, "incident") == inc.name for n in first)
 		assert compliance_api.check_deadlines() == [], "one reminder per obligation and stage"
 		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
-		                                       "comment_type": "Comment"})  # fmt: skip
+		                                       "comment_type": "Comment", "creation": (">=", inc.creation)})  # fmt: skip
 		assert comments == 2, comments
 		view = incident_view.get_incident(inc.name)["regulatory"]
 		assert view["nis2"] and view["gdpr"] and len(view["deadlines"]) == 4, view
@@ -1554,6 +1613,7 @@ def main():
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
+	                 ("live updates", live_updates),
 	                 ("app security", app_security), ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("journal", journal_chain),

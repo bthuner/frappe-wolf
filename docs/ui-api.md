@@ -293,6 +293,48 @@ aggregation, highest first (lowest for `min`). `retention.clipped` is true when 
 starts before the data kept at this resolution (`kept_from`, the cutoff purge applies): those
 buckets are gaps.
 
+## Live updates
+
+The Wolf UI stays current over Frappe's own socket.io server (`frappe_wolf/wolf/live.py`,
+`frontend/src/services/live.js`). The server never pushes telemetry: it sends an
+**invalidation**, the event `wolf_invalidate`, and the page fetches again through the APIs
+above, which check permissions as usual.
+
+| Room | Joined with | Frappe checks | Message |
+|---|---|---|---|
+| `doc:Wolf Incident/<name>` | `doc_subscribe` | read permission on that incident (Wolf User Scope applies) | `{"kind": "incident", "incident": "<name>"}` |
+| `doctype:Wolf Incident` | `doctype_subscribe` | read permission on the DocType | `{"kind": "incidents"}` |
+| `doctype:Wolf Event` | `doctype_subscribe` | read permission on the DocType | `{"kind": "events"}` |
+
+- **Sent when**: an incident is created, saved, updated by the engine (new linked events, reopen,
+  auto-resolve, silence, escalation, assignment, postmortem) or deleted; a comment on an incident
+  is added, edited or deleted; a delivery is recorded; an event is stored.
+- **At most one message per room and transaction**, after commit; the bookkeeping is cleared on
+  commit and on rollback, so a job that commits many times announces each transaction and a
+  rolled-back one announces nothing. List messages are also throttled to one per 5 s per kind;
+  one held back is marked after commit and sent by `flush_live_updates` (every minute): a
+  committed change can be delayed, never lost.
+- **No names in list rooms**: a restricted reader only learns that something changed somewhere.
+- **Boot**: `capabilities.realtime` gives `namespace` (`/<site>`), `port` (`socketio_port`, for
+  `bench start`), `dev_server` and `poll_seconds`. Behind nginx the socket uses the site's own
+  origin (`/socket.io` is proxied, as for Desk).
+
+What each page does with a message:
+
+| Page | On a message | Without a socket |
+|---|---|---|
+| Incident | header refreshed; new timeline rows are added without scrolling, and a "N new rows: show" button takes the reader to the first one. Loaded rows and expanded rows stay; past 500 loaded rows only the header follows and the rows wait for Refresh | polls every 60 s |
+| Incidents | refreshed, unless "Load more" was used: then "Incidents changed · Refresh" | polls, same rule |
+| Overview and dashboards | refreshed at most every 10 s (messages carry no scope; relative windows move); also polled every 60 s while live, because metrics are not announced | polls |
+| Events, Errors | never reshuffled under the reader: "New events recorded · Refresh" (the new events may not match the filters) | not polled: "Not live: refresh by hand" |
+
+Every page reconciles once when the socket first joins its rooms (what changed after its first
+fetch is unknown) and after each reconnect (messages sent while offline are lost). A page that
+does not reload by itself shows "Reconnected, changes may have been missed · Refresh" after a
+reconnect; a poll or the first connect never claims a change. **Pause** holds messages (the
+page says changes are waiting) until **Resume**. Every refresh, the reader's included, goes
+through one queue: never two at once. Polling skips hidden tabs.
+
 ## Security
 
 ### `frappe_wolf.api.security.list_sites`

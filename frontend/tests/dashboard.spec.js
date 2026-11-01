@@ -133,3 +133,28 @@ describe('DashboardPage', () => {
     expect(router.currentRoute.value.query.range).toBe('7d')
   })
 })
+
+describe('MonitoringPanel', () => {
+  const MONITORING = (tick) => ({
+    health: {
+      rules: { last_evaluated: NOW, age_seconds: 30 }, problems: [],
+      scheduler: { enabled: true, reason: null, last_job_run: NOW, age_seconds: 30, tick_seconds: tick },
+      queues: { ingest_backlog_seconds: null, workers: 2 },
+    },
+    rollups: {}, agents: [], silence_minutes: 5, mode: { mode: 'central' },
+  })
+
+  it("says how often jobs run, and what Frappe's 4-minute default means for alert rules", async () => {
+    const { default: MonitoringPanel } = await import('@/components/dash/MonitoringPanel.vue')
+    const slow = mount(MonitoringPanel, { props: { monitoring: MONITORING(240), timeZone: 'UTC' } })
+    expect(slow.text()).toContain('enabled, jobs every 4 min')
+    expect(slow.text()).toContain('Alert rules are evaluated at that pace, not every minute')
+    expect(slow.text()).toContain('scheduler_tick_interval')
+    const fast = mount(MonitoringPanel, { props: { monitoring: MONITORING(60), timeZone: 'UTC' } })
+    expect(fast.text()).toContain('enabled, jobs every 1 min')
+    expect(fast.text()).not.toContain('scheduler_tick_interval')
+    // an older Frappe without the setting: nothing claimed
+    const unknown = mount(MonitoringPanel, { props: { monitoring: MONITORING(null), timeZone: 'UTC' } })
+    expect(unknown.text()).not.toContain('jobs every')
+  })
+})

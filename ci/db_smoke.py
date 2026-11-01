@@ -1068,6 +1068,11 @@ def main():
 
 		mon = dashboard.get_monitoring()
 		assert {"health", "rollups", "agents", "mode"} <= set(mon), sorted(mon)
+		# how often Frappe's scheduler runs Wolf's "every minute" jobs (4 min unless configured)
+		from frappe.utils.scheduler import get_scheduler_tick
+
+		tick = mon["health"]["scheduler"]["tick_seconds"]
+		assert tick == get_scheduler_tick(), (tick, get_scheduler_tick())
 
 		user = "smoke-scoped@example.com"
 		frappe.db.delete("Wolf User Scope", {"user": user})

@@ -9,7 +9,8 @@ It catches 502 windows, failed nightly crons, worker crashes and suspicious logi
 before customers notice, and keeps all data on your own Frappe site.
 
 - **Wolf App** (`frappe_wolf/`): a Frappe app that stores events, metrics, rules and incidents as
-  DocTypes, evaluates alert rules every minute, and shows a timeline in Desk.
+  DocTypes, evaluates alert rules at each scheduler tick (every minute once configured, see
+  [Install the app](#install-the-app)), and shows a timeline in Desk.
 - **Wolf Agent** (`agent/`): a stdlib-only Python daemon on each host. It tails nginx, bench and
   auth logs, reads `/proc`, and ships batches over HTTPS.
 - **Security**: web attack and host intrusion detection, MITRE ATT&CK tags on every security
@@ -23,7 +24,13 @@ cd ~/frappe-bench
 bench get-app https://github.com/bthuner/frappe-wolf
 bench --site wolf.example.com install-app frappe_wolf
 bench build --app frappe_wolf   # links the static assets and builds the Wolf UI (/wolf)
+bench set-config -g scheduler_tick_interval 60   # run scheduled jobs every minute, then restart the scheduler
 ```
+
+Wolf's alert rules, rollups and satellite pushes are scheduled every minute, but Frappe 15 and
+Dodock tick every 4 minutes by default: without `scheduler_tick_interval` set to 60, an alert can
+come up to 4 minutes late and "fire after 3 evaluations" means 12 minutes. The Wolf UI's
+Monitoring page shows the pace in use.
 
 `bench build` needs Node 20.19 or newer for the Wolf UI. Installing creates the roles **Wolf Manager** and **Wolf User**, a random registration token and
 the Dokos preset rules. Open **Wolf Settings → Agent install command** to copy the one-liner.
@@ -57,7 +64,7 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 | Active from/to | only evaluate in this window. It may wrap midnight (`04:00 → 01:00`) |
 | Require recent deployment | only fire if a deployment hit the same bench/site/host recently |
 | Cooldown | re-fire into the just-resolved incident instead of opening a new one. An event rule reopens it only for an event newer than the resolution; a metric rule, while its window still breaches |
-| Fire / resolve after evaluations | consecutive breached (or clear) one-minute evaluations before an incident opens (or auto-resolves). Default 1 |
+| Fire / resolve after evaluations | consecutive breached (or clear) evaluations, one per scheduler tick, before an incident opens (or auto-resolves). Default 1 |
 | Separate resolve threshold | hysteresis: e.g. fire above 90, resolve only once at or below 80 |
 | Channels | Email, Webhook, Raven, Slack, Mattermost, Matrix, ntfy, Gotify, SMS, PagerDuty (see [Channels](#channels)). Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |
 | Notify on resolve | also tell the channels when the incident resolves, automatically or by hand (default on). PagerDuty channels always hear it |

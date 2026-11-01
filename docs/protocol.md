@@ -241,9 +241,10 @@ for `wolf-agent check` and scripts. Read-only: it does not update the agent's la
 
 | field | meaning |
 |-------|---------|
-| `rules.last_evaluated` | latest `last_evaluated` over enabled Wolf Alert Rules (the rule engine runs every minute on the scheduler); `null` if no rule ran yet |
+| `rules.last_evaluated` | latest `last_evaluated` over enabled Wolf Alert Rules (the rule engine runs at each scheduler tick); `null` if no rule ran yet |
 | `scheduler.enabled` / `reason` | `false` with `maintenance_mode`, `pause_scheduler`, `disable_scheduler` or `enable_scheduler unset in System Settings` |
 | `scheduler.last_job_run` | latest `Scheduled Job Type.last_execution` (stamped when a worker starts a job) |
+| `scheduler.tick_seconds` | seconds between Frappe scheduler ticks, so between two rule evaluations: 240 on Frappe 15 and Dodock unless `scheduler_tick_interval` is set; `null` on a Frappe without the setting. Informative, never a problem |
 | `*.age_seconds` | server-side `now - timestamp`, so agent clock skew does not matter. **Negative** when the stored time lies in the future, which happens after a system time-zone change and stalls the scheduler until that time |
 | `queues` | RQ queue lengths and worker count for the bench, or `{"error": "..."}` if Redis is unreachable |
 | `queues.ingest_backlog_seconds` | how long the oldest job of the ingest queue (`ingest_queue`) has waited; `null` when it is empty. Queued pushes are answered before they are stored, so this is the only sign that telemetry is not arriving |

@@ -3,6 +3,7 @@ import { Button, PageHeader, PageHeaderTitle, TabButtons, Textarea, TextInput } 
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import ResponsePanel from '@/components/ResponsePanel.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
@@ -261,6 +262,8 @@ watch(name, refresh)
       </div>
       <p v-if="actionError" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ actionError }}</p>
     </header>
+
+    <ResponsePanel :incident="incident.name" :time-zone="tz" @changed="refresh" />
 
     <section class="space-y-3" aria-label="Timeline">
       <div class="flex flex-wrap items-center gap-3">

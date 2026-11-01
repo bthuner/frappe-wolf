@@ -44,10 +44,12 @@ permission_query_conditions = {
 	"Wolf Incident": "frappe_wolf.wolf.access.incident_query",
 	"Wolf Silence": "frappe_wolf.wolf.access.silence_query",
 	"Wolf Agent": "frappe_wolf.wolf.access.agent_query",
+	"Wolf Response Action": "frappe_wolf.wolf.access.response_query",
 }
 has_permission = {
 	doctype: "frappe_wolf.wolf.access.has_permission"
-	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Incident", "Wolf Silence", "Wolf Agent")
+	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Incident", "Wolf Silence", "Wolf Agent",
+	                "Wolf Response Action")  # fmt: skip
 }
 
 doc_events = {
@@ -79,7 +81,11 @@ scheduler_events = {
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
 		],
-		"0 * * * *": ["frappe_wolf.tasks.send_digests", "frappe_wolf.api.security.record_security_scores"],
+		"0 * * * *": [
+			"frappe_wolf.tasks.send_digests",
+			"frappe_wolf.api.security.record_security_scores",
+			"frappe_wolf.api.response.expire_actions",
+		],
 		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],
 		"*/5 * * * *": [
 			"frappe_wolf.tasks.check_agents",

@@ -1381,6 +1381,55 @@ def main():
 			os.remove(path)
 		return f"reputation tagged {name} critical; honeytokens {seen}"
 
+	def response_actions():
+		from frappe_wolf.api import ingest as ingest_api
+		from frappe_wolf.api import response as response_api
+
+		agent = frappe.get_doc({"doctype": "Wolf Agent", "hostname": "smoke-responder", "status": "Active",
+		                        "kind": "agent"}).insert(ignore_permissions=True).name  # fmt: skip
+		user = frappe.get_doc({"doctype": "User", "email": "wolf-intruder@example.com", "first_name": "Intruder",
+		                       "send_welcome_email": 0}).insert(ignore_permissions=True).name  # fmt: skip
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke response", "severity": "critical",
+		                      "host": "smoke-responder"}).insert(ignore_permissions=True)  # fmt: skip
+		for data, by in (
+			({"type": "security", "category": "ssh_failed_login", "severity": "critical", "host": "smoke-responder",
+			  "payload": {"ip": "45.33.32.156", "count": 30}}, agent),
+			({"type": "security", "category": "web_attack_probe", "host": "smoke-responder",
+			  "payload": {"ip": "10.0.0.9"}}, agent),
+			({"type": "security", "category": "api_key_generated", "site": SITE,
+			  "payload": {"user": user}}, None),
+		):  # fmt: skip
+			name = events.insert_event(schema.normalize_event(data, tz, now_datetime()), agent=by)
+			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		proposals = {(p["action"], p["target"]) for p in response_api.get_response(inc.name)["proposals"]}
+		assert ("block_ip", "45.33.32.156") in proposals and ("block_ip", "10.0.0.9") not in proposals, proposals
+		assert ("disable_user", user) in proposals, proposals
+
+		block = response_api.approve(inc.name, "block_ip", "45.33.32.156", agent=agent, duration_hours=2)
+		assert block["status"] == "Approved" and block["host"] == "smoke-responder", block
+		res = ingest_api.accept(agent, {"hostname": "smoke-responder", "metrics": [], "events": []})
+		assert [a["ip"] for a in res["actions"]] == ["45.33.32.156"] and res["actions"][0]["seconds"] > 7000, res
+		res = ingest_api.accept(agent, {"hostname": "smoke-responder", "metrics": [], "events": [],
+		                                "action_results": [{"id": block["name"], "ok": True, "detail": "blocked"}]})  # fmt: skip
+		assert res["actions"] == [], res["actions"]  # applied: not handed out again
+		assert frappe.db.get_value("Wolf Response Action", block["name"], "status") == "Applied"
+		assert ("block_ip", "45.33.32.156") not in {(p["action"], p["target"]) for p in response_api.get_response(inc.name)["proposals"]}
+
+		disabled = response_api.approve(inc.name, "disable_user", user)
+		assert disabled["status"] == "Applied" and not frappe.db.get_value("User", user, "enabled"), disabled
+		for action, target in (("disable_user", "Administrator"), ("block_ip", "10.0.0.9")):
+			try:
+				response_api.approve(inc.name, action, target, agent=agent)
+				raise AssertionError(f"{action} {target} was accepted")
+			except frappe.ValidationError:
+				frappe.clear_messages()
+		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
+		                                       "comment_type": "Comment"})  # fmt: skip
+		assert comments >= 3, comments  # approved, applied on the host, user disabled
+		expired = response_api.expire_actions(now_datetime() + timedelta(hours=3))
+		assert block["name"] in expired, expired
+		return f"{block['name']} blocked then expired, {disabled['name']} {disabled['result']}, refusals ok"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1393,7 +1442,8 @@ def main():
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("app security", app_security), ("posture score", posture_score),
-	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel)]:
+	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
+	                 ("response actions", response_actions)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

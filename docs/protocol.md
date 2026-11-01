@@ -72,6 +72,12 @@ Response: `{"message": {"metrics": <accepted>, "events": <accepted>, "rejected":
 `health` is Wolf's own heartbeat (§4); it is `null` if the site could not compute it, and absent
 on older servers.
 
+**Response actions.** The response also carries `actions`: the blocks a Wolf Manager approved for
+this agent and not yet reported, `[{"id": "WRA-00001", "action": "block_ip", "ip": "45.33.32.156",
+"seconds": 86400}]` (empty when there are none). The agent sends each result with a later push
+as `"action_results": [{"id": "WRA-00001", "ok": true, "detail": "..."}]`; an id is accepted once,
+and only from the agent it was given to. See [cyber.md](cyber.md#step-5-human-validated-response-built-except-signed-links).
+
 **Ingest mode.** With **Wolf Settings → Ingest Mode** `async` (the default), the app validates and
 normalizes the batch during the request, queues the inserts for a background worker and answers
 with `"queued": true`. `metrics` / `events` then count the items that passed validation and were

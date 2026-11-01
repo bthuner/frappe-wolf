@@ -145,6 +145,8 @@ class Shipper:
 		self.failures = 0
 		self.retry_at = 0.0
 		self.health = None  # Wolf's own health from the last successful push (protocol §4)
+		self.actions = []  # response actions handed back by the last successful push
+		self.results = []  # their results, sent with the next push
 
 	def _body(self, metrics, events):
 		return {
@@ -165,6 +167,8 @@ class Shipper:
 			self.push_interval = int(interval)
 		if isinstance(resp, dict) and isinstance(resp.get("health"), dict):
 			self.health = resp["health"]
+		if isinstance(resp, dict) and isinstance(resp.get("actions"), list):
+			self.actions = resp["actions"]
 		return resp
 
 	def _check_skew(self, skew):
@@ -194,6 +198,9 @@ class Shipper:
 		self.health = None
 		# an empty body still goes out: it is the agent's heartbeat (last seen)
 		bodies = [self._body(m, e) for m, e in split_batches(metrics, events)] or [self._body([], [])]
+		self.actions = []
+		if self.results:
+			bodies[0]["action_results"] = self.results
 		if self.clock() < self.retry_at:
 			self._spool(bodies)
 			return False
@@ -221,6 +228,7 @@ class Shipper:
 				log.error("server rejected batch, dropping it: %s", e)
 		self.failures = 0
 		self.retry_at = 0.0
+		self.results = []  # delivered (or spooled with their batch)
 		return True
 
 	def mark_deployment(self, bench, site=None, note=None, source="manual", silence_minutes=None):

@@ -76,6 +76,10 @@ def silence_query(user=None, doctype=None, **kwargs):
 	return query_condition("Wolf Silence", user) or ""
 
 
+def response_query(user=None, doctype=None, **kwargs):
+	return query_condition("Wolf Response Action", user) or ""
+
+
 def agent_query(user=None, doctype=None, **kwargs):
 	return query_condition("Wolf Agent", user) or ""
 

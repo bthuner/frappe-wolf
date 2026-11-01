@@ -293,8 +293,10 @@ Reads of known metrics scan the primary key by name range, chart buckets are sum
 the newest value of each series is picked in one pass. The Wolf UI's overview went from 13 to 24 s
 down to 1.5 s, then 0.73 s for its slowest read, under #10's 1 s. In Chromium, the whole page is
 drawn in 0.9 to 1.0 s at the median and 1.0 to 1.3 s at p95
-([`frontend/scripts/page-time.mjs`](frontend/scripts/page-time.mjs)). `--reads-only` times the
-reads again on data already loaded.
+([`frontend/scripts/page-time.mjs`](frontend/scripts/page-time.mjs)), and in 0.53 s (p95 0.61 s)
+when the inventory and signals come from their 30 s cache (`wolf_read_cache_seconds`, shared by
+every caller and filtered per caller). `--reads-only` times the reads again on data already
+loaded.
 
 **Optional time-series backend (design, not built).** The read path goes through two functions,
 `rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through

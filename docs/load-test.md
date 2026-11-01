@@ -13,10 +13,12 @@ The target is #10's "done when": a synthetic load of 100 hosts for 7 days keeps 
 | `push` p95 under 200 ms | **Met.** 115 ms over HTTP | **Met.** 108 ms over HTTP | **Met.** 20.7 ms server side (HTTP not run again) |
 | Desk overview under 1 s | Met, except its 24 h chart: 2.1 s | Met, except its 24 h chart: 1.8 s | **Met.** 0.56 s at most (24 h) |
 | Wolf UI overview under 1 s | **Not met: 13.8 to 23.8 s** | **Not met: 1.5 s** | **Met per read: 0.73 s for the slowest** |
-| Wolf UI overview page in a browser | | | **Half met: p50 0.89 to 0.97 s, p95 1.01 to 1.26 s** |
+| Wolf UI overview page in a browser | | | Without cache: p50 0.82 to 0.97 s, p95 1.00 to 1.26 s. **With the 30 s cache, met: p95 0.61 s** |
 
 The page time is from navigation start until every panel is drawn, in Chromium on the bench
-(see "The page in a browser"). Its median is under 1 s, its p95 is not.
+(see "The page in a browser"). Without the cache its median is under 1 s, its p95 is not. With
+it, a page served from the cache is under 1 s; the first visit after the cached value expires
+(at most one per 30 s, per scope) still reads, and takes the time without cache.
 
 All runs used synthetic data and a demo bench, not production observations.
 
@@ -217,6 +219,37 @@ a second nginx in the same container, on another port, with the same configurati
 load site. A first run through the demo's own nginx timed the demo site, not the load: it is not
 counted.
 
+### The short cache
+
+`get_inventory` and `get_signals` keep what they read for 30 s (`wolf_read_cache_seconds`,
+[`wolf/read_cache.py`](../frappe_wolf/wolf/read_cache.py)). The cached value is read without
+access conditions, shared by every caller, and each request keeps what its caller may see
+([docs/ui-api.md](ui-api.md#short-cache-get_inventory-and-get_signals)). Rules and incidents
+are read per request.
+
+The same page, on one fresh load, in ms:
+
+| `/wolf`, page ready | Cold p50 | Cold p95 | Warm p50 | Warm p95 |
+|---|---|---|---|---|
+| Cache off (two runs) | 924 to 955 | 1,134 to 1,169 | 822 to 851 | 1,003 to 1,106 |
+| **Served from the cache** | **529** | **608** | **280** | **457** |
+
+| Served from the cache | Cold p50 | Warm p50 |
+|---|---|---|
+| First read sent | 237 | 91 |
+| Reads, first sent to last answered | 62 | 58 |
+| `get_inventory` / `get_signals` | 28 / 59 | 22 / 46 |
+| Drawing | 228 | 127 |
+
+- With the reads at 60 ms, the page is the app's start (0.1 to 0.25 s) and drawing (0.13 to
+  0.23 s at the median, up to 0.32 s).
+- In the "served from the cache" runs, every page came within 30 s of a read, so all of them hit.
+  How often a real page does depends on how often the overview is opened; at most one visit per
+  30 s, per scope, pays the read.
+- The second "cache off" run was meant to be a cached one: it started seconds after
+  `wolf_read_cache_seconds` was set, and Dodock's web workers keep the site config for up to
+  60 s. They still read 0.
+
 **Other reads:**
 
 | Read | 1 h | 6 h | 24 h | 7 d |
@@ -233,20 +266,17 @@ counted.
 
 ## What is left
 
-Each read is under 1 s; the overview page in a browser is under 1 s at the median, not at p95:
-- The two slow reads, 0.5 to 0.6 s each, set the page:
-  - `get_inventory` reads which host, bench and site sent anything in 7 days, from the index
-    alone, over every rollup row of the window;
-  - `get_signals` reads the newest values of 2 h and the hourly rollups of 7 days.
-
-  Both read the same rows on every visit. A short cache would cut them, as long as it stays
-  access-aware (#19).
-- Drawing, 0.12 to 0.32 s, for 300 signal rows and 101 hosts. Drawing the first rows, and the
+Each read is under 1 s, and so is the overview page when its two slow reads come from the cache.
+- A visit that reads (no cached value, or an expired one) still takes 0.9 to 1.2 s. Filling the
+  cache in the background, before it expires, would spare that visit; Frappe's scheduler ticks
+  once a minute at best (`scheduler_tick_interval`), so it would need a 60 s cache or a worker
+  of its own.
+- Drawing, 0.13 to 0.32 s, for 300 signal rows and 101 hosts. Drawing the first rows, and the
   rest on demand, would cut most of it.
 - The metrics explorer over 24 h, 0.86 s, is the closest other read.
 
 These margins are for 100 hosts on this bench. At several times that, the inventory and the 24 h
-reads grow with the rows of their window.
+reads grow with the rows of their window, and so does a visit that reads.
 
 ## Not measured
 

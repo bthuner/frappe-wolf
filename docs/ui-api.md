@@ -240,7 +240,10 @@ telemetry triples, `get_signals` its series (newest value and last time seen).
 - A series that starts, or a value that changes, shows up to `wolf_read_cache_seconds` later;
   `as_of` says when the data was read. A live update (below) refetches, and may get the cached
   value.
-- `wolf_read_cache_seconds` is read from the site config at each request.
+- A change of `wolf_read_cache_seconds` takes effect within a minute: Dodock's web workers keep
+  the site config in memory for up to 60 s.
+- One cached value per site and per scope (`get_signals`' site, bench and host; the inventory's
+  `days`): a dashboard of another scope has its own.
 
 ### `frappe_wolf.api.dashboard.get_http`
 

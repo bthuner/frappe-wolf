@@ -49,12 +49,25 @@ def compose(*args):
 	subprocess.run(["docker", "compose", *args], check=True)
 
 
-def night_zone():
+def utc_offset(zone, now):
+	return now.astimezone(ZoneInfo(zone)).utcoffset()
+
+
+def night_zone(current):
+	"""(zone, moved_back): a zone where it is 01:00-03:59 now, ahead of `current` if one is.
+
+	Moving the clock forward keeps every stored timestamp in the past. Moving it back stamps them
+	in the future, and Frappe's scheduler then finds no job due until real time catches up.
+	"""
 	now = datetime.now(timezone.utc)
-	for zone in ZONES:
-		if 1 <= now.astimezone(ZoneInfo(zone)).hour < 4:
-			return zone
-	sys.exit("no zone found")
+	base = utc_offset(current or "UTC", now)  # an unset time zone is the server's, UTC here
+	night = [z for z in ZONES if 1 <= now.astimezone(ZoneInfo(z)).hour < 4]
+	if not night:
+		sys.exit("no zone found")
+	ahead = [z for z in night if utc_offset(z, now) >= base]
+	if ahead:
+		return min(ahead, key=lambda z: utc_offset(z, now)), False
+	return max(night, key=lambda z: utc_offset(z, now)), True  # the smallest step back
 
 
 def hammer(seconds, path="/api/method/frappe.auth.get_logged_user"):
@@ -77,10 +90,20 @@ def main():
 	api("POST", "/api/method/login", {"usr": "Administrator", "pwd": "admin"})
 
 	current = api("GET", "/api/resource/System Settings/System Settings")["data"].get("time_zone")
-	zone = current if current and 1 <= datetime.now(ZoneInfo(current)).hour < 4 else night_zone()
+	if current and 1 <= datetime.now(ZoneInfo(current)).hour < 4:
+		zone, moved_back = current, False
+	else:
+		zone, moved_back = night_zone(current)
 	step(f"Move the site clock to the night: System Settings time zone = {zone} "
 	     f"(local time {datetime.now(ZoneInfo(zone)):%H:%M})")
 	api("PUT", "/api/resource/System Settings/System Settings", {"time_zone": zone, "language": "en"})
+	if moved_back:
+		# no zone ahead is at night now: every job's last run is now in the future, so Frappe's
+		# scheduler (and Wolf's rule evaluation with it) would wait hours for real time to catch up
+		step("The clock moved back: mark every scheduled job as just run, so they stay due")
+		local_now = f"{datetime.now(ZoneInfo(zone)):%Y-%m-%d %H:%M:%S}"
+		compose("exec", "-T", "backend", "bench", "--site", SITE, "execute", "frappe.db.sql",
+		        "--args", json.dumps(["update `tabScheduled Job Type` set last_execution = %s", [local_now]]))
 
 	step("Route the demo rules to the webhook sink")
 	for rule in RULES:

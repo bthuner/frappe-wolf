@@ -75,6 +75,16 @@ describe('IncidentPage', () => {
     expect(text).toContain('2 records, 15 reported occurrences')
   })
 
+  it('counts one linked record in the singular', async () => {
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, event_records: 1, event_count: 1 }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: ROWS, paging: { has_more: false }, totals: {}, truncated: {} }),
+    })
+    const { page } = await open()
+    expect(page.text()).toContain('1 record, 1 reported occurrence')
+    expect(page.text()).not.toContain('1 records')
+  })
+
   it('renders comments as text', async () => {
     server({
       'frappe_wolf.api.incident_view.get_incident': () => INCIDENT,

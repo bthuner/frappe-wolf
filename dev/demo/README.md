@@ -17,17 +17,25 @@ python3 scenario.py                   # ~5 minutes
 docker compose logs catcher           # the alerts Wolf sent
 ```
 
-Desk: <http://localhost:8099/app/wolf-overview>, login `Administrator` / `admin`.
+Wolf UI: <http://localhost:8099/wolf>, login `Administrator` / `admin`; Desk:
+<http://localhost:8099/app/wolf-overview>. The Wolf UI says **Live** when Frappe's socket.io
+server accepted it: `nginx.conf` rewrites `Host` and `Origin` for `/socket.io`, because that
+server checks they match and calls the site back at `Origin` (here `frontend:8080`).
 
 ## What `scenario.py` does
 
 1. Keeps the site time zone if it is already night there; otherwise switches to a real zone
    where it is between 01:00 and 04:00 (e.g. Asia/Shanghai). This moves the site clock "into
-   the night" without faking the system clock. Prefer moving the clock forward: switching to
-   an earlier zone leaves future-dated rows behind (see Setup wizard below).
+   the night" without faking the system clock. It picks a zone ahead of the current one when
+   one is at night, so stored rows stay in the past. When none is (from UTC, roughly 04:00 to
+   11:00 UTC), it moves back the least and marks every Scheduled Job Type as just run:
+   otherwise Frappe's scheduler, Wolf's rule evaluation included, finds no job due for hours
+   (see Setup wizard below).
 2. Adds a webhook channel (`http://catcher:9999/`) to the 502 and scheduler preset rules.
 3. Marks a deployment with `wolf-agent mark-deployment`.
-4. Stops the backend for 60 s while sending traffic, so nginx answers 502.
+4. Stops the backend for 60 s while sending traffic, so nginx answers 502. nginx resolves
+   `backend` at each request: a stopped container no longer resolves, so each request gets its
+   502 at once, as from a bench whose gunicorn is down.
 5. Starts the backend again and reloads nginx.
 6. Adds a Server Script scheduled job that fails every minute ("Nightly ledger sync"), lets it
    fail, then disables it.
@@ -35,14 +43,17 @@ Desk: <http://localhost:8099/app/wolf-overview>, login `Administrator` / `admin`
 
 Expected:
 
-- **502 spike after deployment**: critical, with the deployment linked.
+- **502 spike after deployment**: critical, linked to the deployment of step 3 (the migrate
+  of step 5 comes after the 502s began, so it is not the preceding change). **5xx spike**
+  opens too, from the same responses.
 - **Nightly cron failure (01:00-04:00)**: critical. It is reported by the site itself, through
   Wolf's `Scheduled Job Type` override. The agent's `scheduler.log` parser stays quiet here:
   Frappe logs "Scheduled Job Failed" at INFO, below the default logger level.
 - One webhook per new incident.
 
 Presets like **Disk almost full** may fire too, because the agent measures the machine
-running Docker. **Agent silent** fires once as an artefact of step 1: `last_seen` was stored
+running Docker. **Security score low** (a fresh site without two-factor authentication) and
+**Server Script can run new code** (step 6 adds one) are real findings on the demo site. **Agent silent** fires once as an artefact of step 1: `last_seen` was stored
 in the old time zone, so the agent looks hours stale for one check.
 
 ![Incident timeline after the scenario](incident-timeline.jpg)

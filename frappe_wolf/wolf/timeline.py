@@ -155,12 +155,13 @@ def activity_row(entry, incident, tz):
 		"family": "activity",
 		"activity": entry.get("kind"),
 		"at": window.to_utc(entry["timestamp"], tz),
-		"summary": entry.get("text") or "",
+		# a note (an assignment, a status line from Frappe) is its own summary, as plain text
+		"summary": (entry.get("plain") if entry.get("kind") == "note" else None) or entry.get("text") or "",
 		"user": entry.get("user"),
 		"user_name": entry.get("user_name"),
 		"auto": bool(entry.get("auto")),
-		# comments and notes as plain text: the UI renders text, never HTML
-		"text": entry.get("plain") if entry.get("kind") in ("comment", "note") else None,
+		# a comment's body under "X commented", as plain text: the UI renders text, never HTML
+		"text": entry.get("plain") if entry.get("kind") == "comment" else None,
 	}
 	return _key(entry["timestamp"], "activity", row_id), row
 

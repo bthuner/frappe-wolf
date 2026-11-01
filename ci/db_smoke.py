@@ -109,6 +109,23 @@ def main():
 		assert any(r.event_type == "deployment" for r in rows), "deployment missing from timeline"
 		return f"{inc}: {len(rows)} events, deployment linked={bool(frappe.db.get_value('Wolf Incident', inc, 'deployment_event'))}"
 
+	def deployment_link():
+		# the deployment that preceded the incident, not one made after it started (a fix, a
+		# migrate on restart) and seen by a rule evaluated later
+		site = "smoke-deploy.localhost"
+		before, after = (events.insert_event(schema.normalize_event(
+			{"type": "deployment", "host": HOST, "bench": "b1", "site": site, "severity": "info", "title": title}, tz, at))
+			for title, at in (("smoke deploy before", now - timedelta(minutes=20)),
+			                  ("smoke deploy after", now - timedelta(minutes=2))))  # fmt: skip
+		doc = frappe.get_doc("Wolf Alert Rule", "smoke 502")
+		name, kind = incidents.open_incident(doc, f"site={site}", {"host": HOST, "bench": "b1", "site": site},
+		                                     "smoke deployment link", started_at=now - timedelta(minutes=10))
+		linked = frappe.db.get_value("Wolf Incident", name, "deployment_event")
+		incidents.resolve(name, "smoke check")
+		assert kind == "fired", kind
+		assert linked == before, f"linked {linked}, expected {before} (not {after}, made after the start)"
+		return f"{name} linked the deployment before its start"
+
 	def skew():
 		future = schema.normalize_metric({"metric_name": "smoke_skew", "value": 99, "host": HOST}, tz,
 		                                 now + timedelta(hours=11))
@@ -1602,7 +1619,8 @@ def main():
 			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
 		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
 
-	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
+	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline),
+	                 ("deployment link", deployment_link), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
 	                 ("scoped user", scoped_user), ("agent secrets", agent_secrets),

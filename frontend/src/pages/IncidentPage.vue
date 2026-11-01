@@ -42,6 +42,11 @@ const expanded = ref(new Set())
 const timeline = useTimeline(() => name.value)
 const commentBox = ref(null)
 
+// "1 record", "2 records": counts read as English
+function count(n, noun) {
+  return `${n} ${n === 1 ? noun : `${noun}s`}`
+}
+
 function anchor(row) {
   return `row-${row.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
 }
@@ -263,7 +268,7 @@ watch(name, () => {
           <dd>Yes: no notifications are sent for it</dd>
         </template>
         <dt>Linked events</dt>
-        <dd>{{ incident.event_records }} records, {{ incident.event_count }} reported occurrences</dd>
+        <dd>{{ count(incident.event_records, 'record') }}, {{ count(incident.event_count, 'reported occurrence') }}</dd>
       </dl>
       <section v-if="incident.regulatory" class="space-y-2 border-t border-outline-gray-1 pt-2" aria-label="Regulatory reporting">
         <h2 class="text-sm font-semibold text-ink-gray-9">

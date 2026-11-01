@@ -62,6 +62,16 @@ class TestRows(unittest.TestCase):
 		self.assertEqual(timeline.activity_row(comment, "WINC-1", TZ)[1]["text"], "on it")
 		self.assertIsNone(timeline.activity_row(change, "WINC-1", TZ)[1]["text"])
 
+	def test_a_note_is_its_own_summary_never_repeated(self):
+		# an assignment note from Frappe: one line, as plain text, not a summary plus the same body
+		note = {"kind": "note", "name": "c2", "timestamp": T0, "text": "Ops self assigned this task: 502 &amp; more",
+		        "plain": "Ops self assigned this task: 502 & more"}
+		_, row = timeline.activity_row(note, "WINC-1", TZ)
+		self.assertEqual((row["summary"], row["text"]), ("Ops self assigned this task: 502 & more", None))
+		comment = {"kind": "comment", "name": "c1", "timestamp": T0, "text": "Ops commented", "plain": "on it"}
+		_, row = timeline.activity_row(comment, "WINC-1", TZ)
+		self.assertEqual((row["summary"], row["text"]), ("Ops commented", "on it"))
+
 	def test_delivery_says_accepted_not_read(self):
 		_, ok = timeline.delivery_row({"name": "d1", "at": T0, "channel_type": "slack", "action": "opened", "ok": 1,
 									   "http_status": 200}, TZ)  # fmt: skip

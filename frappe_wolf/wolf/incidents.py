@@ -85,11 +85,14 @@ def open_incident(rule, key, scope, summary, started_at=None):
 		return name, kind
 
 	settings = frappe.get_cached_doc("Wolf Settings")
+	# the change that preceded the incident: a rule evaluates after the fact, and a deployment
+	# made since the incident started (a fix, a migrate on restart) is not what came before it
 	deploy = latest_deployment(
 		scope.get("host"),
 		scope.get("bench"),
 		scope.get("site"),
 		minutes=cint(settings.deployment_window_minutes) or 30,
+		before=min(get_datetime(started_at), now) if started_at else now,
 	)
 	doc = frappe.get_doc(
 		{

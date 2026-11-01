@@ -67,4 +67,24 @@ describe('SecurityPage', () => {
     const page = await open('/security?site=other.example.com')
     expect(page.get('[role=alert]').text()).toBe('You may not see this site.')
   })
+
+  it('shows the journal to managers and its verification', async () => {
+    server({
+      'frappe_wolf.api.security.list_sites': () => [],
+      'frappe_wolf.api.security.get_posture': () => POSTURE,
+      'frappe_wolf.api.journal.get_status': () => ({ entries: 42, pending: 3, anchor: `42:${'a'.repeat(64)}`, key: true }),
+      'frappe_wolf.api.journal.verify': () => ({ ok: false, checked: 9, problem: { seq: 10, why: 'content does not match its digest' } }),
+    })
+    const router = makeRouter(createMemoryHistory('/wolf'), BOOT)
+    await router.push('/security')
+    await router.isReady()
+    const boot = { ...BOOT, can: { configure: true } }
+    const page = mount(SecurityPage, { global: { plugins: [router], provide: { boot } } })
+    await flushPromises()
+    expect(page.text()).toContain('42 signed entries, 3 waiting to be signed')
+    expect(page.text()).toContain(`42:${'a'.repeat(64)}`)
+    await page.findAll('button').find((b) => b.text() === 'Verify').trigger('click')
+    await flushPromises()
+    expect(page.get('[role=status]').text()).toBe('Broken at entry 10: content does not match its digest')
+  })
 })

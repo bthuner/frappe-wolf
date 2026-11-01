@@ -66,6 +66,12 @@ doc_events = {
 	"Role Profile": {"on_update": "frappe_wolf.wolf.local_signals.on_role_profile"},
 	"System Settings": {"on_update": "frappe_wolf.wolf.local_signals.on_system_settings"},
 	"Webhook": {"on_update": "frappe_wolf.wolf.local_signals.on_webhook"},
+	# tamper-evident journal (api/journal.py): unsigned entries, chained every minute
+	"Wolf Event": {"after_insert": "frappe_wolf.api.journal.on_event"},
+	"Wolf Incident": {"on_update": "frappe_wolf.api.journal.on_incident"},
+	"Wolf Response Action": {"on_update": "frappe_wolf.api.journal.on_response_action"},
+	"Wolf Settings": {"on_update": "frappe_wolf.api.journal.on_settings"},
+	"Comment": {"after_insert": "frappe_wolf.api.journal.on_comment"},
 }
 
 # Role Permission Manager changes bypass doc events (raw SQL): read from the request
@@ -80,6 +86,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.check_incidents",
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
+			"frappe_wolf.api.journal.chain_journal",
 		],
 		"0 * * * *": [
 			"frappe_wolf.tasks.send_digests",

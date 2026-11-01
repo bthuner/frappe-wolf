@@ -1,6 +1,6 @@
 <script setup>
 import { Button, PageHeader, PageHeaderTitle, Select } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 
 import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
@@ -49,7 +49,32 @@ async function load() {
   }
 }
 
+// tamper-evident journal (frappe_wolf/api/journal.py), managers only
+const boot = inject('boot', {})
+const journal = ref(null)
+const verdict = ref(null)
+const verifying = ref(false)
+async function loadJournal() {
+  if (!boot?.can?.configure) return
+  try {
+    journal.value = await call('frappe_wolf.api.journal.get_status')
+  } catch {
+    journal.value = null
+  }
+}
+async function verifyJournal() {
+  verifying.value = true
+  try {
+    verdict.value = await call('frappe_wolf.api.journal.verify', {}, { post: true })
+  } catch (e) {
+    verdict.value = { ok: false, problem: { why: e.message } }
+  } finally {
+    verifying.value = false
+  }
+}
+
 loadSites()
+loadJournal()
 watch(site, load, { immediate: true })
 </script>
 
@@ -120,5 +145,24 @@ watch(site, load, { immediate: true })
         </table>
       </section>
     </template>
+
+    <section v-if="journal" class="wolf-card space-y-2" aria-label="Journal">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 class="text-base font-semibold text-ink-gray-9">Tamper-evident journal</h2>
+        <Button size="sm" label="Verify" :loading="verifying" @click="verifyJournal" />
+      </div>
+      <p class="text-sm text-ink-gray-7">
+        {{ journal.entries }} signed entries, {{ journal.pending }} waiting to be signed (within a minute).
+        <template v-if="!journal.key">No key yet: it is created with the first signature.</template>
+      </p>
+      <p v-if="journal.anchor" class="text-sm text-ink-gray-7">
+        Anchor, to copy somewhere Wolf cannot write (a ticket, a password manager):
+        <code class="wolf-data break-all">{{ journal.anchor }}</code>
+      </p>
+      <p v-if="verdict" role="status" class="text-sm" :style="{ color: verdict.ok ? 'var(--wolf-ok)' : 'var(--wolf-critical)' }">
+        <template v-if="verdict.ok">Verified: {{ verdict.checked }} entries, every digest and MAC matches, no gap.</template>
+        <template v-else>Broken<template v-if="verdict.problem?.seq"> at entry {{ verdict.problem.seq }}</template>: {{ verdict.problem?.why }}</template>
+      </p>
+    </section>
   </div>
 </template>

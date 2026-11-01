@@ -1430,6 +1430,47 @@ def main():
 		assert block["name"] in expired, expired
 		return f"{block['name']} blocked then expired, {disabled['name']} {disabled['result']}, refusals ok"
 
+	def journal_chain():
+		from frappe_wolf.api import journal as journal_api
+
+		ev = events.insert_event(schema.normalize_event(
+			{"type": "security", "category": "ssh_failed_login", "host": HOST, "payload": {"ip": "45.33.32.1"}},
+			tz, now_datetime()))  # fmt: skip
+		assert frappe.db.exists("Wolf Journal Entry", {"ref_name": ev, "kind": "security_event", "seq": 0})
+		settings = frappe.get_doc("Wolf Settings")
+		settings.honeytoken_paths = "/app/secret-decoy"
+		settings.save(ignore_permissions=True)
+		pending = frappe.db.count("Wolf Journal Entry", {"seq": 0})
+		while journal_api.chain_journal():
+			pass
+		result = journal_api.verify_journal()
+		assert result["ok"] and result["pending"] == 0 and result["checked"] >= pending, result
+		anchor = journal_api.get_status()["anchor"]
+		assert journal_api.verify_journal(anchor)["ok"]
+
+		entry = frappe.get_all("Wolf Journal Entry", filters={"kind": "settings"}, fields=["content"], order_by="seq desc", limit=1)[0]
+		assert "honeytoken_paths" in entry.content and "secret-decoy" not in entry.content, entry.content  # names only
+
+		row = frappe.db.sql("""select name, seq, content from `tabWolf Journal Entry` where seq > 0
+			order by seq asc limit 1 offset 1""", as_dict=True)[0]  # fmt: skip
+		frappe.db.sql("update `tabWolf Journal Entry` set content = %s where name = %s", ("{}", row.name))
+		broken = journal_api.verify_journal()
+		assert not broken["ok"] and broken["problem"]["seq"] == row.seq, broken
+		frappe.db.sql("update `tabWolf Journal Entry` set content = %s where name = %s", (row.content, row.name))
+		assert journal_api.verify_journal(anchor)["ok"]
+
+		doc = frappe.get_doc("Wolf Journal Entry", row.name)
+		doc.summary = "rewritten"
+		try:
+			doc.save(ignore_permissions=True)
+			raise AssertionError("a journal entry was edited through the ORM")
+		except frappe.PermissionError:
+			frappe.clear_messages()
+		settings.reload()
+		settings.honeytoken_paths = None
+		settings.save(ignore_permissions=True)
+		return f"{result['checked']} entries chained and verified, edit detected at seq {row.seq}, anchor {anchor[:20]}…"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1443,7 +1484,7 @@ def main():
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("app security", app_security), ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
-	                 ("response actions", response_actions)]:
+	                 ("response actions", response_actions), ("journal", journal_chain)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

@@ -429,7 +429,7 @@ def split_preview(incident, events=None):
 		"Wolf Event",
 		filters={"incident": src.name},
 		fields=["name", "title", "severity", "category", "event_type", "timestamp", "last_seen", "count", "site", "bench", "host"],
-		order_by="`timestamp` asc, name asc",
+		order_by="timestamp asc, name asc",
 		limit=SPLIT_EVENTS + 1,
 	)
 	more = len(linked) > SPLIT_EVENTS

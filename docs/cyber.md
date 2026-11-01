@@ -206,11 +206,24 @@ is proposed on the incident, applied only after a Wolf Manager confirms it, and 
 
 ### Step 6: compliance and evidence
 
-- **NIS2 Article 23 and GDPR Article 33 on Wolf Incident**: a "significant incident" or
-  "personal data breach" flag starts the clocks for the early warning (24 h), the notification
-  (72 h) and the final report (1 month), or for the CNIL notification (72 h). Each deadline is
-  shown on the incident and escalated through the incident's channels. The report (timeline,
-  impact, measures) is exported from the postmortem.
+- **NIS2 Article 23 and GDPR Article 33 on Wolf Incident (built)**. The section *Regulatory
+  reporting* on the incident has two flags. **Significant incident (NIS2)** starts three clocks
+  from *Aware since*: early warning within 24 h, incident notification within 72 h, final
+  report one month after the notification (counted from the notification's deadline, and
+  marked *estimated*, until it is sent). **Personal data breach (GDPR)** starts one: the
+  notification to the supervisory authority (CNIL) within 72 h. Ticking a flag sets *Aware
+  since* to now; it can be corrected. The sending times and the authority's reference are
+  recorded on the incident (`frappe_wolf/wolf/compliance.py`, `api/compliance.py`).
+  - Every 5 minutes `check_deadlines` records one `regulatory_deadline` event per obligation
+    when it is due within 6 h, and again when it is overdue, linked to the incident (so it is
+    on its timeline) with a comment. The **Regulatory deadline** preset alerts on them: give it
+    the channels of whoever reports to the CSIRT / CNIL.
+  - **Regulatory report** (Desk → Actions, or *Report draft* in the Wolf UI) builds a Markdown
+    draft: facts, deadlines, timeline (events and comments), postmortem impact, root cause and
+    measures. It is a starting point for the authority's form.
+  - Wolf does not decide whether an incident is significant or a breach, and sends nothing to
+    an authority. Not built: the intermediate report an authority may ask for (NIS2
+    Art. 23(4)(c)), DORA's timelines.
 - **Tamper-evident journal**: each security event and incident action is chained with an HMAC
   of the previous entry. A `bench --site … wolf-verify-journal` command proves nothing was
   removed or edited.

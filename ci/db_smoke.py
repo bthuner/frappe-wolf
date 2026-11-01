@@ -1306,6 +1306,30 @@ def main():
 		assert SITE in security.list_sites()
 		return f"score {result['score']} (coverage {result['coverage']}%), {status}"
 
+	def regulatory_deadlines():
+		from frappe_wolf.api import compliance as compliance_api
+		from frappe_wolf.api import incident_view
+
+		aware = now_datetime() - timedelta(hours=70)
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke NIS2", "severity": "critical",
+		                      "site": "nis2.localhost", "nis2_significant": 1, "nis2_aware_at": aware,
+		                      "gdpr_breach": 1})  # fmt: skip
+		inc.insert(ignore_permissions=True)
+		assert inc.gdpr_aware_at, "ticking the GDPR flag starts its clock"
+		first = compliance_api.check_deadlines()
+		stages = sorted(json.loads(frappe.db.get_value("Wolf Event", n, "payload"))["obligation"] for n in first)
+		assert stages == ["nis2_early_warning", "nis2_notification"], stages  # 24 h passed, 72 h within 6 h
+		assert all(frappe.db.get_value("Wolf Event", n, "incident") == inc.name for n in first)
+		assert compliance_api.check_deadlines() == [], "one reminder per obligation and stage"
+		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
+		                                       "comment_type": "Comment"})  # fmt: skip
+		assert comments == 2, comments
+		view = incident_view.get_incident(inc.name)["regulatory"]
+		assert view["nis2"] and view["gdpr"] and len(view["deadlines"]) == 4, view
+		report = compliance_api.get_report(inc.name)["markdown"]
+		assert "| Incident notification (72 h) |" in report and "OVERDUE" in report, report
+		return f"{len(first)} reminders on {inc.name}, report {len(report)} chars"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1317,7 +1341,8 @@ def main():
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
-	                 ("app security", app_security), ("posture score", posture_score)]:
+	                 ("app security", app_security), ("posture score", posture_score),
+	                 ("regulatory deadlines", regulatory_deadlines)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

@@ -142,6 +142,7 @@ Categories added with the infrastructure signals:
 | `api_key_generated` | site (User) | a new API secret; `critical` for privileged users | `user`, `api_key`, `privileged`, `by` |
 | `service_exposed` | agent (`source`: `exposure`) | a bench port starts listening beyond loopback (or its addresses change); `critical` for Redis | `port`, `service`, `addresses`, `note` |
 | `insecure_site_config` | agent (`source`: `exposure`) | a site's risky settings change and are not empty; `critical` with `developer_mode` | `findings` (`setting`, `value`, `why`) |
+| `regulatory_deadline` | app (`source`: `wolf`, every 5 min) | a NIS2 / GDPR deadline of a flagged incident is within 6 h (`warning`) or passed (`critical`); once per obligation and stage, linked to the incident | `incident`, `obligation`, `regime`, `stage`, `due_at`, `estimated` |
 | `webhook_external` | site (Webhook) | a Webhook created, enabled or pointed at another host | `webhook`, `doctype`, `event`, `domain`, `previous_domain` |
 | `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 

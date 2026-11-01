@@ -379,6 +379,15 @@ PRESETS = [
 		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "site",
 		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
 	},
+	# --- compliance: NIS2 / GDPR deadlines on flagged incidents (api/compliance.py) ---
+	{
+		"rule_name": "Regulatory deadline",
+		"description": "A NIS2 or GDPR reporting deadline of a flagged incident is within 6 h, or has "
+		"passed. Add the channels of whoever reports to the CSIRT / CNIL.",
+		"signal_type": "event", "event_type": "security", "event_category": "regulatory_deadline",
+		"operator": ">=", "threshold": 1, "window_minutes": 15, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
 ]  # fmt: skip
 
 

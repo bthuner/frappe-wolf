@@ -210,6 +210,15 @@ On a **Wolf Incident** (Wolf Manager):
 (resolved − started) average, p50 and p90 in minutes, per site, bench, host, rule or severity over
 a date range. Merged incidents are left out so an outage counts once.
 
+**Regulatory reporting (NIS2 / GDPR)**: tick *Significant incident (NIS2 Art. 23)* or
+*Personal data breach (GDPR Art. 33)* on an incident to start its deadlines: early warning 24 h,
+notification 72 h and final report one month after the notification for NIS2; notification to
+the authority (CNIL) within 72 h for GDPR. They are shown on the incident (Desk and Wolf UI);
+the **Regulatory deadline** preset alerts 6 h before each one and when it passes, and
+*Regulatory report* drafts the facts, timeline and measures in Markdown. Wolf tracks dates only:
+it does not decide what is reportable and sends nothing to an authority. See
+[`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
+
 **Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
 history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
 ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the

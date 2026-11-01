@@ -61,6 +61,8 @@ CATEGORIES = {
 	# exposure (agent): weaknesses, mapped to what they open the door to
 	"service_exposed": ["T1190"],
 	"insecure_site_config": ["T1190"],
+	# compliance reminders (api/compliance.py): no attack technique
+	"regulatory_deadline": [],
 }
 
 _ID_RE = re.compile(r"^T\d{4}(?:\.\d{3})?$")

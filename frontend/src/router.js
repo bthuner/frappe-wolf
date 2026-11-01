@@ -19,6 +19,7 @@ export const routes = [
   { path: '/hosts/:host', name: 'host', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Host' } },
   // bench names repeat across hosts, so a bench is always addressed through its host
   { path: '/hosts/:host/benches/:bench', name: 'bench', component: () => import('@/pages/DashboardPage.vue'), meta: { title: 'Bench' } },
+  { path: '/security', name: 'security', component: () => import('@/pages/SecurityPage.vue'), meta: { title: 'Security' } },
   { path: '/monitoring', name: 'monitoring', component: () => import('@/pages/MonitoringPage.vue'), meta: { title: 'Monitoring' } },
   // where a view this site cannot have leads (incidents on a satellite); ?from= keeps the link
   { path: '/unavailable/:path(.*)*', name: 'unavailable', component: Pending,

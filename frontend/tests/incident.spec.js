@@ -167,3 +167,88 @@ describe('useTimeline', () => {
     expect(t.rows.value.map((r) => r.id)).toEqual(ROWS.map((r) => r.id))
   })
 })
+
+describe('IncidentPage regulatory reporting', () => {
+  it('lists the deadlines with their status and loads the report draft as text', async () => {
+    const regulatory = {
+      nis2: true, gdpr: false, reference: 'CERT-FR 2026-123',
+      deadlines: [
+        { id: 'nis2_early_warning', regime: 'NIS2', label: 'Early warning to the CSIRT / authority (24 h)',
+          due_at: '2026-10-31T00:48:00Z', done_at: null, status: 'overdue', estimated: false },
+        { id: 'nis2_final_report', regime: 'NIS2', label: 'Final report (1 month after the notification)',
+          due_at: '2026-12-02T00:48:00Z', done_at: null, status: 'open', estimated: true },
+      ],
+    }  // prettier-ignore
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+      'frappe_wolf.api.compliance.get_report': () => ({ markdown: '# Incident report: <b>x</b>' }),
+    })
+    const { page } = await open()
+    const text = page.text()
+    expect(text).toContain('Regulatory reporting: NIS2 significant incident')
+    expect(text).toContain('reference CERT-FR 2026-123')
+    expect(text).toContain('Overdue')
+    expect(text).toContain('(estimated)')
+    expect(text).toContain('sends nothing')
+    await page.findAll('button').find((b) => b.text() === 'Report draft').trigger('click')
+    await flushPromises()
+    expect(page.get('pre').text()).toBe('# Incident report: <b>x</b>') // text, not HTML
+    expect(page.find('pre b').exists()).toBe(false)
+  })
+
+  it('shows no regulatory section for an incident without a flag', async () => {
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory: null }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+    })
+    const { page } = await open()
+    expect(page.text()).not.toContain('Regulatory reporting')
+  })
+})
+
+describe('IncidentPage response actions', () => {
+  it('asks for a second click, sends the approval and shows the recorded result', async () => {
+    let actions = []
+    const proposal = { action: 'block_ip', target: '45.33.32.156', agent: 'AG-1', host: 'bench-01', reason: 'ssh_failed_login: 25 failed',
+      label: 'Block 45.33.32.156 for 24 h on bench-01' }  // prettier-ignore
+    const fetchFn = server({
+      'frappe_wolf.api.incident_view.get_incident': () => INCIDENT,
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+      'frappe_wolf.api.response.get_response': () => ({
+        proposals: actions.length ? [] : [proposal], actions, can_approve: true, default_hours: 24, max_hours: 168,
+      }),
+      'frappe_wolf.api.response.approve': () => {
+        actions = [{ name: 'WRA-00001', action: 'block_ip', target: '45.33.32.156', host: 'bench-01', status: 'Approved',
+          approved_by: 'ops@example.com', approved_at: '2026-11-01T10:00:00Z', expires_at: '2026-11-02T10:00:00Z', result: null }]  // prettier-ignore
+        return actions[0]
+      },
+    })
+    const { page } = await open()
+    expect(page.text()).toContain('Block 45.33.32.156 for 24 h on bench-01')
+    const approvals = () => fetchFn.mock.calls.filter(([u]) => u.includes('response.approve'))
+    await page.findAll('button').find((b) => b.text() === 'Approve…').trigger('click')
+    expect(approvals()).toHaveLength(0) // the first click only asks
+    await page.get('input[aria-label=Hours]').setValue(48)
+    await page.findAll('button').find((b) => b.text() === 'Confirm').trigger('click')
+    await flushPromises()
+    const [, init] = approvals()[0]
+    expect(JSON.parse(init.body)).toMatchObject({ action: 'block_ip', target: '45.33.32.156', agent: 'AG-1', duration_hours: 48 })
+    expect(page.text()).toContain('Approved, waiting for the agent')
+    expect(page.text()).not.toContain('Approve…')
+  })
+
+  it('tells a Wolf User that only a manager can approve', async () => {
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => INCIDENT,
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+      'frappe_wolf.api.response.get_response': () => ({
+        proposals: [{ action: 'disable_user', target: 'x@example.com', reason: 'api_key_generated', label: 'Disable user x@example.com' }],
+        actions: [], can_approve: false, default_hours: 24, max_hours: 168,
+      }),
+    })
+    const { page } = await open()
+    expect(page.text()).toContain('Only a Wolf Manager can approve these.')
+    expect(page.findAll('button').some((b) => b.text() === 'Approve…')).toBe(false)
+  })
+})

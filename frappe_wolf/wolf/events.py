@@ -74,6 +74,10 @@ def insert_event(data, agent=None, dedupe_minutes=None):
 			)
 			return existing.name
 
+	if data.get("event_type") == "security":
+		from frappe_wolf.api import threat
+
+		data = threat.enrich(data)  # IP reputation lists (off unless enabled)
 	data.setdefault("last_seen", data.get("timestamp"))  # window queries filter on it
 	doc = frappe.get_doc({"doctype": "Wolf Event", "agent": agent, **data})
 	doc.flags.ignore_permissions = True

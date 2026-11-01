@@ -222,7 +222,9 @@ describe('IncidentPage live', () => {
         const method = url.split('/api/method/')[1].split('?')[0]
         const message = method.endsWith('get_incident')
           ? { ...INCIDENT, status }
-          : { rows, paging: { has_more: false }, totals: {}, truncated: {} }
+          : method.endsWith('get_response')
+            ? { proposals: [], actions: [], can_approve: false, default_hours: 24, max_hours: 168 }
+            : { rows, paging: { has_more: false }, totals: {}, truncated: {} }
         return new Response(JSON.stringify({ message }), { status: 200 })
       }),
     )

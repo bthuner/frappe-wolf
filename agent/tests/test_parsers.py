@@ -311,7 +311,7 @@ class TestAuth(unittest.TestCase):
 		self.assertEqual(parsed[4]["ip"], "2001:db8::1")
 		self.assertEqual(parsed[4]["timestamp"], "2026-10-29T02:00:05Z")
 		self.assertEqual(parsed[5]["kind"], "ssh_root_login")
-		self.assertIsNone(parsed[6])
+		self.assertEqual(parsed[6]["kind"], "ssh_accepted")  # tracked, never shipped alone
 		self.assertIsNone(parsed[7])
 
 	def test_journal_cat_format(self):
@@ -340,6 +340,107 @@ class TestAuth(unittest.TestCase):
 		self.assertEqual(events[0]["severity"], "critical")
 		self.assertEqual(events[0]["payload"]["count"], 25)
 		self.assertEqual(events[0]["timestamp"], "2026-10-29T02:01:00Z")
+
+	def test_plain_accepted_login_ships_nothing(self):
+		parser = auth.AuthParser("bench-01")
+		parser.feed(AUTH_LINES[6])
+		self.assertEqual(parser.drain(NOW), ([], []))
+
+
+class FakeClock:
+	def __init__(self):
+		self.t = 1000.0
+
+	def __call__(self):
+		return self.t
+
+
+class TestAuthSecurity(unittest.TestCase):
+	def test_login_after_brute_force_across_drains(self):
+		clock = FakeClock()
+		parser = auth.AuthParser("bench-01", clock=clock)
+		for _ in range(6):
+			parser.feed("Oct 29 02:00:01 h sshd[1]: Failed password for frappe from 198.51.100.9 port 1 ssh2")
+		_, events = parser.drain(NOW)
+		self.assertEqual([e["category"] for e in events], ["ssh_failed_login"])
+		clock.t += 600
+		parser.feed("Oct 29 02:10:01 h sshd[2]: Accepted password for frappe from 198.51.100.9 port 2 ssh2")
+		_, events = parser.drain(NOW)
+		self.assertEqual(len(events), 1)
+		e = events[0]
+		self.assertEqual(e["category"], "ssh_login_after_failures")
+		self.assertEqual(e["severity"], "critical")
+		self.assertEqual(e["payload"]["failures_before"], 6)
+		self.assertEqual(e["payload"]["ip"], "198.51.100.9")
+		self.assertEqual(e["payload"]["attack_techniques"], ["T1110"])
+		self.assertIn("after 6 failed attempts", e["title"])
+		# the counter is consumed: a second login is not another brute-force success
+		parser.feed("Oct 29 02:11:01 h sshd[3]: Accepted password for frappe from 198.51.100.9 port 3 ssh2")
+		self.assertEqual(parser.drain(NOW)[1], [])
+
+	def test_old_failures_are_forgotten(self):
+		clock = FakeClock()
+		parser = auth.AuthParser("bench-01", clock=clock)
+		for _ in range(10):
+			parser.feed("Failed password for frappe from 198.51.100.9 port 1 ssh2")
+		parser.drain(NOW)
+		clock.t += auth.FAILURE_MEMORY_SECONDS + 1
+		parser.feed("Accepted publickey for frappe from 198.51.100.9 port 2 ssh2")
+		self.assertEqual(parser.drain(NOW)[1], [])
+		self.assertEqual(parser.failures, {})
+
+	def test_root_login_after_failures_raises_both(self):
+		parser = auth.AuthParser("bench-01", clock=FakeClock())
+		for _ in range(5):
+			parser.feed("Failed password for root from 203.0.113.1 port 1 ssh2")
+		parser.feed("Accepted password for root from 203.0.113.1 port 2 ssh2")
+		cats = sorted(e["category"] for e in parser.drain(NOW)[1])
+		self.assertEqual(cats, ["ssh_failed_login", "ssh_login_after_failures", "ssh_root_login"])
+
+	def test_sudo_failures(self):
+		parser = auth.AuthParser("bench-01")
+		lines = [
+			"Oct 29 02:00:01 h sudo: pam_unix(sudo:auth): authentication failure; logname=frappe uid=1000 "
+			"euid=0 tty=/dev/pts/0 ruser=frappe rhost=  user=frappe",
+			"Oct 29 02:00:09 h sudo:   frappe : 3 incorrect password attempts ; TTY=pts/0 ; PWD=/home/frappe ; "
+			"USER=root ; COMMAND=/bin/bash",
+			"Oct 29 02:00:10 h sudo:    guest : user NOT in sudoers ; TTY=pts/1 ; PWD=/tmp ; USER=root ; COMMAND=/bin/sh",
+			"Oct 29 02:00:11 h sudo[123]:   frappe : TTY=pts/0 ; PWD=/home/frappe ; USER=root ; COMMAND=/bin/ls",
+		]
+		for line in lines:
+			parser.feed(line)
+		events = {e["title"]: e for e in parser.drain(NOW)[1]}
+		self.assertEqual(sorted(events), ["1 failed sudo attempt(s) by guest", "3 failed sudo attempt(s) by frappe"])
+		e = events["3 failed sudo attempt(s) by frappe"]
+		self.assertEqual(e["category"], "sudo_failure")
+		self.assertEqual(e["source"], "auth")
+		self.assertNotIn("ip", e["payload"])
+
+	def test_journal_short_iso_lines(self):
+		parser = auth.AuthParser("bench-01")
+		parser.feed("2026-10-29T03:00:09+01:00 h sudo[9]:   frappe : 3 incorrect password attempts ; TTY=pts/0 ; "
+		            "PWD=/ ; USER=root ; COMMAND=/bin/sh")  # fmt: skip
+		parser.feed("2026-10-29T03:00:10+0100 h sshd-session[10]: Failed password for root from 203.0.113.1 port 1 ssh2")
+		events = {e["category"]: e for e in parser.drain(NOW)[1]}
+		self.assertEqual(events["sudo_failure"]["timestamp"], "2026-10-29T02:00:09Z")
+		self.assertEqual(events["ssh_failed_login"]["timestamp"], "2026-10-29T02:00:10Z")
+
+	def test_account_and_admin_group(self):
+		parser = auth.AuthParser("bench-01")
+		parser.feed("Oct 29 02:00:01 h useradd[42]: new user: name=backdoor, UID=1001, GID=1001, home=/home/backdoor, "
+		            "shell=/bin/bash, from=/dev/pts/0")  # fmt: skip
+		parser.feed("Oct 29 02:00:02 h usermod[43]: add 'backdoor' to group 'sudo'")
+		parser.feed("Oct 29 02:00:02 h usermod[43]: add 'backdoor' to shadow group 'sudo'")
+		parser.feed("Oct 29 02:00:03 h usermod[44]: add 'frappe' to group 'www-data'")
+		parser.feed("Oct 29 02:00:04 h gpasswd[45]: user alice added by root to group wheel")
+		events = {e["category"] + ":" + e["payload"]["users"][0]: e for e in parser.drain(NOW)[1]}
+		self.assertEqual(sorted(events), ["account_created:backdoor", "admin_group_change:alice", "admin_group_change:backdoor"])
+		self.assertEqual(events["account_created:backdoor"]["payload"]["uid"], 1001)
+		group = events["admin_group_change:backdoor"]
+		self.assertEqual(group["severity"], "critical")
+		self.assertEqual(group["payload"]["group"], "sudo")
+		self.assertEqual(group["title"], "backdoor added to admin group sudo")
+		self.assertEqual(events["admin_group_change:alice"]["payload"]["group"], "wheel")
 
 
 if __name__ == "__main__":

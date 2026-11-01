@@ -17,7 +17,8 @@ Then it times, server side (no HTTP, no agent authentication):
   * the overview: Desk's get_overview and get_metric_series for every range, the Wolf UI's
     overview (its six reads, in sequence and the slowest one) and metrics explorer, and rule
     queries.
-Prints p50 / p95 / max per operation. Not run in CI; ci/integration.sh runs it after
+With --reads-only it keeps the data a previous run loaded and times the reads only, for
+instance after an index change. Prints p50 / p95 / max per operation. Not run in CI; ci/integration.sh runs it after
 db_smoke.py when WOLF_LOAD_TEST=1 (flags in WOLF_LOAD_ARGS).
 """
 
@@ -46,6 +47,7 @@ def parse_args():
 	p.add_argument("--raw-hours", type=int, default=48)
 	p.add_argument("--pushes", type=int, default=200, help="timed pushes per ingest mode")
 	p.add_argument("--repeat", type=int, default=10, help="timed runs per read operation")
+	p.add_argument("--reads-only", action="store_true", help="keep the loaded data, time the reads only")
 	return p.parse_args()
 
 
@@ -218,44 +220,46 @@ def main():
 	      f"{args.days} days, raw every {args.interval}s for {args.raw_hours}h", flush=True)
 	results = {}
 
-	loader.clean()
-	for step in ("synthetic_rollups", "raw", "events"):
-		results[f"load {step}"] = {"seconds": round(timed(getattr(loader, step))[0], 1)}
-		print(f"  {step}: {results[f'load {step}']['seconds']}s, rows so far {loader.counts}", flush=True)
-	results["rows"] = dict(loader.counts)
+	# --reads-only: time the reads on the data a previous run loaded (after an index change, say)
+	if not args.reads_only:
+		loader.clean()
+		for step in ("synthetic_rollups", "raw", "events"):
+			results[f"load {step}"] = {"seconds": round(timed(getattr(loader, step))[0], 1)}
+			print(f"  {step}: {results[f'load {step}']['seconds']}s, rows so far {loader.counts}", flush=True)
+		results["rows"] = dict(loader.counts)
 
-	# the real rollup job over the raw window
-	seconds, _ = timed(lambda: [rollups.roll(res) for res in (rollups.MINUTE, rollups.HOUR)])
-	raw_rows = loader.counts.get("Wolf Metric Sample", 0)
-	results["rollup raw window"] = {"seconds": round(seconds, 1), "raw_rows_per_s": round(raw_rows / max(seconds, 1e-9))}
-	print(f"  rollup of the raw window: {seconds:.1f}s", flush=True)
+		# the real rollup job over the raw window
+		seconds, _ = timed(lambda: [rollups.roll(res) for res in (rollups.MINUTE, rollups.HOUR)])
+		raw_rows = loader.counts.get("Wolf Metric Sample", 0)
+		results["rollup raw window"] = {"seconds": round(seconds, 1), "raw_rows_per_s": round(raw_rows / max(seconds, 1e-9))}
+		print(f"  rollup of the raw window: {seconds:.1f}s", flush=True)
 
-	agent = frappe.db.get_value("Wolf Agent", {"hostname": f"{PREFIX}agent"})
-	if not agent:
-		doc = frappe.get_doc({"doctype": "Wolf Agent", "hostname": f"{PREFIX}agent", "status": "Active"})
-		doc.insert(ignore_permissions=True)
-		agent = doc.name
-	frappe.db.commit()
+		agent = frappe.db.get_value("Wolf Agent", {"hostname": f"{PREFIX}agent"})
+		if not agent:
+			doc = frappe.get_doc({"doctype": "Wolf Agent", "hostname": f"{PREFIX}agent", "status": "Active"})
+			doc.insert(ignore_permissions=True)
+			agent = doc.name
+		frappe.db.commit()
 
-	for mode in ("async", "sync"):
-		set_mode(mode)
-		times = []
-		for i in range(args.pushes):
-			host = loader.hosts[i % len(loader.hosts)]
-			data = push_payload(loader, host, i)
-			times.append(timed(lambda data=data: ingest.accept(agent, data))[0])
-		results[f"push ({mode})"] = summary(times)
-		print(f"  push {mode}: {results[f'push ({mode})']}", flush=True)
-		if mode == "async":
-			jobs = [j for j in get_queue(ingest.INGEST_QUEUE).get_jobs()
-			        if (j.kwargs or {}).get("method") == ingest.STORE_METHOD]
-			worker = []
-			for job in jobs:
-				worker.append(timed(lambda job=job: ingest.store_batch(**job.kwargs["kwargs"]))[0])
-				job.delete()
-			if worker:
-				results["queued store_batch (worker)"] = summary(worker)
-				print(f"  worker store_batch: {results['queued store_batch (worker)']}", flush=True)
+		for mode in ("async", "sync"):
+			set_mode(mode)
+			times = []
+			for i in range(args.pushes):
+				host = loader.hosts[i % len(loader.hosts)]
+				data = push_payload(loader, host, i)
+				times.append(timed(lambda data=data: ingest.accept(agent, data))[0])
+			results[f"push ({mode})"] = summary(times)
+			print(f"  push {mode}: {results[f'push ({mode})']}", flush=True)
+			if mode == "async":
+				jobs = [j for j in get_queue(ingest.INGEST_QUEUE).get_jobs()
+				        if (j.kwargs or {}).get("method") == ingest.STORE_METHOD]
+				worker = []
+				for job in jobs:
+					worker.append(timed(lambda job=job: ingest.store_batch(**job.kwargs["kwargs"]))[0])
+					job.delete()
+				if worker:
+					results["queued store_batch (worker)"] = summary(worker)
+					print(f"  worker store_batch: {results['queued store_batch (worker)']}", flush=True)
 	set_mode("async")
 
 	for range_key in ui.RANGES:

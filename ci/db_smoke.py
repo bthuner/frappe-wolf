@@ -112,14 +112,17 @@ def main():
 	def deployment_link():
 		# the deployment that preceded the incident, not one made after it started (a fix, a
 		# migrate on restart) and seen by a rule evaluated later
-		site = "smoke-deploy.localhost"
+		site, link_host = "smoke-deploy.localhost", "smoke-link-host"  # apart from the other checks
 		before, after = (events.insert_event(schema.normalize_event(
-			{"type": "deployment", "host": HOST, "bench": "b1", "site": site, "severity": "info", "title": title}, tz, at))
+			{"type": "deployment", "host": link_host, "bench": "b1", "site": site, "severity": "info", "title": title}, tz, at))
 			for title, at in (("smoke deploy before", now - timedelta(minutes=20)),
 			                  ("smoke deploy after", now - timedelta(minutes=2))))  # fmt: skip
-		doc = frappe.get_doc("Wolf Alert Rule", "smoke 502")
-		name, kind = incidents.open_incident(doc, f"site={site}", {"host": HOST, "bench": "b1", "site": site},
+		# its own rule: later checks read the newest "smoke 502" incident as the smoke site's
+		doc = rule("smoke deploy link", signal_type="metric", metric_name="http_502", aggregation="sum", operator=">=",
+		           threshold=10, window_minutes=5, group_by="site", filter_site=site)
+		name, kind = incidents.open_incident(doc, f"site={site}", {"host": link_host, "bench": "b1", "site": site},
 		                                     "smoke deployment link", started_at=now - timedelta(minutes=10))
+		frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
 		linked = frappe.db.get_value("Wolf Incident", name, "deployment_event")
 		incidents.resolve(name, "smoke check")
 		assert kind == "fired", kind
@@ -128,11 +131,11 @@ def main():
 
 	def reopen_after_resolve():
 		# resolved by someone who saw the events: those never reopen it, a newer one does, and says so
-		site = "smoke-reopen.localhost"
+		site, reopen_host = "smoke-reopen.localhost", "smoke-reopen-host"  # apart from "smoke cron"
 
 		def failure(at):
 			return events.insert_event(schema.normalize_event(
-				{"type": "cron_failure", "category": "scheduled_job", "host": HOST, "bench": "b2", "site": site,
+				{"type": "cron_failure", "category": "scheduled_job", "host": reopen_host, "bench": "b2", "site": site,
 				 "severity": "critical", "title": "smoke reopen cron"}, tz, at))  # fmt: skip
 
 		doc = rule("smoke reopen", signal_type="event", event_type="cron_failure", min_severity="warning", operator=">=",

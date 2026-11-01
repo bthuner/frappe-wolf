@@ -1229,6 +1229,10 @@ def main():
 			seen["console"] = last("console_execution").title
 
 			ss = frappe.get_doc("System Settings")
+			# a site that never ran the setup wizard has no language / time zone, and Frappe
+			# refuses the save: fill them with what the site already uses
+			ss.language = ss.language or "en"
+			ss.time_zone = ss.time_zone or events.system_tz()
 			original = ss.session_expiry
 			ss.session_expiry = "999:00"
 			ss.save(ignore_permissions=True)

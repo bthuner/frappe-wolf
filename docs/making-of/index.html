@@ -686,7 +686,7 @@ X-Wolf-Agent-Secret: ••••••••
           <li class="done"><time>2026-10-29 · Signals</time><b>The signals operators asked for.</b><p>RQ registries, queue Redis, backups, TLS expiry, MariaDB, bench processes, the email queue, and GeoIP for logins.</p></li>
           <li class="done"><time>2026-10-30 · Storage</time><b>Storage that scales.</b><p>Minute and hour rollups with retention per resolution. Reads pick the resolution of their window and stay exact across raw and rolled data. Ingest is async: a queued push that fails is retried and logged, and a backlog shows in Wolf's health.</p></li>
           <li class="done"><time>2026-10-30 · Wolf UI</time><b>A frappe-ui app at <code>/wolf</code>.</b><p>The daily views move out of Desk (#19), on the Frappe session, with light and dark themes on the brand tokens. Exact counts use the reader's access rules. Then came the incident page, the overview and the site, host and bench dashboards, and the events, errors and metrics explorers. Every page says what it read.</p></li>
-          <li><time>2026-11-01 · Wolf UI</time><b>Live updates, browser and accessibility tests.</b><p>Invalidations over Frappe's socket.io, in rooms guarded by the reader's permissions. Every view tested in Chromium with axe, in both themes. Log search waits for raw-line storage.</p></li>
+          <li class="done"><time>2026-11-01 · Wolf UI</time><b>Live updates, browser and accessibility tests.</b><p>Invalidations over Frappe's socket.io, in rooms guarded by the reader's permissions. Every view tested in Chromium with axe, in both themes. Log search waits for raw-line storage.</p></li>
         </ol>
       </div>
     </div>

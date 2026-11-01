@@ -6,16 +6,17 @@ import { mockApi } from './api.js'
 // Every view of the Wolf UI, in a real browser on the production build: it renders, no console
 // error, no API call the page was not given, and no serious or critical WCAG 2 A/AA finding in
 // the light or the dark theme.
+// the text each view must show from its own data: never a label the sidebar also has
 const PAGES = [
-  ['/wolf/', 'Overview'],
-  ['/wolf/incidents', 'Incidents'],
+  ['/wolf/', '502 spike after deployment: a.example.com'],
+  ['/wolf/incidents', '502 spike after deployment: a.example.com'],
   ['/wolf/incidents/WINC-00001', 'restarting workers'],
   ['/wolf/events', 'KeyError: customer'],
   ['/wolf/errors', 'KeyError: customer'],
   ['/wolf/metrics?metric=disk_used_percent', 'bench-01 · mount=/'],
   ['/wolf/logs', 'Log search is not available'],
-  ['/wolf/monitoring', 'Monitoring'],
-  ['/wolf/security', '71'],
+  ['/wolf/monitoring', 'Unknown: the site could not compute its health.'],
+  ['/wolf/security', '71 / 100'],
 ]
 
 function watchConsole(page) {
@@ -62,9 +63,13 @@ test('keyboard: the sidebar is reachable with Tab and a link opens with Enter', 
     reached = await page.evaluate(() => document.activeElement?.textContent?.trim() === 'Incidents')
   }
   expect(reached, 'Tab reaches the Incidents link').toBe(true)
+  // a ring that shows: an outline with a width, or a box-shadow with a visible colour and spread
   const outline = await page.evaluate(() => {
     const s = getComputedStyle(document.activeElement)
-    return s.outlineStyle !== 'none' || s.boxShadow !== 'none'
+    const outlined = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0
+    const shadows = s.boxShadow === 'none' ? [] : s.boxShadow.split(/,(?![^(]*\))/)
+    const ring = shadows.some((sh) => !/rgba\([^)]*,\s*0\)/.test(sh) && /\s[1-9]\d*(\.\d+)?px/.test(sh.replace(/rgba?\([^)]*\)/, '')))
+    return outlined || ring
   })
   expect(outline, 'the focused link shows a focus ring').toBe(true)
   await page.keyboard.press('Enter')
@@ -72,6 +77,7 @@ test('keyboard: the sidebar is reachable with Tab and a link opens with Enter', 
 })
 
 test('incident: acknowledge posts once and the header follows', async ({ page }) => {
+  const errors = watchConsole(page)
   const calls = await mockApi(page)
   await page.goto('/wolf/incidents/WINC-00001')
   await page.getByRole('button', { name: 'Acknowledge' }).click()
@@ -79,6 +85,10 @@ test('incident: acknowledge posts once and the header follows', async ({ page })
   const acts = calls.filter((c) => c.method === 'frappe_wolf.api.incident_view.act')
   expect(acts.map((c) => c.args)).toEqual([{ incident: 'WINC-00001', action: 'acknowledge' }])
   await expect(page.getByRole('button', { name: 'Acknowledge' })).toHaveCount(0)
+  await page.waitForLoadState('networkidle') // the timeline reload after the action
+  expect(errors, 'console errors').toEqual([])
+  expect(calls.filter((c) => !c.mocked).map((c) => c.method), 'calls the test did not answer').toEqual([])
+  await expect(page.locator('[role=alert]')).toHaveCount(0)
 })
 
 test('reduced motion: no animation runs longer than a frame', async ({ page }) => {

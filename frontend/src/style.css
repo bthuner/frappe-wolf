@@ -180,9 +180,10 @@ a.wolf-link {
   border-color: var(--wolf-brand, #035aec);
 }
 
-/* frappe-ui sidebar section labels ("Explore", "Wolf") are grey on the sidebar: 3.7:1 in light,
-   4.45:1 in dark, under WCAG's 4.5:1 (found by the axe browser test). The Wolf muted tone passes
-   in both themes. */
-[data-slot='sidebar-label'] h3 {
-  color: var(--wolf-muted);
+/* Wolf paints the sidebar with --wolf-bg (--surface-sidebar above), on which frappe-ui's
+   --ink-gray-5 (its section labels, "Explore", "Wolf") is 3.7:1 in light and 4.45:1 in dark,
+   under WCAG's 4.5:1 (found by the axe browser test). The Wolf muted tone passes in both
+   themes; remapped on the sidebar, it fixes every --ink-gray-5 text there at once. */
+[data-slot='sidebar'] {
+  --ink-gray-5: var(--wolf-muted);
 }

@@ -1,7 +1,9 @@
-"""Agent pushes over HTTP, as agents send them: registration, then timed POSTs of
+"""Agent pushes over HTTP, as agents send them: timed POSTs of
 frappe_wolf.api.ingest.push with X-Wolf-Agent-Id / X-Wolf-Agent-Secret, from several agents at once.
 
-Run on the bench, from sites/, after ci/load_test.py filled the same throwaway site:
+Agents are created in-process (register() over HTTP is limited to 20 an hour per address); only
+the timed pushes go over HTTP. Run on the bench, from sites/, after ci/load_test.py filled the
+same throwaway site:
 
     ../env/bin/python /path/to/ci/load_http.py <site> --url http://127.0.0.1:8000 \
         [--agents 100] [--metrics 15] [--pushes 600] [--concurrency 8]
@@ -13,7 +15,6 @@ p50 / p95 / max of the push round trip, as the agent sees it, and the HTTP statu
 import argparse
 import json
 import statistics
-import sys
 import threading
 import time
 import urllib.error
@@ -22,7 +23,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import frappe
-from frappe.utils.password import get_decrypted_password
 
 PREFIX = "load-http-"
 
@@ -58,22 +58,28 @@ def main():
 	a = args_()
 	frappe.init(a.site)
 	frappe.connect()
-	token = get_decrypted_password("Wolf Settings", "Wolf Settings", "registration_token")
-	# enough pushes per agent minute for the run: this measures latency, not the rate limit
-	frappe.db.set_single_value("Wolf Settings", "max_pushes_per_minute", 10_000)
-	frappe.db.commit()
-	frappe.destroy()
+	# agents are created here, as register() would: its HTTP endpoint allows 20 registrations an
+	# hour per address, and this measures pushes, not registration
+	from frappe.utils import now_datetime
+
+	from frappe_wolf.wolf import agent_secrets
 
 	agents = []
 	for i in range(a.agents):
 		host = f"{PREFIX}{i:03d}"
-		_, status, reply = post(a.url, a.site, "frappe_wolf.api.agent.register",
-		                        {"registration_token": token, "hostname": host, "agent_version": "load",
-		                         "os": "load", "benches": []})  # fmt: skip
-		if status != 200:
-			sys.exit(f"registration of {host} failed: HTTP {status}")
-		agents.append((host, reply["message"]["agent_id"], reply["message"]["agent_secret"]))
-	print(f"{len(agents)} agents registered on {a.site} through {a.url}", flush=True)
+		secret = agent_secrets.new_secret()
+		name = frappe.db.get_value("Wolf Agent", {"hostname": host})
+		doc = frappe.get_doc("Wolf Agent", name) if name else frappe.new_doc("Wolf Agent")
+		doc.update({"hostname": host, "kind": "agent", "status": "Active", "agent_version": "load",
+		            "secret_hash": agent_secrets.hash_secret(secret), "secret_issued_at": now_datetime()})  # fmt: skip
+		doc.flags.ignore_permissions = True
+		doc.save()
+		agents.append((host, doc.name, secret))
+	# enough pushes per agent minute for the run: this measures latency, not the rate limit
+	frappe.db.set_single_value("Wolf Settings", "max_pushes_per_minute", 10_000)
+	frappe.db.commit()
+	frappe.destroy()
+	print(f"{len(agents)} agents ready on {a.site}; pushing through {a.url}", flush=True)
 
 	metrics = ["cpu_usage", "memory_used_percent", "disk_used_percent", "load_per_core"]
 	metrics = (metrics + [f"load_metric_{i}" for i in range(a.metrics)])[: a.metrics]

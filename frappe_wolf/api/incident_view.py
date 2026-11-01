@@ -13,7 +13,8 @@ from frappe import _
 from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 
 from frappe_wolf.api.ui import READ_ROLES
-from frappe_wolf.wolf import access, events, incidents, schema, timeline, window
+from frappe_wolf.wolf import access, events, incident_ops, incidents, schema, timeline, window, workflow
+from frappe_wolf.wolf import events as events_module
 from frappe_wolf.wolf.spa import MANAGER_ROLES
 from frappe_wolf.wolf.workflow import ACTIVITY_LIMITS, activity_filters, get_activity
 
@@ -42,13 +43,23 @@ def _allowed(doc, action):
 	return False
 
 
+def _manager():
+	return bool(set(frappe.get_roles()) & set(MANAGER_ROLES)) or frappe.session.user == "Administrator"
+
+
 def _can(doc):
-	manager = bool(set(frappe.get_roles()) & set(MANAGER_ROLES)) or frappe.session.user == "Administrator"
+	manager = _manager()
 	write = manager and frappe.has_permission("Wolf Incident", "write", doc=doc)
+	live = not doc.merged_into
 	return {
 		"comment": True,  # read permission is enough, like Desk's comment box
 		**{action: write and _allowed(doc, action) for action in ACTIONS},
-		"workflow": write,  # merge, split, postmortem (Desk)
+		"workflow": write,  # editing in Desk
+		# the workflow's own checks (wolf/workflow.py), so a button is never offered to fail
+		"merge": write and live,
+		"split": write and live and frappe.db.count("Wolf Event", {"incident": doc.name}) >= 2,
+		# write an existing one, or start it once resolved
+		"postmortem": manager and live and (bool(doc.postmortem) or doc.status == "Resolved"),
 	}
 
 
@@ -338,3 +349,117 @@ def list_incidents(status="unresolved", cursor=None, limit=50, site=None, bench=
 		"scope": scope,
 		"time_zone": tz,
 	}
+
+
+# ---- merge and split: what will move, before anything does ----------------------------------
+
+MERGE_CANDIDATES = 50
+SPLIT_EVENTS = 500
+
+
+def _incident_card(row, tz):
+	return {
+		"name": row.name, "title": row.title, "status": row.status, "severity": row.severity,
+		"scope": {"site": row.site, "bench": row.bench, "host": row.host},
+		"started_at": _utc(row.started_at, tz),
+	}  # fmt: skip
+
+
+def _comment_count(incident):
+	return frappe.db.count(
+		"Comment",
+		{"reference_doctype": "Wolf Incident", "reference_name": incident, "comment_type": ("in", workflow.MOVED_COMMENT_TYPES)},
+	)
+
+
+@frappe.whitelist()
+def merge_preview(source, target=None):
+	"""Where `source` may be merged, and, for `target`, what would move and what both become.
+
+	Candidates are unresolved, unmerged incidents the caller may write, its own site first. Nothing
+	is written: api/incident.py merge() does it, with the same checks.
+	"""
+	src = _incident(source)
+	workflow.require_manager(src)
+	tz = events.system_tz()
+	rows = frappe.get_list(
+		"Wolf Incident",
+		filters={"name": ("!=", src.name), "status": ("in", incidents.OPEN), "merged_into": ("is", "not set")},
+		fields=["name", "title", "status", "severity", "site", "bench", "host", "started_at"],
+		order_by="started_at desc",
+		limit_page_length=MERGE_CANDIDATES + 1,
+	)
+	more = len(rows) > MERGE_CANDIDATES
+	rows = rows[:MERGE_CANDIDATES]
+	rows.sort(key=lambda r: (r.site != src.site, r.bench != src.bench))  # stable: newest first in each
+	out = {
+		"source": _incident_card(src, tz),
+		"candidates": [_incident_card(r, tz) for r in rows],
+		"more_candidates": more,  # the list is the newest ones: say so
+		"preview": None,
+	}
+	if target:
+		tgt = _incident(target)
+		error = incident_ops.check_merge(src.as_dict(), tgt.as_dict())
+		if not error and not frappe.has_permission("Wolf Incident", "write", doc=tgt):
+			error = f"You may not change {tgt.name}."
+		after = {**tgt.as_dict(), **incident_ops.merged_target_fields(src.as_dict(), tgt.as_dict())}
+		out["preview"] = {
+			"error": error,
+			"target": _incident_card(tgt, tz),
+			"events": frappe.db.count("Wolf Event", {"incident": src.name}),
+			"comments": _comment_count(src.name),
+			# what the target becomes: the source's whole window and the worse severity
+			"target_after": {"severity": after.get("severity"), "started_at": _utc(after.get("started_at"), tz),
+			                 "status": tgt.status},  # fmt: skip
+			# the source is closed as merged, whatever its status was
+			"source_after": {"status": "Resolved", "merged_into": tgt.name},
+		}
+	return out
+
+
+@frappe.whitelist()
+def split_preview(incident, events=None):
+	"""The events linked to `incident` that a split may move, and, for a selection, the incident
+	it would create. Nothing is written: api/incident.py split() does it, with the same checks."""
+	src = _incident(incident)
+	workflow.require_manager(src)
+	tz = events_module.system_tz()
+	linked = frappe.get_all(
+		"Wolf Event",
+		filters={"incident": src.name},
+		fields=["name", "title", "severity", "category", "event_type", "timestamp", "last_seen", "count", "site", "bench", "host"],
+		order_by="`timestamp` asc, name asc",
+		limit=SPLIT_EVENTS + 1,
+	)
+	more = len(linked) > SPLIT_EVENTS
+	linked = linked[:SPLIT_EVENTS]
+	out = {
+		"incident": _incident_card(src, tz),
+		"merged_into": src.merged_into,
+		"events": [
+			{"name": e.name, "title": e.title, "severity": e.severity, "kind": e.category or e.event_type,
+			 "at": _utc(e.timestamp, tz), "last_seen": _utc(e.last_seen, tz), "count": cint(e.count) or 1,
+			 "scope": {"site": e.site, "bench": e.bench, "host": e.host}}
+			for e in linked
+		],  # fmt: skip
+		"more_events": more,
+		"preview": None,
+	}
+	if events is not None:
+		error, names = incident_ops.check_split([e.name for e in linked], events)
+		rows = [e for e in linked if e.name in set(names)]
+		fields = incident_ops.split_fields(rows) if rows else {}
+		out["preview"] = {
+			"error": error,
+			"moved": len(names),
+			"kept": len(linked) - len(names) if not error else len(linked),
+			# a split incident has no rule: it never resolves by itself
+			"new_incident": {
+				"title": incident_ops.split_title(src.title, rows) if rows else None,
+				"severity": fields.get("severity"),
+				"started_at": _utc(fields.get("started_at"), tz),
+				"status": "Resolved" if src.status == "Resolved" else "Open",
+			},
+		}
+	return out

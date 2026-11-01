@@ -205,10 +205,11 @@ On a **Wolf Incident** (Wolf Manager):
   with the events. Wolf Users can comment too.
 - **Manual incidents**: create one in Desk, or **Open incident from this event** on a Wolf Event.
   They have no rule, so the rules engine never auto-resolves them.
-- **Actions → Merge into…** moves events and comments to the target, resolves the source with
-  **Merged Into** set. If the source came from a rule, further breaches of that rule feed the
-  target instead of opening a duplicate. **Actions → Split…** moves the events you tick to a new
-  incident (no rule, **Split From** set).
+- **Merge into…** (Desk: **Actions**; Wolf UI: **Merge…**) moves events and comments to the target,
+  resolves the source with **Merged Into** set. If the source came from a rule, further breaches
+  of that rule feed the target instead of opening a duplicate. **Split…** moves the events you
+  tick to a new incident (no rule, **Split From** set). The Wolf UI's dialogs say what will move
+  and what each incident becomes before you confirm.
 - **Write postmortem** on a resolved incident creates a **Wolf Postmortem**: summary, impact
   (scope, duration, event count), root cause, lessons, action items (owner, due date, status) and
   a frozen, escaped timeline snapshot.

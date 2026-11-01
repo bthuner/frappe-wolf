@@ -75,6 +75,33 @@ describe('IncidentPage', () => {
     expect(text).toContain('2 records, 15 reported occurrences')
   })
 
+  it('offers merge, split and the postmortem as the server allows, never Desk for them', async () => {
+    const timeline = () => ({ rows: ROWS, paging: { has_more: false }, totals: {}, truncated: {} })
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, can: { ...INCIDENT.can, merge: true, split: true, postmortem: false } }),
+      'frappe_wolf.api.incident_view.get_timeline': timeline,
+    })
+    let { page } = await open()
+    let labels = page.findAll('button').map((b) => b.text())
+    expect(labels).toContain('Merge…')
+    expect(labels).toContain('Split…')
+    expect(page.text()).toContain('The postmortem comes once it is resolved.')
+    expect(page.text()).not.toContain('in Desk')
+    page.unmount()
+
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({
+        ...INCIDENT, status: 'Resolved', postmortem: 'WPM-00003',
+        can: { ...INCIDENT.can, merge: false, split: false, postmortem: true },
+      }), // prettier-ignore
+      'frappe_wolf.api.incident_view.get_timeline': timeline,
+    })
+    ;({ page } = await open())
+    labels = page.findAll('button').map((b) => b.text())
+    expect(labels).not.toContain('Merge…')
+    expect(page.get('a[href="/app/wolf-postmortem/WPM-00003"]').text()).toContain('Postmortem WPM-00003')
+  })
+
   it('counts one linked record in the singular', async () => {
     server({
       'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, event_records: 1, event_count: 1, event_occurrences: 1 }),

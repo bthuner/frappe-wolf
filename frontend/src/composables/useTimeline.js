@@ -1,6 +1,6 @@
 import { ref, shallowRef } from 'vue'
 
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 
 const METHOD = 'frappe_wolf.api.incident_view.get_timeline'
 export const PAGE_SIZE = 100
@@ -13,6 +13,7 @@ export function useTimeline(incident, { fetchFn } = {}) {
   const meta = ref({ totals: {}, truncated: {}, window: null })
   const loading = ref(false)
   const error = ref(null)
+  const loaded = ref(false) // a first page of this incident was read: only then may it say "nothing"
   let ticket = 0
 
   async function request(args) {
@@ -23,11 +24,20 @@ export function useTimeline(incident, { fetchFn } = {}) {
       const page = await call(METHOD, { incident: incident(), ...args }, { fetchFn })
       return mine === ticket ? page : null
     } catch (e) {
-      if (mine === ticket) error.value = e.message
+      if (mine === ticket) error.value = failure(e, "this incident's timeline")
       return null
     } finally {
       if (mine === ticket) loading.value = false
     }
+  }
+
+  // another incident: nothing read yet
+  function reset() {
+    ticket++
+    rows.value = []
+    loaded.value = false
+    error.value = null
+    loading.value = false
   }
 
   function apply(page, append) {
@@ -42,7 +52,10 @@ export function useTimeline(incident, { fetchFn } = {}) {
   // first page, or as many rows as are loaded now (a refresh keeps the reader's place)
   async function load(families, keep = 0) {
     const page = await request({ families: families.join(','), limit: Math.max(PAGE_SIZE, Math.min(keep, 500)) })
-    if (page) apply(page, false)
+    if (page) {
+      apply(page, false)
+      loaded.value = true
+    }
     return page
   }
 
@@ -53,5 +66,5 @@ export function useTimeline(incident, { fetchFn } = {}) {
     return page
   }
 
-  return { rows, paging, meta, loading, error, load, more }
+  return { rows, paging, meta, loading, error, load, more, loaded, reset }
 }

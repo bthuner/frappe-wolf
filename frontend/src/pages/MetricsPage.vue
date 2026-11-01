@@ -4,10 +4,11 @@ import { LineChart } from 'frappe-ui/charts'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import ScopeInputs from '@/components/ScopeInputs.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { RANGES } from '@/services/filters'
 import { ago, axisLabel, full } from '@/services/time'
 
@@ -22,6 +23,8 @@ const catalog = ref([])
 const labels = ref([])
 const result = ref(null)
 const error = ref(null)
+const catalogError = ref(null)
+const catalogLoaded = ref(false)
 const loading = ref(false)
 const showTable = ref(false)
 const pending = ref(null) // first point of a range being selected
@@ -62,7 +65,9 @@ async function loadCatalog() {
   try {
     catalog.value = (await call('frappe_wolf.api.metrics.get_metric_catalog')).metrics
   } catch (e) {
-    error.value = e.message
+    catalogError.value = failure(e, 'the metric catalog')
+  } finally {
+    catalogLoaded.value = true
   }
 }
 
@@ -98,7 +103,7 @@ async function query() {
     const answer = await call('frappe_wolf.api.metrics.query_metric', args)
     if (mine === ticket) result.value = answer
   } catch (e) {
-    if (mine === ticket) error.value = e.message
+    if (mine === ticket) error.value = failure(e, 'this metric')
   } finally {
     if (mine === ticket) loading.value = false
   }
@@ -184,8 +189,11 @@ watch([metric, site, host, bench], loadLabels)
       {{ spec.label }}: {{ spec.kind === 'interval_count' ? 'counted per push interval, summed per bucket for a total' : spec.kind === 'gauge' ? 'a level at each sample' : 'a custom metric, read as a level' }}<template v-if="spec.unit">, in {{ spec.unit }}</template>.
       <template v-if="spec.caveat"> {{ spec.caveat }}</template>
     </p>
+    <p v-if="catalogError" role="alert" class="text-sm" style="color: var(--wolf-critical)">Catalog: {{ catalogError }}</p>
     <p v-if="error" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ error }}</p>
 
+    <LoadingNote v-if="!catalogLoaded" what="the metric catalog" />
+    <LoadingNote v-else-if="loading && !result && !error" what="the samples" />
     <section v-if="result" class="wolf-card space-y-2" aria-label="Chart">
       <p class="text-sm text-ink-gray-6">
         {{ result.aggregation }} per {{ result.bucket_seconds >= 3600 ? `${result.bucket_seconds / 3600} h` : `${result.bucket_seconds / 60} min` }},

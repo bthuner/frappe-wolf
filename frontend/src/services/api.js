@@ -2,9 +2,10 @@
 // so a refused action says why (permission, merged incident, ...).
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, expired = false) {
     super(message)
     this.status = status
+    this.expired = expired // Frappe's session ended: a login, not a permission, is missing
   }
 }
 
@@ -16,6 +17,14 @@ function serverMessage(body) {
     // fall through to the exception text
   }
   return (body.exception || '').split(':').slice(1).join(':').trim() || null
+}
+
+// What the reader is told when a read fails: a refusal says what may not be seen, in words,
+// not as Frappe's exception text; anything else keeps the server's reason.
+export function failure(e, what) {
+  if (e?.expired) return 'Your session has ended: reload the page to log in again.'
+  if (e?.status === 403) return `You may not see ${what}.`
+  return e?.message || String(e)
 }
 
 export async function call(method, args = {}, { post = false, fetchFn = window.fetch.bind(window), signal } = {}) {
@@ -34,6 +43,9 @@ export async function call(method, args = {}, { post = false, fetchFn = window.f
   }
   const response = await fetchFn(target, init)
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw new ApiError(serverMessage(body) || `HTTP ${response.status}`, response.status)
+  if (!response.ok) {
+    const expired = Boolean(body.session_expired) || response.status === 401
+    throw new ApiError(serverMessage(body) || `HTTP ${response.status}`, response.status, expired)
+  }
   return body.message
 }

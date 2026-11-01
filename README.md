@@ -426,7 +426,10 @@ The browser tests (`frontend/e2e/`) serve the production build as a bench would
 (`e2e/server.mjs`) and answer every API call in the page (`e2e/api.js`), so no Frappe is
 needed. Each view must render with no console error and no unanswered call, and pass axe with no
 serious or critical WCAG 2 A/AA finding in the light and the dark theme; keyboard navigation,
-reduced motion, acknowledging an incident and where keyboard focus goes are checked too. They need Chromium: `npx playwright
+reduced motion, acknowledging an incident and where keyboard focus goes are checked too.
+`e2e/states.spec.js` walks every view through loading, empty, filtered-empty, error, forbidden,
+partial, stale and disconnected: a view never claims "nothing" before it has read, or after a
+read failed, and a refusal says what may not be seen. They need Chromium: `npx playwright
 install chromium`, or point `WOLF_CHROMIUM` at an installed one.
 
 Node 20.19 or newer is required. The build output is not committed; `bench build --app frappe_wolf`

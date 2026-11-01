@@ -3,11 +3,12 @@ import { Button, PageHeader, TabButtons } from 'frappe-ui'
 import { inject, ref, watch } from 'vue'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { duration, full } from '@/services/time'
 
 const boot = inject('boot')
@@ -44,7 +45,7 @@ async function load(append = false) {
     cursor.value = page.paging.next_cursor
     hasMore.value = page.paging.has_more
   } catch (e) {
-    if (mine === ticket) error.value = e.message
+    if (mine === ticket) error.value = failure(e, 'these incidents')
   } finally {
     if (mine === ticket) loading.value = false
   }
@@ -79,6 +80,7 @@ const live = useLive(hub, {
   <div class="mx-auto max-w-5xl space-y-3 p-5">
     <TabButtons v-model="status" :options="STATUSES" />
     <p v-if="error" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ error }}</p>
+    <LoadingNote v-if="loading && !incidents.length && !error" what="incidents" />
     <ul class="wolf-card divide-y divide-[var(--wolf-line)] p-0">
       <li v-for="i in incidents" :key="i.name" class="px-4 py-3">
         <RouterLink :to="{ name: 'incident', params: { incident: i.name } }" class="block">

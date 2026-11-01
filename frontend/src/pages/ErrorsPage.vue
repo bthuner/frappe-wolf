@@ -4,6 +4,7 @@ import { inject } from 'vue'
 
 import ExploreFilters from '@/components/ExploreFilters.vue'
 import LiveStatus from '@/components/LiveStatus.vue'
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useExplore } from '@/composables/useExplore'
@@ -71,6 +72,7 @@ const live = useLive(hub, {
         </tr>
       </tbody>
     </table>
+    <LoadingNote v-if="list.loading.value && !list.items.value.length && !list.error.value" what="error groups" />
     <p v-if="!list.loading.value && !list.error.value && !list.items.value.length" class="text-sm text-ink-gray-6">No error groups match.</p>
     <p v-if="list.items.value.length" class="text-sm text-ink-gray-6">Times in {{ tz }}.</p>
     <Button v-if="list.hasMore.value" label="Load more" :loading="list.loading.value" @click="list.load(true)" />

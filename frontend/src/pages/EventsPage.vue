@@ -4,6 +4,7 @@ import { inject, ref } from 'vue'
 
 import ExploreFilters from '@/components/ExploreFilters.vue'
 import LiveStatus from '@/components/LiveStatus.vue'
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useExplore } from '@/composables/useExplore'
@@ -88,6 +89,7 @@ const live = useLive(hub, {
         </template>
       </li>
     </ul>
+    <LoadingNote v-if="list.loading.value && !list.items.value.length && !list.error.value" what="events" />
     <p v-if="!list.loading.value && !list.error.value && !list.items.value.length" class="text-sm text-ink-gray-6">No event records match.</p>
     <Button v-if="list.hasMore.value" label="Load more" :loading="list.loading.value" @click="list.load(true)" />
   </div>

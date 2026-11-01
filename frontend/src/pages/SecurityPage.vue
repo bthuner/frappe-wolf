@@ -2,9 +2,10 @@
 import { Button, PageHeader, Select } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 
 // Security posture of one site (frappe_wolf/api/security.py): every check with what Wolf read
 // and the fix. A check Wolf cannot read is "Unknown" and does not count as passed.
@@ -19,6 +20,7 @@ const site = useQueryParam('site')
 const sites = ref([])
 const posture = ref(null)
 const error = ref(null)
+const sitesError = ref(null)
 const loading = ref(false)
 let ticket = 0
 
@@ -29,7 +31,7 @@ async function loadSites() {
   try {
     sites.value = await call('frappe_wolf.api.security.list_sites')
   } catch (e) {
-    error.value = e.message
+    sitesError.value = failure(e, 'the sites')
   }
 }
 
@@ -43,7 +45,7 @@ async function load() {
   } catch (e) {
     if (mine === ticket) {
       posture.value = null
-      error.value = e.status === 403 ? 'You may not see this site.' : e.message
+      error.value = failure(e, 'this site')
     }
   } finally {
     if (mine === ticket) loading.value = false
@@ -96,8 +98,10 @@ watch(site, load, { immediate: true })
   </PageHeader>
 
   <div class="mx-auto max-w-5xl space-y-5 p-5">
+    <p v-if="sitesError" role="alert" class="text-sm" style="color: var(--wolf-critical)">Sites: {{ sitesError }}</p>
     <p v-if="error" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ error }}</p>
 
+    <LoadingNote v-if="loading && !posture && !error" what="the security score" />
     <template v-if="posture">
       <section class="wolf-card flex flex-wrap items-baseline gap-x-8 gap-y-2" aria-label="Score">
         <div>

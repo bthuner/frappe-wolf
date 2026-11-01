@@ -3,9 +3,10 @@ import { PageHeader } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { clock, day, full } from '@/services/time'
 
 const route = useRoute()
@@ -16,11 +17,12 @@ const error = ref(null)
 
 async function load() {
   error.value = null
+  group.value = null // another fingerprint: never show the previous group under it
   try {
     group.value = await call('frappe_wolf.api.explore.get_error_group', { fingerprint: route.params.fingerprint })
   } catch (e) {
     group.value = null
-    error.value = e.status === 404 ? 'No error group with this fingerprint that you can see.' : e.message
+    error.value = e.status === 404 ? 'No error group with this fingerprint that you can see.' : failure(e, 'this error group')
   }
 }
 watch(() => route.params.fingerprint, load, { immediate: true })
@@ -39,10 +41,11 @@ const where = (s) => [s.site, s.bench, s.host].filter(Boolean).join(' · ')
     <PageTitle title="Error group" />
   </PageHeader>
   <section v-if="error" class="max-w-2xl p-5 text-base text-ink-gray-8">
-    <p>{{ error }}</p>
+    <p role="alert">{{ error }}</p>
     <RouterLink class="wolf-link" :to="{ name: 'errors' }">Back to errors</RouterLink>
   </section>
-  <div v-else-if="group" class="mx-auto max-w-6xl space-y-5 p-5">
+  <div v-else-if="!group" class="p-5"><LoadingNote what="the error group" /></div>
+  <div v-else class="mx-auto max-w-6xl space-y-5 p-5">
     <header class="wolf-card space-y-2">
       <SeverityGlyph :severity="group.severity" />
       <h1 class="text-xl font-semibold text-ink-gray-9">{{ group.title }}</h1>

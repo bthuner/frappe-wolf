@@ -113,11 +113,15 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 | `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed`, `backup_failed`, `email_queue_backlog`, `email_queue_error` |
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`, `process_down`       |
-| `security`        | `ssh_failed_login`, `ssh_root_login`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
+| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
 | `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
 `severity`: `info` | `warning` | `critical`.
+
+Security payloads may carry `attack_techniques`, a list of MITRE ATT&CK technique IDs
+(`T1110`, `T1552.001`). At ingest the app adds `mitre_attack`, a list of `{id, name, tactic}`
+merging those IDs with the category's own mapping ([cyber.md](cyber.md#5-mapping-reference)).
 
 Categories added with the infrastructure signals:
 
@@ -127,6 +131,10 @@ Categories added with the infrastructure signals:
 | `backup_failed` | site (Error Log hook) | an Error Log whose title/method names a backup (S3/Dropbox/Google Drive backup failures) or whose traceback goes through `frappe/utils/backups.py`; `critical` | as `traceback` events |
 | `email_queue_backlog` | site, every 5 min (satellites too) | Email Queue rows `Not Sent`/`Sending`, due, older than **Wolf Settings → Email Queue Stale Minutes** (default 30); one event per site, bumped while it lasts | `pending`, `oldest`, `stale_minutes`, `suspended` |
 | `email_queue_error` | site, every 5 min | Email Queue rows that went to `Error` in the last 15 min | `errors`, `latest` |
+| `ssh_login_after_failures` | agent (`source`: `sshd`) | a successful SSH login from an address with 5+ failures in the hour before; `critical` | `ip`, `users`, `failures_before` |
+| `sudo_failure` / `account_created` / `admin_group_change` | agent (`source`: `auth`) | failed sudo or user not in sudoers / `useradd` / user added to an admin group (`critical`) | `users`, `count`, `uid` / `group` |
+| `web_attack_probe` | agent (`source`: `nginx`) | requests matching probe rules, per (site, client) and push interval; `critical` from 50 | `ip`, `count`, `rules`, `statuses`, `targets`, `user_agents` |
+| `web_sensitive_file_exposed` | agent (`source`: `nginx`) | a secret-bearing file (`.env`, `.git/`, keys, dumps) answered with a 2xx; `critical` | as `web_attack_probe` |
 | `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 
 ### Metric names emitted by the agent

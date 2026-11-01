@@ -1,10 +1,12 @@
 """nginx access log parser: per-site request/5xx/502 counters plus aggregated 5xx events."""
 
+import ipaddress
 import os
 import re
 from datetime import datetime
 
 from ..util import event, fingerprint, metric, utc_iso
+from . import web_attacks
 
 # combined / common, optionally prefixed by `$host` (vhost_combined style) and
 # followed by extra quoted fields such as `"$http_x_forwarded_for"` or `"$host"`.
@@ -21,6 +23,8 @@ _PILOT_RE = re.compile(
 _QUOTED_RE = re.compile(r'"([^"]*)"')
 CRITICAL_STATUSES = {502, 503, 504}
 MAX_SAMPLES = 3
+# distinct (site, client) probe groups kept per interval: a distributed scan cannot grow memory
+MAX_PROBE_GROUPS = 500
 
 
 def parse_line(line):
@@ -48,9 +52,32 @@ def parse_line(line):
 		"timestamp": ts,
 		"method": method,
 		"route": target.split("?", 1)[0],
+		"target": target[: web_attacks.MAX_TARGET],
 		"status": int(m.group("status")),
+		"user_agent": m.groupdict().get("agent"),
 		"extra": _QUOTED_RE.findall(m.group("rest") or ""),
 	}
+
+
+def _ip(value):
+	try:
+		return ipaddress.ip_address((value or "").strip())
+	except ValueError:
+		return None
+
+
+def client_address(parsed):
+	"""The client of a request: `$remote_addr`, or the first X-Forwarded-For address logged
+	after it when `$remote_addr` is a loopback/private proxy. A public `$remote_addr` is never
+	replaced: the header is set by the client and could be forged."""
+	remote = parsed["remote_addr"]
+	addr = _ip(remote)
+	if addr is not None and (addr.is_loopback or addr.is_private):
+		for value in parsed["extra"]:
+			forwarded = _ip(value.split(",", 1)[0])
+			if forwarded is not None and not (forwarded.is_loopback or forwarded.is_unspecified):
+				return str(forwarded)
+	return remote
 
 
 class NginxParser:
@@ -77,6 +104,7 @@ class NginxParser:
 	def _reset(self):
 		self.counts = {}  # site -> [requests, 5xx, 502]
 		self.errors = {}
+		self.probes = {}  # (site, client, exposed) -> aggregate
 
 	def _site_from_path(self, path):
 		if not path:
@@ -113,6 +141,7 @@ class NginxParser:
 		counts = self.counts.setdefault(site, [0, 0, 0])
 		counts[0] += 1
 		status = parsed["status"]
+		self._probe(site, parsed, line)
 		if status < 500:
 			return
 		counts[1] += 1
@@ -125,6 +154,74 @@ class NginxParser:
 		err["count"] += 1
 		if len(err["samples"]) < MAX_SAMPLES:
 			err["samples"].append(line.strip()[:1000])
+
+	def _probe(self, site, parsed, line):
+		rules = web_attacks.classify(parsed["method"], parsed["target"], parsed["status"], parsed["user_agent"])
+		if not rules:
+			return
+		client = client_address(parsed)
+		key = (site, client, web_attacks.exposed(rules, parsed["status"]))
+		g = self.probes.get(key)
+		if g is None:
+			if len(self.probes) >= MAX_PROBE_GROUPS:
+				return
+			g = self.probes[key] = {
+				"count": 0, "timestamp": parsed["timestamp"], "rules": {}, "statuses": {},
+				"targets": [], "user_agents": [], "samples": [],
+			}  # fmt: skip
+		g["count"] += 1
+		for rule in rules:
+			g["rules"][rule] = g["rules"].get(rule, 0) + 1
+		status = str(parsed["status"])
+		g["statuses"][status] = g["statuses"].get(status, 0) + 1
+		if parsed["target"] not in g["targets"] and len(g["targets"]) < 10:
+			g["targets"].append(parsed["target"])
+		ua = (parsed["user_agent"] or "")[:200]
+		if ua and ua not in g["user_agents"] and len(g["user_agents"]) < 3:
+			g["user_agents"].append(ua)
+		if len(g["samples"]) < MAX_SAMPLES:
+			g["samples"].append(line.strip()[:1000])
+
+	def _probe_events(self, ts):
+		events = []
+		for (site, client, is_exposed), g in self.probes.items():
+			rules = sorted(g["rules"], key=lambda r: (-g["rules"][r], r))
+			if is_exposed:
+				category = "web_sensitive_file_exposed"
+				severity = "critical"
+				title = f"Sensitive file served to {client}: {g['targets'][0]}"
+			else:
+				category = "web_attack_probe"
+				severity = "critical" if g["count"] >= web_attacks.CRITICAL_THRESHOLD else "warning"
+				title = f"{g['count']} web attack probe(s) from {client} ({', '.join(rules[:3])})"
+			events.append(
+				event(
+					"security",
+					category,
+					severity,
+					g["timestamp"] or ts,
+					self.host,
+					title[:140],
+					fingerprint(site, category, client),
+					{
+						"ip": client,
+						"count": g["count"],
+						"rules": g["rules"],
+						"attack_techniques": sorted(
+							{web_attacks.ATTACK_TECHNIQUES[r] for r in rules if r in web_attacks.ATTACK_TECHNIQUES}
+						),
+						"statuses": g["statuses"],
+						"targets": g["targets"],
+						"user_agents": g["user_agents"],
+						"sample_lines": g["samples"],
+						"log_file": self.log_file,
+					},
+					source="nginx",
+					bench=self.bench_for(site),
+					site=site,
+				)
+			)
+		return events
 
 	def drain(self, now=None):
 		ts = utc_iso(now)
@@ -162,5 +259,6 @@ class NginxParser:
 					site=site,
 				)
 			)
+		events.extend(self._probe_events(ts))
 		self._reset()
 		return metrics, events

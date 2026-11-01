@@ -38,6 +38,17 @@ class TestPresets(unittest.TestCase):
 		for category in ("backup_failed", "email_queue_backlog", "email_queue_error", "admin_login_new_country"):
 			self.assertTrue(any(p.get("event_category") == category for p in PRESETS), category)
 
+	def test_cyber_presets_map_to_attack(self):
+		from frappe_wolf.wolf import attack
+
+		security = [p for p in PRESETS if p.get("event_type") == "security"]
+		for p in security:
+			with self.subTest(p["rule_name"]):
+				self.assertIn(p["event_category"], attack.CATEGORIES)
+		for category in ("ssh_login_after_failures", "sudo_failure", "account_created", "admin_group_change",
+		                 "web_attack_probe", "web_sensitive_file_exposed"):  # fmt: skip
+			self.assertTrue(any(p.get("event_category") == category for p in security), category)
+
 	def test_low_is_bad_presets_breach_when_value_drops(self):
 		workers = next(p for p in PRESETS if p.get("metric_name") == "rq_workers")
 		self.assertTrue(conditions.is_breached({"value": 0, "samples": 3}, workers["operator"], workers["threshold"], 3))

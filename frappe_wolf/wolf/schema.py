@@ -8,6 +8,8 @@ import json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from frappe_wolf.wolf import attack
+
 EVENT_TYPES = ("error", "cron_failure", "worker_failure", "security", "host_metric_alert", "deployment")
 SEVERITIES = ("info", "warning", "critical")
 SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITIES)}
@@ -136,6 +138,8 @@ def normalize_event(raw, tz_name, now, default_host=None):
 		count = 1
 	host = _text(raw.get("host")) or default_host
 	category = _text(raw.get("category"))
+	if event_type == "security":
+		payload = attack.enrich(category, payload)
 	title = _text(raw.get("title"), 255) or f"{event_type} on {raw.get('site') or host or 'unknown'}"
 	return {
 		"event_type": event_type,

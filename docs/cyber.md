@@ -186,14 +186,26 @@ Security Advisories, and the System Settings checks of sites other than the Wolf
 need Wolf installed there; satellites forward events, not settings). A listening socket is not
 proof of reachability: a firewall may block it.
 
-### Step 4: deception and threat intelligence
+### Step 4: deception and threat intelligence (built, except CrowdSec)
 
-- **Honeytokens**: a decoy Frappe user (any login attempt on it is critical), a decoy API key,
-  and a decoy route (`/app/…`) linked from nowhere. They cost nothing and produce no false
-  positives.
-- **IP reputation**: offline lists refreshed daily (FireHOL level 1, abuse.ch Feodo, Spamhaus
-  DROP). Security events whose `ip` is listed are tagged and their severity raised.
-- **CrowdSec** (optional): Wolf sends its detections to it and reads its decisions back.
+Wolf Settings → **Threat intelligence and deception** (`frappe_wolf/api/threat.py`,
+`wolf/reputation.py`):
+
+- **Honeytokens**, each touch a critical `honeytoken_triggered` event (preset *Honeytoken
+  touched*), once per token and address every 10 minutes:
+  - **Decoy users**: any login attempt on them, failed or not (Activity Log).
+  - **Decoy API keys**: any request whose `Authorization` header (`token key:secret` or Basic)
+    carries one. The check runs in `before_request`, before Frappe rejects the unknown key, and
+    commits the event at once. Do not create the key on a real user.
+  - **Decoy paths**: any request for a path linked from nowhere, such as `/app/backup-admin`.
+  Nobody legitimate knows them, so they produce no false positives.
+- **IP reputation** (off by default): once a day `refresh_reputation` downloads the listed
+  blocklists (`name url` or a file path per line; FireHOL level 1 and Spamhaus DROP prefilled)
+  into `private/wolf/ip_reputation.json`. At ingest a security event whose payload `ip` is on a
+  list gets `reputation: {listed, lists}` and one severity step more. Lookups never leave the
+  site; a list that fails to download keeps its last copy. Check its terms of use before
+  enabling a list.
+- Not built: **CrowdSec** (sending Wolf's detections and reading its decisions back).
 
 ### Step 5: human-validated response
 

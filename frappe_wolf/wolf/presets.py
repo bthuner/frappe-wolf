@@ -379,6 +379,15 @@ PRESETS = [
 		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "site",
 		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
 	},
+	# --- deception: honeytokens (Wolf Settings → Threat intelligence and deception) ---
+	{
+		"rule_name": "Honeytoken touched",
+		"description": "A decoy user, API key or path was used. Nobody legitimate knows them: treat it "
+		"as an intrusion until proven otherwise.",
+		"signal_type": "event", "event_type": "security", "event_category": "honeytoken_triggered",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
 	# --- compliance: NIS2 / GDPR deadlines on flagged incidents (api/compliance.py) ---
 	{
 		"rule_name": "Regulatory deadline",

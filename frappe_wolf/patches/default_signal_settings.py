@@ -5,6 +5,8 @@ DEFAULTS = {
 	"email_queue_stale_minutes": 30,
 	"capture_admin_countries": 1,
 	"capture_app_security": 1,
+	"ip_reputation_sources": "firehol_level1 https://iplists.firehol.org/files/firehol_level1.netset\n"
+	"spamhaus_drop https://www.spamhaus.org/drop/drop.txt",
 }
 
 

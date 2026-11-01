@@ -51,6 +51,18 @@
   "honeytoken_users",
   "honeytoken_api_keys",
   "honeytoken_paths",
+  "siem_section",
+  "siem_enabled",
+  "siem_host",
+  "siem_port",
+  "siem_transport",
+  "siem_verify_tls",
+  "cb_siem",
+  "siem_format",
+  "siem_min_severity",
+  "siem_event_types",
+  "siem_journal",
+  "siem_cursor",
   "retention_section",
   "raw_retention_hours",
   "minute_retention_days",
@@ -363,6 +375,91 @@
    "label": "Decoy paths"
   },
   {
+   "collapsible": 1,
+   "fieldname": "siem_section",
+   "fieldtype": "Section Break",
+   "label": "SIEM export (syslog)",
+   "description": "Send security events, and the journal, to UniSOC, Wazuh, Graylog or any syslog collector: RFC 5424 carrying CEF or OCSF JSON."
+  },
+  {
+   "default": "0",
+   "fieldname": "siem_enabled",
+   "fieldtype": "Check",
+   "label": "Export to a SIEM"
+  },
+  {
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_host",
+   "fieldtype": "Data",
+   "label": "Collector host"
+  },
+  {
+   "default": "514",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_port",
+   "fieldtype": "Int",
+   "label": "Port"
+  },
+  {
+   "default": "tcp",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "TCP and TLS use octet-counted frames (RFC 6587). UDP may drop or cut messages.",
+   "fieldname": "siem_transport",
+   "fieldtype": "Select",
+   "label": "Transport",
+   "options": "tcp\ntls\nudp"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.siem_enabled && doc.siem_transport == 'tls'",
+   "fieldname": "siem_verify_tls",
+   "fieldtype": "Check",
+   "label": "Verify the collector's certificate"
+  },
+  {
+   "fieldname": "cb_siem",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "ocsf",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_format",
+   "fieldtype": "Select",
+   "label": "Format",
+   "options": "ocsf\ncef"
+  },
+  {
+   "default": "warning",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_min_severity",
+   "fieldtype": "Select",
+   "label": "Minimum severity",
+   "options": "info\nwarning\ncritical"
+  },
+  {
+   "default": "security",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "Comma-separated: security, error, cron_failure, worker_failure, host_metric_alert, deployment.",
+   "fieldname": "siem_event_types",
+   "fieldtype": "Data",
+   "label": "Event types"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "Also send every signed journal entry (seq, digest, mac): an external copy of the chain.",
+   "fieldname": "siem_journal",
+   "fieldtype": "Check",
+   "label": "Send the journal"
+  },
+  {
+   "fieldname": "siem_cursor",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "SIEM cursor",
+   "read_only": 1
+  },
+  {
    "fieldname": "retention_section",
    "fieldtype": "Section Break",
    "label": "Retention"
@@ -424,7 +521,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 12:00:00.000000",
+ "modified": "2026-11-01 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

@@ -267,8 +267,19 @@ result; read-only for everyone) and a comment on the incident.
     `--anchor`. The SIEM export below sends every entry out, which is the best anchor.
   - Entries are read-only through Frappe (edits and deletions are refused) and kept forever:
     there is no purge yet.
-- **SOC export**: syslog (RFC 5424) with CEF or OCSF JSON per event, so UniSOC, Wazuh or any
-  SIEM can ingest Wolf with no custom connector.
+- **SOC export (built)** (`wolf/siem.py`, `api/siem.py`, Wolf Settings → SIEM export).
+  Every minute, the security events (or the types you list) at or above a minimum severity,
+  and every signed journal entry, go to a syslog collector: RFC 5424 (facility local0)
+  carrying **OCSF** JSON (Detection Finding, class 2004, ATT&CK techniques in
+  `finding_info.attacks`, Wolf's site / bench / payload under `unmapped`) or **CEF** (ATT&CK
+  in `cs4`, reputation lists in `cs5`), over TCP, TLS (octet-counted frames, RFC 6587) or UDP.
+  UniSOC, Wazuh, Graylog or any SIEM ingests it with no custom connector.
+  - A cursor moves only after a batch is sent: a collector that is down delays the export,
+    nothing is skipped. A failure mid-batch can send a message twice (at least once).
+  - The journal entries (seq, digest, prev_mac, mac) give the SIEM an external copy of the chain:
+    the anchor Wolf cannot rewrite.
+  - Payloads go out as they are stored (already scrubbed by the agent), cut at 4 KB. The OCSF
+    mapping is Wolf's reading of the schema, not a certified profile.
 
 ## 5. Mapping reference
 

@@ -231,6 +231,10 @@ stays in the site config. `bench --site <site> wolf-verify-journal [--anchor seq
 nothing was edited, removed or reordered; copy the anchor shown on **Wolf → Security**
 somewhere Wolf cannot write. See [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
 
+**SIEM export** (Wolf Settings → SIEM export, off by default): security events and the journal
+go every minute to a syslog collector (UniSOC, Wazuh, Graylog...) as RFC 5424 carrying OCSF JSON
+or CEF, over TCP, TLS or UDP. Nothing is skipped while the collector is down.
+
 **Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
 history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
 ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the

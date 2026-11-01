@@ -348,9 +348,11 @@ def name_passes(res, metrics, start, end):
 		ranges.append(f"(`name` >= %(name_lo{i})s and `name` < %(name_hi{i})s)")
 	passes = [(f"({' or '.join(ranges)})", params)]
 	if _has_legacy_names():
-		# through a function, so it filters the rows the bucket indexes find: as a primary key range
-		# it could be read as one, over every row named before #56 (millions on an upgraded site)
-		passes.append(("left(`name`, 1) < %(legacy_below)s", {"legacy_below": storage.LEGACY_ROLLUP_NAMES_BELOW}))
+		# a plain range, so MariaDB weighs it against the bucket indexes: it reads the old rows by
+		# primary key when they are few, through (resolution, metric_name, bucket_start) when they
+		# are many. Through a function (left(name, 1)) it could only take the index: 1.15 s instead
+		# of 0.77 s for the explorer's 24 h with 153 k old rows (docs/load-test.md)
+		passes.append(("`name` < %(legacy_below)s", {"legacy_below": storage.LEGACY_ROLLUP_NAMES_BELOW}))
 	return passes
 
 

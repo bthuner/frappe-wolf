@@ -118,7 +118,8 @@ a.wolf-link {
   background: var(--wolf-surface);
   outline: 2px solid var(--wolf-brand-text);
 }
-.wolf-row-context .wolf-row-time,
+/* context rows are told apart by their relation badge and a dimmed icon; their time keeps the
+   muted colour (dimmed, it fell to 2.8:1, under WCAG's 4.5:1: found by the axe browser test) */
 .wolf-row-context .wolf-row-icon {
   opacity: 0.65;
 }
@@ -177,4 +178,12 @@ a.wolf-link {
 .wolf-live[data-state='live']::before {
   background: var(--wolf-brand, #035aec);
   border-color: var(--wolf-brand, #035aec);
+}
+
+/* Wolf paints the sidebar with --wolf-bg (--surface-sidebar above), on which frappe-ui's
+   --ink-gray-5 (its section labels, "Explore", "Wolf") is 3.7:1 in light and 4.45:1 in dark,
+   under WCAG's 4.5:1 (found by the axe browser test). The Wolf muted tone passes in both
+   themes; remapped on the sidebar, it fixes every --ink-gray-5 text there at once. */
+[data-slot='sidebar'] {
+  --ink-gray-5: var(--wolf-muted);
 }

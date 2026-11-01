@@ -1,0 +1,187 @@
+{
+ "actions": [],
+ "autoname": "WRA-.#####",
+ "creation": "2026-11-01 12:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "action",
+  "target",
+  "status",
+  "incident",
+  "cb_1",
+  "agent",
+  "host",
+  "bench",
+  "site",
+  "duration_hours",
+  "audit_section",
+  "approved_by",
+  "approved_at",
+  "applied_at",
+  "cb_2",
+  "expires_at",
+  "reason",
+  "result"
+ ],
+ "fields": [
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Action",
+   "options": "block_ip\ndisable_user\nlogout_sessions\nrevoke_api_keys",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Target",
+   "description": "IP address (block_ip) or user (the other actions).",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Approved\nApplied\nFailed\nExpired",
+   "default": "Approved",
+   "description": "Approved: a Wolf Manager confirmed it; block_ip then waits for the agent's next push. Applied / Failed: the result. Expired: the block's time is over."
+  },
+  {
+   "fieldname": "incident",
+   "fieldtype": "Link",
+   "label": "Incident",
+   "options": "Wolf Incident",
+   "search_index": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "agent",
+   "fieldtype": "Link",
+   "label": "Agent",
+   "options": "Wolf Agent",
+   "description": "block_ip: the agent that applies it on its host."
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host"
+  },
+  {
+   "fieldname": "bench",
+   "fieldtype": "Data",
+   "label": "Bench"
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site"
+  },
+  {
+   "fieldname": "duration_hours",
+   "fieldtype": "Int",
+   "label": "Duration (hours)",
+   "description": "block_ip only: the agent's nftables entry expires by itself."
+  },
+  {
+   "fieldname": "audit_section",
+   "fieldtype": "Section Break",
+   "label": "Audit"
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Link",
+   "label": "Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_at",
+   "fieldtype": "Datetime",
+   "label": "Approved At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_at",
+   "fieldtype": "Datetime",
+   "label": "Applied At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Expires At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Small Text",
+   "label": "Result",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-01 12:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Response Action",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf Manager",
+   "share": 0,
+   "write": 0
+  },
+  {
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "search_fields": "target,incident,host",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "target",
+ "track_changes": 1,
+ "description": "Audit trail of response actions a Wolf Manager approved. Created only through Wolf (api/response.py), never by hand."
+}

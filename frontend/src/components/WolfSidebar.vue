@@ -42,6 +42,7 @@ const menu = computed(() => [
       />
       <SidebarItem label="Events" icon="lucide-list" :route="{ name: 'events' }" />
       <SidebarItem label="Errors" icon="lucide-bug" :route="{ name: 'errors' }" />
+      <SidebarItem label="Security" icon="lucide-shield" :route="{ name: 'security' }" />
       <SidebarLabel>Explore</SidebarLabel>
       <SidebarItem label="Metrics" icon="lucide-chart-line" :route="{ name: 'metrics' }" />
       <SidebarItem label="Logs" icon="lucide-scroll-text" :route="{ name: 'logs' }" />

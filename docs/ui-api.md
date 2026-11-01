@@ -329,3 +329,47 @@ What each page does with a message:
 After a reconnect every page reconciles once, since messages sent while offline are lost. A
 poll or a reconnect never shows "changed": nothing is known to have changed. **Pause** holds
 messages (the page says changes are waiting) until **Resume**. Polling skips hidden tabs.
+
+## Security
+
+### `frappe_wolf.api.security.list_sites`
+
+Sites with a recent `site_config_risks` or `backup_age_hours` sample, plus the Wolf site itself
+(not on a satellite), filtered by the caller's access.
+
+### `frappe_wolf.api.security.get_posture`
+
+Argument: `site` (default: the Wolf site). Returns `site`, `local` (the Wolf site: System Settings
+are readable), `hosts`, `recent_hours`, `score`, `coverage`, `passed`, `failed`, `unknown` and
+`checks`: `{id, label, weight, status, evidence, fix}` with `status` `pass`, `fail` or `unknown`.
+The score is the weight passed over the total weight; an unknown check counts as not passed.
+Agent samples older than `recent_hours` (3) are not used. A site the caller may not see is a 403.
+The hourly `record_security_scores` job stores the score as the `security_score` metric.
+
+## Regulatory reporting
+
+`get_incident` returns `regulatory`: `null` when neither flag is set, else `{nis2, gdpr,
+reference, deadlines}`; each deadline is `{id, regime, label, due_at, done_at, status,
+estimated}` with `status` `open`, `due_soon` (within 6 h), `overdue`, `done` or `done_late`.
+
+### `frappe_wolf.api.compliance.get_report`
+
+Argument: `incident`. Returns `{incident, markdown}`: a draft with the facts, the deadlines,
+the timeline (linked events and comments, 100 each at most) and the postmortem's impact, root
+cause, lessons and action items. Read permission on the incident is enough. Nothing is sent.
+
+## Response actions
+
+### `frappe_wolf.api.response.get_response`
+
+Argument: `incident`. Returns `proposals` (`{action, target, agent, host, bench, site, reason,
+label}`, from the incident's security events, without the ones already approved or applied),
+`actions` (the incident's Wolf Response Action rows), `can_approve`, `default_hours`, `max_hours`.
+
+### `frappe_wolf.api.response.approve` (POST)
+
+Arguments: `incident`, `action` (`block_ip`, `disable_user`, `logout_sessions`,
+`revoke_api_keys`), `target`, `agent` (block_ip), `duration_hours` (block_ip, 1 to 168), `reason`.
+Wolf Manager / System Manager only. Refused targets (private or reserved address, Administrator,
+Guest, yourself) are a validation error and nothing is recorded. Returns the Wolf Response Action;
+user actions come back `Applied` or `Failed`, blocks `Approved` until the agent reports.

@@ -12,6 +12,8 @@ before customers notice, and keeps all data on your own Frappe site.
   DocTypes, evaluates alert rules every minute, and shows a timeline in Desk.
 - **Wolf Agent** (`agent/`): a stdlib-only Python daemon on each host. It tails nginx, bench and
   auth logs, reads `/proc`, and ships batches over HTTPS.
+- **Security**: web attack and host intrusion detection, MITRE ATT&CK tags on every security
+  event, and a roadmap towards a Frappe-native SOC layer: [`docs/cyber.md`](docs/cyber.md).
 - Wire protocol: [`docs/protocol.md`](docs/protocol.md). The design story is in the [making-of](https://bthuner.github.io/frappe-wolf/).
 
 ## Install the app
@@ -79,7 +81,12 @@ High load · Agent silent · Scheduler stalled · Background jobs failing · Lon
 job · No background workers · Queue Redis memory high · Queue Redis evicting keys · No backup for
 26 h · Backup failed · TLS certificate expiring within 14 days · TLS certificate expiring within 3
 days · Database connections high · Slow queries · Replication lag · Replication stopped · Bench
-process down · Email queue backlog · Email sending errors · Admin login from new country.
+process down · Email queue backlog · Email sending errors · Admin login from new country ·
+SSH login after brute force · Repeated sudo failures · New system account · User added to admin
+group · Web attack scan · Sensitive file served · Server Script can run new code · Client Script can
+run new code · System Console used · Security settings weakened · Permission rules changed · API key
+generated · Webhook to a new host · Security score low · Bench service exposed · Development
+settings in production.
 
 | Preset | Signal (source) | Fires when |
 |---|---|---|
@@ -97,6 +104,20 @@ process down · Email queue backlog · Email sending errors · Admin login from 
 | Bench process down | `bench_processes_down` (agent) | a supervisor/systemd process of the bench down for 3 min (critical) |
 | Email queue backlog / sending errors | `error` / `email_queue_backlog`, `email_queue_error` (site) | emails waiting longer than Email Queue Stale Minutes (30) / emails in Error in the last 15 min (warning) |
 | Admin login from new country | `security` / `admin_login_new_country` (site) | a privileged login from a country none of the user's earlier logins came from (critical, needs a GeoIP database) |
+| SSH login after brute force | `security` / `ssh_login_after_failures` (agent) | a login succeeded from an address that failed 5+ times in the hour before (critical) |
+| Repeated sudo failures | `security` / `sudo_failure` (agent) | 3+ failed sudo attempts in 10 min, per host (warning) |
+| New system account / User added to admin group | `security` / `account_created`, `admin_group_change` (agent) | `useradd` (warning) / a user joined sudo, wheel, docker... (critical) |
+| Web attack scan | `security` / `web_attack_probe` (agent, nginx) | 100+ probe requests (secrets, CMS panels, traversal, injections, scanners) in 10 min, per site (warning) |
+| Sensitive file served | `security` / `web_sensitive_file_exposed` (agent, nginx) | `.env`, `.git/`, keys or a dump answered with a 2xx (critical) |
+| Server / Client Script can run new code | `security` / `server_script_change`, `client_script_change` (site) | a script created, enabled, or its code, type or trigger changed (warning; the event is critical for API and scheduled Server Scripts or guest access) |
+| System Console used | `security` / `console_execution` (site) | a System Console run (Python or SQL) |
+| Security settings weakened | `security` / `security_settings_weakened` (site) | System Settings: 2FA or password policy off, lower password score, looser lockout, longer sessions, guest uploads, one-session or logout-on-reset off (critical) |
+| Permission rules changed | `security` / `permission_change` (site) | Role Permission Manager add/update/remove/reset, or a Role Profile that grants more roles |
+| API key generated | `security` / `api_key_generated` (site) | a new API secret written for a user (the event is critical for privileged users) |
+| Webhook to a new host | `security` / `webhook_external` (site) | a Webhook created, enabled or pointed at another host |
+| Security score low | `security_score` (app, hourly) | a site's score below 60 (see **Wolf → Security**) |
+| Bench service exposed | `exposed_services` (agent) | MariaDB, a bench Redis, socket.io or gunicorn listening beyond loopback (critical) |
+| Development settings in production | `site_config_risks` (agent) | `developer_mode`, `allow_tests`, plain-HTTP `host_name` or `allow_cors: "*"` |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 
@@ -189,6 +210,31 @@ On a **Wolf Incident** (Wolf Manager):
 (resolved − started) average, p50 and p90 in minutes, per site, bench, host, rule or severity over
 a date range. Merged incidents are left out so an outage counts once.
 
+**Regulatory reporting (NIS2 / GDPR)**: tick *Significant incident (NIS2 Art. 23)* or
+*Personal data breach (GDPR Art. 33)* on an incident to start its deadlines: early warning 24 h,
+notification 72 h and final report one month after the notification for NIS2; notification to
+the authority (CNIL) within 72 h for GDPR. They are shown on the incident (Desk and Wolf UI);
+the **Regulatory deadline** preset alerts 6 h before each one and when it passes, and
+*Regulatory report* drafts the facts, timeline and measures in Markdown. Wolf tracks dates only:
+it does not decide what is reportable and sends nothing to an authority. See
+[`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
+
+**Deception and IP reputation** (Wolf Settings → Threat intelligence and deception): decoy users,
+API keys and paths raise a critical `honeytoken_triggered` event on any use (preset *Honeytoken
+touched*). With **Use IP reputation lists** on, blocklists (FireHOL level 1 and Spamhaus DROP
+prefilled) are downloaded daily and security events from a listed IP are tagged and raised one
+severity step. See [`docs/cyber.md`](docs/cyber.md#step-4-deception-and-threat-intelligence-built-except-crowdsec).
+
+**Tamper-evident journal**: security events, incident decisions, response actions, comments and
+Wolf Settings changes are recorded in **Wolf Journal Entry** and chained with an HMAC whose key
+stays in the site config. `bench --site <site> wolf-verify-journal [--anchor seq:mac]` proves
+nothing was edited, removed or reordered; copy the anchor shown on **Wolf → Security**
+somewhere Wolf cannot write. See [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
+
+**SIEM export** (Wolf Settings → SIEM export, off by default): security events and the journal
+go every minute to a syslog collector (UniSOC, Wazuh, Graylog...) as RFC 5424 carrying OCSF JSON
+or CEF, over TCP, TLS or UDP. Nothing is skipped while the collector is down.
+
 **Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
 history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
 ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the
@@ -246,8 +292,12 @@ a few hundred hosts, the Frappe tables above are enough and keep Wolf a plain Fr
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),
 Error Logs (failed backups as `backup_failed`), failed desk logins, privileged logins from a new IP
-or a new country, privileged role grants, Email Queue backlogs and sending errors, and each
-`bench migrate` (as a deployment). Each signal can be turned off in Wolf Settings.
+or a new country, privileged role grants, Email Queue backlogs and sending errors, each
+`bench migrate` (as a deployment) and risky application changes: Server/Client Scripts that can
+run new code, System Console runs, permission rule and Role Profile changes, weakened System
+Settings, API keys generated and Webhooks to a new host (**Flag risky application changes**).
+Script events carry the first 300 characters of the code, so a script holding a secret puts part
+of it in the event. Each signal can be turned off in Wolf Settings.
 
 **Admin login from a new country** needs an offline GeoIP database on the server; Wolf never calls
 an online lookup service. Set **Wolf Settings → GeoIP Database** to the path of either:

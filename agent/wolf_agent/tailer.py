@@ -96,14 +96,23 @@ class FileTailer:
 			self.fh = None
 
 
-class JournalTailer:
-	"""Streams `journalctl -f` output through a background reader thread."""
+# syslog identifiers the auth parser reads: sshd (`sshd-session` since OpenSSH 9.8), sudo and
+# the shadow-utils account tools
+JOURNAL_IDENTIFIERS = ("sshd", "sshd-session", "sudo", "useradd", "usermod", "gpasswd")
 
-	def __init__(self, units=("ssh", "sshd")):
-		self.cmd = ["journalctl", "-f", "-n", "0", "-o", "cat"]
-		for unit in units:
-			self.cmd += ["-u", unit]
-		self.path = "journal:" + ",".join(units)
+
+class JournalTailer:
+	"""Streams `journalctl -f` output through a background reader thread.
+
+	`-o short-iso` keeps the identifier (`sudo:`, `useradd[42]:`) and an ISO timestamp with
+	its offset on each line, as in auth.log, so the same parser reads both.
+	"""
+
+	def __init__(self, identifiers=JOURNAL_IDENTIFIERS):
+		self.cmd = ["journalctl", "-f", "-n", "0", "-o", "short-iso"]
+		for identifier in identifiers:
+			self.cmd += ["-t", identifier]
+		self.path = "journal:" + ",".join(identifiers)
 		self.queue = queue.Queue(maxsize=100000)
 		self.proc = None
 

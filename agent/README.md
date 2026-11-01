@@ -68,8 +68,23 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   interval, plus one aggregated event per (site, status, route). The site comes
   from `$host` when the log format includes it (leading vhost field or a trailing
   quoted field), else from a per-site log file name, else the bench's only site.
-- **sshd** (`/var/log/auth.log`, `/var/log/secure`, or `journalctl -u ssh -u sshd`):
-  failed logins aggregated per source IP, root logins.
+  The same lines feed **web attack detection**: requests probing for `.env`, `.git/`,
+  `site_config.json`, keys or dumps, CMS/admin panels (`wp-login.php`, `phpmyadmin`...), path
+  traversal, SQL/command/template injection, XSS, or sent by a scanner User-Agent (sqlmap,
+  nuclei...) become one `web_attack_probe` event per (site, client) and interval, with the
+  rules hit, statuses, targets and MITRE ATT&CK technique IDs. A secret-bearing file answered
+  with a 2xx is a separate critical `web_sensitive_file_exposed` event. Attachments
+  (`/files`, `/private/files`) and authorized backup downloads (`/backups`) are not probes.
+  The client is `$remote_addr`, or, when `$remote_addr` is a loopback/private proxy, the
+  right-most public address of the `X-Forwarded-For` list logged after it (the one your proxy
+  appended; the left-most entries are written by the client). A 2xx under a route that answers
+  any sub-path with a page (`/app/`, `/wolf/`, `/api/`...) is not counted as a served file.
+- **Auth log** (`/var/log/auth.log`, `/var/log/secure`, or `journalctl -o short-iso -t sshd
+  -t sshd-session -t sudo -t useradd -t usermod -t gpasswd`): failed SSH logins aggregated per
+  source IP, root logins, a successful login from an address that failed 5+ times in the hour
+  before (`ssh_login_after_failures`, critical), failed sudo attempts and users outside
+  sudoers (`sudo_failure`), new local accounts (`account_created`) and users added to `sudo`,
+  `wheel`, `admin`, `root`, `adm`, `docker` or `lxd` (`admin_group_change`, critical).
 - **Redis / RQ** (the bench's `redis_queue`): `queue_length` for every `rq:queue:*` list;
   `rq_failed_jobs` (failed-job registry size) and `rq_failed_jobs_added` (its increase per push);
   `rq_long_running_jobs` (started jobs older than `rq.long_job_minutes`, default 30);
@@ -81,6 +96,13 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   never had a backup sends nothing, so "No backup for 26 h" cannot fire for it. Press benches are
   skipped (`backups.press`), since Press uploads backups offsite and its local copies are not a
   reliable signal. Offsite-only setups can point `backups.dirs` at a mounted directory per site.
+- **Exposure** (every `exposure.interval`, 10 min): `exposed_services` per host counts bench
+  ports listening on all interfaces or a public address in `/proc/net/tcp{,6}` (MariaDB 3306,
+  Postgres 5432, Redis 6379/11000/12000/13000 or the bench's own `redis_*` ports, socket.io 9000,
+  gunicorn 8000 or `webserver_port`; add more with `exposure.ports`). A LAN address is not
+  counted, and a firewall may still block what is counted. `site_config_risks` per site counts
+  `developer_mode`, `allow_tests`, a plain-HTTP `host_name` and `allow_cors: "*"`. Events
+  `service_exposed` and `insecure_site_config` are sent only when the set changes.
 - **TLS**: `tls_days_left` for every public site name and custom domain (`site_config.json`
   `domains`), every `tls.interval` (1 h), in a background thread. The agent connects to
   `<domain>:443` with SNI (or to `tls.connect_host`, e.g. `127.0.0.1`, to check the local nginx),
@@ -189,6 +211,26 @@ grouping and deduplication on the Wolf site work the same either way.
 
 Run `wolf-agent check` to see exactly what would be sent. Metrics carry no free text and are
 not scrubbed. Text you type yourself (`mark-deployment --note`) is sent as is.
+
+## Response actions (opt-in)
+
+A Wolf Manager can approve **Block IP for N hours** on an incident (Wolf UI → incident →
+Response). The agent receives it with its next push and reports the result. It does nothing
+unless you allow it on this host:
+
+```bash
+install -m 0755 -o root -g root agent/wolf-block.sh /usr/local/sbin/wolf-block
+echo 'wolf-agent ALL=(root) NOPASSWD: /usr/local/sbin/wolf-block' > /etc/sudoers.d/wolf-block
+chmod 0440 /etc/sudoers.d/wolf-block
+```
+
+then set `"response": {"enabled": true}` in the config and restart the agent. `wolf-block`
+adds the address to an nftables set (`inet wolf`, `blocked4` / `blocked6`) whose entries expire by
+themselves; `nft list table inet wolf` shows them. The agent refuses private, loopback and
+reserved addresses and durations over a week whatever the site sends, and runs the command as a
+list of arguments, never through a shell. `response.command` replaces the command (`{ip}` and
+`{seconds}` are filled in), e.g. for fail2ban. Without `response.enabled` each action comes back
+*Failed* with the reason, so the manager knows it was not applied.
 
 ## Watchdog
 

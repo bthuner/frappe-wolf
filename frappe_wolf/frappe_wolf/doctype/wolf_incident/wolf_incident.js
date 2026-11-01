@@ -43,8 +43,70 @@ frappe.ui.form.on("Wolf Incident", {
 			frappe.route_options = {};
 			frappe.set_route("wolf-overview");
 		});
+		if (frm.doc.nis2_significant || frm.doc.gdpr_breach) {
+			frm.add_custom_button(__("Regulatory report"), () => frm.trigger("regulatory_report"), __("Actions"));
+			frm.trigger("render_regulatory");
+		}
 		frm.trigger("render_timeline");
 		frm.trigger("render_deliveries");
+	},
+
+	nis2_significant(frm) {
+		frm.trigger("render_regulatory");
+	},
+
+	gdpr_breach(frm) {
+		frm.trigger("render_regulatory");
+	},
+
+	render_regulatory(frm) {
+		const field = frm.get_field("regulatory_html");
+		if (!field || frm.is_new()) return;
+		const esc = frappe.wolf.esc;
+		const STATUS = {
+			open: __("open"), due_soon: __("due within 6 h"), overdue: __("OVERDUE"),
+			done: __("sent on time"), done_late: __("sent late"),
+		};
+		frappe.call("frappe_wolf.api.compliance.get_deadlines", { incident: frm.doc.name }).then(({ message }) => {
+			if (!message.length) {
+				field.$wrapper.html(`<p class="text-muted">${__("Save to start the clocks.")}</p>`);
+				return;
+			}
+			const rows = message
+				.map((r) => {
+					const due = frappe.datetime.str_to_user(r.due_at) + (r.estimated ? ` (${__("estimated")})` : "");
+					const sent = r.done_at ? frappe.datetime.str_to_user(r.done_at) : "—";
+					const strong = r.status === "overdue" ? "font-weight:600;color:var(--red-600)" : "";
+					return `<tr><td>${esc(r.label)}</td><td>${esc(due)}</td><td>${esc(sent)}</td><td style="${strong}">${esc(STATUS[r.status])}</td></tr>`;
+				})
+				.join("");
+			field.$wrapper.html(
+				`<table class="table table-sm"><thead><tr><th>${__("Obligation")}</th><th>${__("Due")}</th><th>${__("Sent")}</th><th>${__("Status")}</th></tr></thead><tbody>${rows}</tbody></table>`
+			);
+		});
+	},
+
+	regulatory_report(frm) {
+		frappe
+			.call({ method: "frappe_wolf.api.compliance.get_report", args: { incident: frm.doc.name }, freeze: true })
+			.then(({ message }) => {
+				const d = new frappe.ui.Dialog({
+					title: __("Regulatory report draft"),
+					size: "extra-large",
+					fields: [
+						{
+							fieldtype: "HTML",
+							options: `<p class="text-muted">${__("A draft to start the authority's form from. Wolf sends nothing: check every fact first.")}</p>`,
+						},
+						{ fieldname: "markdown", fieldtype: "Code", options: "Markdown", read_only: 1, default: message.markdown },
+					],
+					primary_action_label: __("Copy"),
+					primary_action() {
+						frappe.utils.copy_to_clipboard(message.markdown);
+					},
+				});
+				d.show();
+			});
 	},
 
 	render_deliveries(frm) {

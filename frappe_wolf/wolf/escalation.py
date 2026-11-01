@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
-from frappe_wolf.wolf import conditions, notify, silences
+from frappe_wolf.wolf import conditions, live, notify, silences
 
 
 def run(now=None):
@@ -26,6 +26,7 @@ def run(now=None):
 		if silences.active_for(row, now):
 			continue
 		frappe.db.set_value("Wolf Incident", row.name, "escalated_at", now, update_modified=False)
+		live.incident_changed(row.name)
 		silences._comment(row.name, f"Not acknowledged after {row.escalate_after_minutes} min: escalated.")
 		notify.enqueue(row.name, "escalated")
 		escalated.append(row.name)

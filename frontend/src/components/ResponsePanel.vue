@@ -25,8 +25,10 @@ const STATUS = { Approved: 'Approved, waiting for the agent', Applied: 'Applied'
 async function load() {
   error.value = null
   try {
-    data.value = await call('frappe_wolf.api.response.get_response', { incident: props.incident })
-    hours.value = data.value.default_hours
+    const answer = await call('frappe_wolf.api.response.get_response', { incident: props.incident })
+    // an answer without the expected lists shows nothing rather than breaking the incident page
+    data.value = { ...answer, proposals: answer?.proposals || [], actions: answer?.actions || [] }
+    hours.value = answer?.default_hours || 24
   } catch (e) {
     error.value = e.message
   }

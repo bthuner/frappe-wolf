@@ -18,6 +18,11 @@ def get_boot_data():
 		server_version=__version__,
 		is_satellite=satellite.is_satellite(),
 		restricted=access.grants(user) is not None,
+		socketio={
+			"site": frappe.local.site,
+			"port": frappe.conf.socketio_port,
+			"dev_server": getattr(frappe.local, "dev_server", False),
+		},
 	)
 
 

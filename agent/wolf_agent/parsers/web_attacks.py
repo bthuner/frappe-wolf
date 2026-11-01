@@ -100,6 +100,14 @@ def classify(method, target, status=None, user_agent=None):
 	return matched
 
 
-def exposed(rules, status):
-	"""True when a secret-bearing file was answered with a 2xx (it was probably served)."""
-	return bool(status and 200 <= status < 300 and SENSITIVE_RULES.intersection(rules))
+# Frappe routes that answer 200 with a page for any sub-path (Desk, the Wolf UI, the API's own
+# errors): a 2xx there is an HTML page, not the file the probe asked for
+CATCH_ALL_PREFIXES = ("/app/", "/wolf/", "/desk/", "/api/", "/helpdesk/", "/crm/", "/hrms/", "/insights/", "/drive/")
+
+
+def exposed(rules, status, target=""):
+	"""True when a secret-bearing file was answered with a 2xx outside a catch-all route."""
+	if not (status and 200 <= status < 300 and SENSITIVE_RULES.intersection(rules)):
+		return False
+	path = _decode(target).split("?", 1)[0]
+	return not path.startswith(CATCH_ALL_PREFIXES)

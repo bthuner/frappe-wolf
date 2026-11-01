@@ -65,6 +65,10 @@ class TestClassify(unittest.TestCase):
 		self.assertTrue(web_attacks.exposed(["env_file"], 200))
 		self.assertFalse(web_attacks.exposed(["env_file"], 404))
 		self.assertFalse(web_attacks.exposed(["sql_injection"], 200))
+		# a catch-all route answers 200 with a page, not the file
+		self.assertFalse(web_attacks.exposed(["env_file"], 200, "/wolf/.env"))
+		self.assertFalse(web_attacks.exposed(["vcs_metadata"], 200, "/app/.git/config"))
+		self.assertTrue(web_attacks.exposed(["env_file"], 200, "/.env"))
 
 
 class TestNginxProbes(unittest.TestCase):
@@ -116,11 +120,12 @@ class TestNginxProbes(unittest.TestCase):
 
 	def test_client_behind_local_proxy(self):
 		p = self.parser()
-		p.feed(line("/.env", addr="127.0.0.1", xff="203.0.113.9, 10.0.0.1"))
+		# the client wrote 8.8.8.8 itself; the proxy appended the real address
+		p.feed(line("/.env", addr="127.0.0.1", xff="8.8.8.8, 45.33.32.156, 10.0.0.1"))
 		# a public remote_addr is never replaced by a header the client controls
 		p.feed(line("/.env", addr="93.184.216.34", xff="203.0.113.9"))
 		ips = sorted(e["payload"]["ip"] for e in p.drain(NOW)[1])
-		self.assertEqual(ips, ["203.0.113.9", "93.184.216.34"])
+		self.assertEqual(ips, ["45.33.32.156", "93.184.216.34"])
 
 	def test_probe_groups_bounded(self):
 		p = self.parser()

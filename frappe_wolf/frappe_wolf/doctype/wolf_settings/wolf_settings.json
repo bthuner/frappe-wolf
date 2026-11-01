@@ -62,7 +62,6 @@
   "siem_min_severity",
   "siem_event_types",
   "siem_journal",
-  "siem_cursor",
   "retention_section",
   "raw_retention_hours",
   "minute_retention_days",
@@ -453,13 +452,6 @@
    "label": "Send the journal"
   },
   {
-   "fieldname": "siem_cursor",
-   "fieldtype": "Small Text",
-   "hidden": 1,
-   "label": "SIEM cursor",
-   "read_only": 1
-  },
-  {
    "fieldname": "retention_section",
    "fieldtype": "Section Break",
    "label": "Retention"
@@ -521,7 +513,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 13:30:00.000000",
+ "modified": "2026-11-01 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

@@ -113,7 +113,7 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 | `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed`, `backup_failed`, `email_queue_backlog`, `email_queue_error` |
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`, `process_down`       |
-| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
+| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `server_script_change`, `client_script_change`, `console_execution`, `permission_change`, `security_settings_weakened`, `api_key_generated`, `webhook_external`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
 | `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
@@ -135,6 +135,12 @@ Categories added with the infrastructure signals:
 | `sudo_failure` / `account_created` / `admin_group_change` | agent (`source`: `auth`) | failed sudo or user not in sudoers / `useradd` / user added to an admin group (`critical`) | `users`, `count`, `uid` / `group` |
 | `web_attack_probe` | agent (`source`: `nginx`) | requests matching probe rules, per (site, client) and push interval; `critical` from 50 | `ip`, `count`, `rules`, `statuses`, `targets`, `user_agents` |
 | `web_sensitive_file_exposed` | agent (`source`: `nginx`) | a secret-bearing file (`.env`, `.git/`, keys, dumps) answered with a 2xx; `critical` | as `web_attack_probe` |
+| `server_script_change` / `client_script_change` | site (doc events) | a script created, enabled, or its code, type or trigger changed; `critical` for API / Scheduler Event Server Scripts and guest access | `script`, `change`, `script_type`, `reference_doctype`, `api_method`, `allow_guest`, `by`, `excerpt` |
+| `console_execution` | site (Console Log) | a System Console run | `console_log`, `by`, `type`, `committed`, `excerpt` |
+| `permission_change` | site (Role Permission Manager request, Role Profile) | a permission rule added, changed, removed or reset; a Role Profile created or granting more roles | `doctype`, `role`, `action`, `ptype`, `value` / `role_profile`, `roles`, `added` |
+| `security_settings_weakened` | site (System Settings) | a save that lowers a defence; `critical` | `changes` (`field`, `label`, `old`, `new`), `by` |
+| `api_key_generated` | site (User) | a new API secret; `critical` for privileged users | `user`, `api_key`, `privileged`, `by` |
+| `webhook_external` | site (Webhook) | a Webhook created, enabled or pointed at another host | `webhook`, `doctype`, `event`, `domain`, `previous_domain` |
 | `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 
 ### Metric names emitted by the agent

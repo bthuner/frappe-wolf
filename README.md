@@ -83,7 +83,9 @@ job · No background workers · Queue Redis memory high · Queue Redis evicting 
 days · Database connections high · Slow queries · Replication lag · Replication stopped · Bench
 process down · Email queue backlog · Email sending errors · Admin login from new country ·
 SSH login after brute force · Repeated sudo failures · New system account · User added to admin
-group · Web attack scan · Sensitive file served.
+group · Web attack scan · Sensitive file served · Server Script can run new code · Client Script can
+run new code · System Console used · Security settings weakened · Permission rules changed · API key
+generated · Webhook to a new host.
 
 | Preset | Signal (source) | Fires when |
 |---|---|---|
@@ -106,6 +108,12 @@ group · Web attack scan · Sensitive file served.
 | New system account / User added to admin group | `security` / `account_created`, `admin_group_change` (agent) | `useradd` (warning) / a user joined sudo, wheel, docker... (critical) |
 | Web attack scan | `security` / `web_attack_probe` (agent, nginx) | 100+ probe requests (secrets, CMS panels, traversal, injections, scanners) in 10 min, per site (warning) |
 | Sensitive file served | `security` / `web_sensitive_file_exposed` (agent, nginx) | `.env`, `.git/`, keys or a dump answered with a 2xx (critical) |
+| Server / Client Script can run new code | `security` / `server_script_change`, `client_script_change` (site) | a script created, enabled, or its code, type or trigger changed (warning; the event is critical for API and scheduled Server Scripts or guest access) |
+| System Console used | `security` / `console_execution` (site) | a System Console run (Python or SQL) |
+| Security settings weakened | `security` / `security_settings_weakened` (site) | System Settings: 2FA or password policy off, lower password score, looser lockout, longer sessions, guest uploads, one-session or logout-on-reset off (critical) |
+| Permission rules changed | `security` / `permission_change` (site) | Role Permission Manager add/update/remove/reset, or a Role Profile that grants more roles |
+| API key generated | `security` / `api_key_generated` (site) | a new API secret written for a user (the event is critical for privileged users) |
+| Webhook to a new host | `security` / `webhook_external` (site) | a Webhook created, enabled or pointed at another host |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 
@@ -255,8 +263,12 @@ a few hundred hosts, the Frappe tables above are enough and keep Wolf a plain Fr
 
 Without any agent, the site running Frappe Wolf records failed Scheduled Job Logs (`cron_failure`),
 Error Logs (failed backups as `backup_failed`), failed desk logins, privileged logins from a new IP
-or a new country, privileged role grants, Email Queue backlogs and sending errors, and each
-`bench migrate` (as a deployment). Each signal can be turned off in Wolf Settings.
+or a new country, privileged role grants, Email Queue backlogs and sending errors, each
+`bench migrate` (as a deployment) and risky application changes: Server/Client Scripts that can
+run new code, System Console runs, permission rule and Role Profile changes, weakened System
+Settings, API keys generated and Webhooks to a new host (**Flag risky application changes**).
+Script events carry the first 300 characters of the code, so a script holding a secret puts part
+of it in the event. Each signal can be turned off in Wolf Settings.
 
 **Admin login from a new country** needs an offline GeoIP database on the server; Wolf never calls
 an online lookup service. Set **Wolf Settings → GeoIP Database** to the path of either:

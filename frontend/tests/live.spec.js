@@ -247,8 +247,18 @@ describe('IncidentPage live', () => {
     expect(page.text()).toContain('502 event:E2')
     const reveal = page.findAll('button').find((b) => b.text() === '1 new row: show')
     expect(reveal).toBeTruthy()
-    await reveal.trigger('click')
-    await flushPromises()
+    // jsdom has no scrollIntoView: record where the button takes the reader
+    const scrolled = []
+    Element.prototype.scrollIntoView = function () {
+      scrolled.push(this.id)
+    }
+    try {
+      await reveal.trigger('click')
+      await flushPromises()
+    } finally {
+      delete Element.prototype.scrollIntoView
+    }
+    expect(scrolled).toEqual(['row-event-E2'])
     expect(page.findAll('button').some((b) => b.text().includes('new row'))).toBe(false)
   })
 })

@@ -321,3 +321,9 @@ First demo scenario
         Incident timeline in Wolf.
 
         Alerts emitted to email/Raven.
+
+Commit and PR attribution
+
+    Every commit message and pull request description ends with the single line "Co-authored with AI".
+
+    Never add "Co-Authored-By: Claude", "Claude-Session" links, "Generated with Claude Code" or any other Claude/Anthropic mention to commits, PRs or files in this repository.

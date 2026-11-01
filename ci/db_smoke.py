@@ -1201,7 +1201,12 @@ def main():
 
 		sent = []
 		original = frappe.publish_realtime
-		frappe.publish_realtime = lambda event, message=None, room=None, **kw: sent.append((event, message, room))
+
+		def record(event=None, message=None, room=None, **kw):
+			if event == live.EVENT:  # Frappe's own docinfo/doc/list updates are not Wolf's
+				sent.append((event, message, room))
+
+		frappe.publish_realtime = record
 		cache = frappe.cache()
 		for kind in live.LIST_DOCTYPES:
 			cache.delete_value(live._THROTTLE_KEY + kind)

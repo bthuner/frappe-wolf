@@ -59,6 +59,8 @@ DEFAULTS = {
 	# services listening beyond loopback and risky site_config settings (exposure.py);
 	# `ports` adds {port: "service name"} to watch
 	"exposure": {"enabled": True, "interval": 600, "ports": {}},
+	# response actions a Wolf Manager approved (responder.py): off unless you turn it on
+	"response": {"enabled": False, "command": ["sudo", "-n", "/usr/local/sbin/wolf-block", "{ip}", "{seconds}"]},
 	# alerts when the Wolf site itself stops working, sent without going through it
 	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
 	# PII/secret scrubbing of event titles and payloads before they are shipped (scrub.py).

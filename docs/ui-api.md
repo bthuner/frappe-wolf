@@ -320,3 +320,19 @@ estimated}` with `status` `open`, `due_soon` (within 6 h), `overdue`, `done` or 
 Argument: `incident`. Returns `{incident, markdown}`: a draft with the facts, the deadlines,
 the timeline (linked events and comments, 100 each at most) and the postmortem's impact, root
 cause, lessons and action items. Read permission on the incident is enough. Nothing is sent.
+
+## Response actions
+
+### `frappe_wolf.api.response.get_response`
+
+Argument: `incident`. Returns `proposals` (`{action, target, agent, host, bench, site, reason,
+label}`, from the incident's security events, without the ones already approved or applied),
+`actions` (the incident's Wolf Response Action rows), `can_approve`, `default_hours`, `max_hours`.
+
+### `frappe_wolf.api.response.approve` (POST)
+
+Arguments: `incident`, `action` (`block_ip`, `disable_user`, `logout_sessions`,
+`revoke_api_keys`), `target`, `agent` (block_ip), `duration_hours` (block_ip, 1 to 168), `reason`.
+Wolf Manager / System Manager only. Refused targets (private or reserved address, Administrator,
+Guest, yourself) are a validation error and nothing is recorded. Returns the Wolf Response Action;
+user actions come back `Applied` or `Failed`, blocks `Approved` until the agent reports.

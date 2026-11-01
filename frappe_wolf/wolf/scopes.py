@@ -16,6 +16,7 @@ COLUMNS = {
 	"Wolf Metric Rollup": _SCOPED,
 	"Wolf Incident": _SCOPED,
 	"Wolf Silence": _SCOPED,
+	"Wolf Response Action": _SCOPED,
 	# an agent's hostname is its host; a satellite's hostname is its site name
 	"Wolf Agent": {"host": "hostname", "site": "hostname"},
 }

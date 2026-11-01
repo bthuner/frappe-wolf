@@ -210,6 +210,26 @@ grouping and deduplication on the Wolf site work the same either way.
 Run `wolf-agent check` to see exactly what would be sent. Metrics carry no free text and are
 not scrubbed. Text you type yourself (`mark-deployment --note`) is sent as is.
 
+## Response actions (opt-in)
+
+A Wolf Manager can approve **Block IP for N hours** on an incident (Wolf UI → incident →
+Response). The agent receives it with its next push and reports the result. It does nothing
+unless you allow it on this host:
+
+```bash
+install -m 0755 -o root -g root agent/wolf-block.sh /usr/local/sbin/wolf-block
+echo 'wolf-agent ALL=(root) NOPASSWD: /usr/local/sbin/wolf-block' > /etc/sudoers.d/wolf-block
+chmod 0440 /etc/sudoers.d/wolf-block
+```
+
+then set `"response": {"enabled": true}` in the config and restart the agent. `wolf-block`
+adds the address to an nftables set (`inet wolf`, `blocked4` / `blocked6`) whose entries expire by
+themselves; `nft list table inet wolf` shows them. The agent refuses private, loopback and
+reserved addresses and durations over a week whatever the site sends, and runs the command as a
+list of arguments, never through a shell. `response.command` replaces the command (`{ip}` and
+`{seconds}` are filled in), e.g. for fail2ban. Without `response.enabled` each action comes back
+*Failed* with the reason, so the manager knows it was not applied.
+
 ## Watchdog
 
 Wolf alerts are sent by the Wolf site. When that site, its database or its scheduler

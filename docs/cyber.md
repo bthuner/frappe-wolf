@@ -207,14 +207,27 @@ Wolf Settings → **Threat intelligence and deception** (`frappe_wolf/api/threat
   enabling a list.
 - Not built: **CrowdSec** (sending Wolf's detections and reading its decisions back).
 
-### Step 5: human-validated response
+### Step 5: human-validated response (built, except signed links)
 
-Wolf reuses the signed action links that already acknowledge and resolve incidents. Each action
-is proposed on the incident, applied only after a Wolf Manager confirms it, and audit-logged:
+The incident page of the Wolf UI has a **Response** panel (`wolf/response.py`,
+`api/response.py`). Wolf proposes; a Wolf Manager approves each action with a second click;
+nothing runs on its own. Every approval is a **Wolf Response Action** row (who, when, what,
+result; read-only for everyone) and a comment on the incident.
 
-- **Block IP for N hours**: the agent applies an `nftables` set entry or a fail2ban ban, with an
-  expiry.
-- **Disable user / log out all sessions / revoke API keys**: applied on the Frappe site.
+- **Block IP for N hours** (1 to 168, default 24): proposed for the public addresses of the
+  incident's security events, for the agent that saw each one. The agent receives it with its
+  next push, runs `sudo -n /usr/local/sbin/wolf-block IP SECONDS` (`agent/wolf-block.sh`: an
+  nftables `inet wolf` set whose entries expire by themselves) and reports the result. The agent
+  only does this with `response.enabled` in its own config (off by default) and the helper
+  installed with a one-line sudoers rule (agent/README.md). It refuses private, loopback and
+  reserved addresses and durations over a week, whatever the site sends.
+- **Disable user / log out all sessions / revoke API keys**: proposed for the users named by
+  the site's own security events (failed logins, new IP or country, role granted, API key
+  generated), applied at once on the Wolf site. Administrator, Guest and the approver's own
+  account are refused.
+- Blocks are marked *Expired* once their time is over (hourly).
+- Not built: approving from the signed links in alert messages, fail2ban instead of nftables,
+  and user actions on other sites than the Wolf site.
 
 ### Step 6: compliance and evidence
 

@@ -133,7 +133,16 @@ class TestActivity(unittest.TestCase):
 		self.assertEqual(sum(1 for e in out if e["kind"] == "status"), 2)
 		self.assertEqual(ops.describe_activity(out[0]), "Incident opened by rule 502 spike")
 		self.assertEqual(ops.describe_activity(out[1], "Ops"), "Ops acknowledged")
-		self.assertEqual(ops.describe_activity(out[4], "Lead"), "Lead set assigned to to ops@example.com")
+		self.assertEqual(ops.describe_activity(out[4], "Lead"), "Lead set the owner to ops@example.com")
+
+	def test_field_changes_read_as_sentences(self):
+		def field(name, to):
+			return {"kind": "field", "field": name, "to": to}
+
+		self.assertEqual(ops.describe_activity(field("assigned_to", None), "Lead"), "Lead cleared the owner")
+		self.assertEqual(ops.describe_activity(field("severity", "critical"), "Lead"), "Lead set the severity to critical")
+		self.assertEqual(ops.describe_activity(field("merged_into", "WINC-7"), "Lead"), "Lead merged it into WINC-7")
+		self.assertEqual(ops.describe_activity(field("merged_into", None), "Lead"), "Lead cleared the merge target")
 
 	def test_auto_resolve_without_version_is_synthesized(self):
 		inc = {"name": "WINC-1", "alert_rule": "disk", "started_at": T0, "resolved_at": at(12), "resolved_by": None}

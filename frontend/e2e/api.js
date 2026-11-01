@@ -26,7 +26,7 @@ export const INCIDENT = {
   started_at: ago(50), last_event_at: ago(40), acknowledged: { at: null }, resolved: { at: null }, assigned_to: null,
   alert_rule: { name: '502 spike after deployment', readable: true },
   deployment: { at: ago(52), event: 'E0', available: true }, silenced: false, notified_at: ago(49), escalated_at: null,
-  merged_into: null, split_from: null, postmortem: null, event_records: 2, event_count: 15, time_zone: 'Europe/Paris',
+  merged_into: null, split_from: null, postmortem: null, event_records: 2, event_count: 2, event_occurrences: 15, time_zone: 'Europe/Paris',
   timeline_window: { since: ago(80), until: NOW.toISOString(), padding_minutes: 30, open_ended: true },
   regulatory: null,
   can: { comment: true, acknowledge: true, resolve: true, assign_to_me: true, workflow: true },

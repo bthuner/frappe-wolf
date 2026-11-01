@@ -15,6 +15,14 @@ const health = computed(() => props.monitoring.health)
 const agents = computed(() => props.monitoring.agents.filter((a) => a.kind === 'agent'))
 const satellites = computed(() => props.monitoring.agents.filter((a) => a.kind === 'satellite'))
 const STATE = { fresh: 'reporting', stale: 'silent', never_seen: 'never reported', disabled: 'disabled' }
+// Frappe's scheduler tick: every job, Wolf's rule evaluation included, runs at most this often
+const tickSeconds = computed(() => health.value?.scheduler?.tick_seconds || null)
+const tick = computed(() => {
+  const s = tickSeconds.value
+  if (!s) return null
+  return s % 60 === 0 ? `${s / 60} min` : `${s} s`
+})
+const slowTick = computed(() => tickSeconds.value > 60)
 </script>
 
 <template>
@@ -30,7 +38,13 @@ const STATE = { fresh: 'reporting', stale: 'silent', never_seen: 'never reported
       <dd v-else>no rule has run yet</dd>
       <template v-if="health">
         <dt>Scheduler</dt>
-        <dd>{{ health.scheduler.enabled ? 'enabled' : `disabled (${health.scheduler.reason})` }}</dd>
+        <dd>
+          {{ health.scheduler.enabled ? 'enabled' : `disabled (${health.scheduler.reason})` }}<template v-if="tick">, jobs every {{ tick }}</template>
+          <p v-if="slowTick" class="text-ink-gray-7">
+            Alert rules are evaluated at that pace, not every minute. Set <code>scheduler_tick_interval</code> to 60 in
+            <code>common_site_config.json</code> for one-minute evaluations.
+          </p>
+        </dd>
         <dt>Ingest queue</dt>
         <dd>
           <template v-if="health.queues.error">unreachable: {{ health.queues.error }}</template>

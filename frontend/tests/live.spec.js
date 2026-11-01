@@ -258,7 +258,7 @@ describe('IncidentPage live', () => {
   const INCIDENT = {
     name: 'WINC-00001', title: '502 spike', status: 'Open', severity: 'critical', scope: { site: 'a.example.com' },
     started_at: '2026-10-30T00:48:00Z', acknowledged: { at: null }, resolved: { at: null }, assigned_to: null,
-    alert_rule: null, deployment: null, silenced: false, merged_into: null, event_records: 1, event_count: 1,
+    alert_rule: null, deployment: null, silenced: false, merged_into: null, event_records: 1, event_count: 1, event_occurrences: 1,
     can: { comment: true, acknowledge: true, resolve: true, assign_to_me: true, workflow: false },
   }
   const row = (id, at) => ({ id, kind: 'event', family: 'evidence', relation: 'linked', at, severity: 'critical',

@@ -39,6 +39,19 @@ def scheduler_inactive_reason():
 	return None
 
 
+def scheduler_tick_seconds():
+	"""Seconds between Frappe scheduler ticks: every job runs at most this often (None if unknown).
+
+	Frappe 15 and Dodock tick every 4 minutes unless `scheduler_tick_interval` is set, so Wolf's
+	"every minute" jobs (rule evaluation, rollups, satellite pushes) run every 4 minutes there.
+	"""
+	try:
+		from frappe.utils.scheduler import get_scheduler_tick
+	except ImportError:
+		return None
+	return cint(get_scheduler_tick()) or None
+
+
 def queue_health():
 	try:
 		from frappe.utils.background_jobs import get_queue, get_queue_list, get_workers
@@ -86,6 +99,8 @@ def get_health():
 			"reason": reason,
 			"last_job_run": heartbeat.to_utc_iso(job_at, tz),
 			"age_seconds": heartbeat.age_seconds(job_at, now),
+			# not a problem: a slower pace still runs everything, only later
+			"tick_seconds": scheduler_tick_seconds(),
 		},
 		"queues": queue_health(),
 	}

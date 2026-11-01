@@ -18,7 +18,7 @@ const INCIDENT = {
   started_at: '2026-10-30T00:48:00Z', last_event_at: null,
   acknowledged: { at: null }, resolved: { at: null }, assigned_to: null, alert_rule: { name: '502 spike' },
   deployment: { at: '2026-10-30T00:47:00Z', event: 'E0', available: true }, silenced: false,
-  merged_into: null, event_records: 2, event_count: 15, time_zone: 'Europe/Paris',
+  merged_into: null, event_records: 2, event_count: 2, event_occurrences: 15, time_zone: 'Europe/Paris',
   can: { comment: true, acknowledge: true, resolve: true, assign_to_me: true, workflow: true },
 }
 
@@ -73,6 +73,16 @@ describe('IncidentPage', () => {
     expect(text).toContain('accepted by the endpoint') // not "read by someone"
     expect(text).toContain('7 h 07 min with no recorded activity') // silence, not "healthy"
     expect(text).toContain('2 records, 15 reported occurrences')
+  })
+
+  it('counts one linked record in the singular', async () => {
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, event_records: 1, event_count: 1, event_occurrences: 1 }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: ROWS, paging: { has_more: false }, totals: {}, truncated: {} }),
+    })
+    const { page } = await open()
+    expect(page.text()).toContain('1 record, 1 reported occurrence')
+    expect(page.text()).not.toContain('1 records')
   })
 
   it('renders comments as text', async () => {

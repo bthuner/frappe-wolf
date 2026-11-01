@@ -14,6 +14,7 @@ SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 SAME_ACTION_SECONDS = 120
 COMMENT_TYPES = ("Comment", "Info", "Assigned", "Assignment Completed")
 TRACKED_FIELDS = ("status", "severity", "assigned_to", "merged_into")
+FIELD_LABELS = {"severity": "the severity", "assigned_to": "the owner", "merged_into": "the merge target"}
 
 
 def to_datetime(value):
@@ -244,7 +245,10 @@ def describe_activity(entry, user_label=None):
 			return f"Automatically {verb} (condition cleared)" if entry.get("to") == "Resolved" else f"{verb.capitalize()}"
 		return f"{who} {verb}".strip()
 	if kind == "field":
-		label = entry.get("field", "").replace("_", " ")
+		field = entry.get("field") or ""
+		if field == "merged_into" and entry.get("to"):
+			return f"{who} merged it into {entry['to']}" if who else f"Merged into {entry['to']}"
+		label = FIELD_LABELS.get(field) or field.replace("_", " ")
 		if not entry.get("to"):
 			return f"{who} cleared {label}".strip()
 		return f"{who} set {label} to {entry.get('to')}".strip()

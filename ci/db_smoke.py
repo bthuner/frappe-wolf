@@ -109,6 +109,60 @@ def main():
 		assert any(r.event_type == "deployment" for r in rows), "deployment missing from timeline"
 		return f"{inc}: {len(rows)} events, deployment linked={bool(frappe.db.get_value('Wolf Incident', inc, 'deployment_event'))}"
 
+	def deployment_link():
+		# the deployment that preceded the incident, not one made after it started (a fix, a
+		# migrate on restart) and seen by a rule evaluated later
+		site, link_host = "smoke-deploy.localhost", "smoke-link-host"  # apart from the other checks
+		before, after = (events.insert_event(schema.normalize_event(
+			{"type": "deployment", "host": link_host, "bench": "b1", "site": site, "severity": "info", "title": title}, tz, at))
+			for title, at in (("smoke deploy before", now - timedelta(minutes=20)),
+			                  ("smoke deploy after", now - timedelta(minutes=2))))  # fmt: skip
+		# its own rule: later checks read the newest "smoke 502" incident as the smoke site's
+		doc = rule("smoke deploy link", signal_type="metric", metric_name="http_502", aggregation="sum", operator=">=",
+		           threshold=10, window_minutes=5, group_by="site", filter_site=site)
+		name, kind = incidents.open_incident(doc, f"site={site}", {"host": link_host, "bench": "b1", "site": site},
+		                                     "smoke deployment link", started_at=now - timedelta(minutes=10))
+		frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
+		linked = frappe.db.get_value("Wolf Incident", name, "deployment_event")
+		incidents.resolve(name, "smoke check")
+		assert kind == "fired", kind
+		assert linked == before, f"linked {linked}, expected {before} (not {after}, made after the start)"
+		return f"{name} linked the deployment before its start"
+
+	def reopen_after_resolve():
+		# resolved by someone who saw the events: those never reopen it, a newer one does, and says so
+		site, reopen_host = "smoke-reopen.localhost", "smoke-reopen-host"  # apart from "smoke cron"
+
+		def failure(at):
+			return events.insert_event(schema.normalize_event(
+				{"type": "cron_failure", "category": "scheduled_job", "host": reopen_host, "bench": "b2", "site": site,
+				 "severity": "critical", "title": "smoke reopen cron"}, tz, at))  # fmt: skip
+
+		doc = rule("smoke reopen", signal_type="event", event_type="cron_failure", min_severity="warning", operator=">=",
+		           threshold=1, window_minutes=15, group_by="site", filter_site=site, cooldown_minutes=240)
+		failure(now_datetime() - timedelta(minutes=2))
+		fired = rules.evaluate(doc, now_datetime())["fired"]
+		assert len(fired) == 1, fired
+		inc = fired[0]
+		incidents.resolve(inc, "smoke: handled")
+		again = rules.evaluate(doc, now_datetime())
+		status = frappe.db.get_value("Wolf Incident", inc, "status")
+		assert not again["fired"] and status == "Resolved", f"reopened on the events it was resolved with: {again}, {status}"
+		failure(now_datetime() + timedelta(seconds=2))  # a new failure after the resolution
+		third = rules.evaluate(doc, now_datetime() + timedelta(seconds=3))
+		assert third["fired"] == [inc], f"not reopened by a new event: {third}"
+		note = frappe.db.get_value("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc,
+		                                       "comment_type": "Info"}, "content")  # fmt: skip
+		assert note and note.startswith("Reopened by rule smoke reopen"), note
+		# without a cooldown the same events would open a brand-new incident: they must not either
+		incidents.resolve(inc, "smoke: handled again")
+		# resolved after the newer failure (stamped 2 s ahead): it was seen too
+		frappe.db.set_value("Wolf Incident", inc, "resolved_at", now_datetime() + timedelta(seconds=3))
+		doc.cooldown_minutes = 0
+		assert not rules.evaluate(doc, now_datetime() + timedelta(seconds=4))["fired"], "new incident on seen events"
+		frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
+		return f"{inc}: seen events kept it resolved (with or without cooldown); a newer one reopened it, with a note"
+
 	def skew():
 		future = schema.normalize_metric({"metric_name": "smoke_skew", "value": 99, "host": HOST}, tz,
 		                                 now + timedelta(hours=11))
@@ -844,6 +898,7 @@ def main():
 		                      "deployment_event": deploy, "deployment_at": at - timedelta(minutes=90)}).insert()
 		for name in linked:
 			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		frappe.db.set_value("Wolf Event", linked[0], "count", 5)  # a deduplicated record: 5 occurrences
 		for i in range(3):
 			frappe.get_doc({"doctype": "Wolf Delivery", "incident": inc.name, "at": at, "kind": "webhook",
 			                "channel_type": "webhook", "action": "opened", "ok": i != 2, "http_status": 200 if i != 2 else 500,
@@ -858,6 +913,8 @@ def main():
 
 		detail = view.get_incident(inc.name)
 		assert detail["deployment"]["available"] and detail["event_records"] == 7, detail
+		# records and the occurrences they report are not the same number
+		assert (detail["event_count"], detail["event_occurrences"]) == (7, 11), detail
 		assert detail["can"]["acknowledge"] and detail["can"]["resolve"], detail["can"]
 		full = view.get_timeline(inc.name, limit=500)
 		ids = [r["id"] for r in full["rows"]]
@@ -1022,6 +1079,11 @@ def main():
 
 		mon = dashboard.get_monitoring()
 		assert {"health", "rollups", "agents", "mode"} <= set(mon), sorted(mon)
+		# how often Frappe's scheduler runs Wolf's "every minute" jobs (4 min unless configured)
+		from frappe.utils.scheduler import get_scheduler_tick
+
+		tick = mon["health"]["scheduler"]["tick_seconds"]
+		assert tick == get_scheduler_tick(), (tick, get_scheduler_tick())
 
 		user = "smoke-scoped@example.com"
 		frappe.db.delete("Wolf User Scope", {"user": user})
@@ -1602,7 +1664,9 @@ def main():
 			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
 		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
 
-	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
+	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline),
+	                 ("deployment link", deployment_link),
+	                 ("reopen after resolve", reopen_after_resolve), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
 	                 ("scoped user", scoped_user), ("agent secrets", agent_secrets),

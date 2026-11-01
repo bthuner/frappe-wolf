@@ -97,7 +97,14 @@ def evaluate(rule, now=None):
 			f"{describe_signal(rule)} = {conditions.format_value(row['value'])} "
 			f"({rule.operator} {conditions.format_value(rule.threshold)}) over {rule.window_minutes} min"
 		)
-		name, kind = incidents.open_incident(rule, key, scope, summary, started_at=row.get("first_at"))
+		# an event rule reopens a resolved incident only for events newer than its resolution
+		# (by their time or by their arrival: a late batch was not seen by whoever resolved it)
+		newest_at = row.get("last_at") if rule.signal_type == "event" else None
+		name, kind = incidents.open_incident(rule, key, scope, summary, started_at=row.get("first_at"), newest_at=newest_at)
+		if not name:
+			if action == "fire" and fire_after > 1:
+				state[key] = [fire_after - 1, 0]  # a newer event then reopens it at once
+			continue
 		if rule.signal_type == "event":
 			incidents.link_events(name, matching_event_names(rule, since, row))
 		elif kind:
@@ -189,7 +196,8 @@ def query_events(rule, since):
 	where = _event_where(rule, since, params)
 	select, group = _select_group(rule.group_by)
 	rows = frappe.db.sql(
-		f"""select {select}, sum(`count`) as value, count(*) as samples, min(`timestamp`) as first_at
+		f"""select {select}, sum(`count`) as value, count(*) as samples, min(`timestamp`) as first_at,
+			max(greatest(last_seen, creation)) as last_at
 		from `tabWolf Event`
 		where {' and '.join(where)} {group}""",
 		params,

@@ -97,9 +97,9 @@ def get_incident(incident):
 		"merged_into": doc.merged_into,
 		"split_from": doc.split_from,
 		"postmortem": doc.postmortem,
-		# event records linked to the incident, and the repeats they absorbed: not the same number
-		"event_records": frappe.db.count("Wolf Event", {"incident": doc.name}),
-		"event_count": doc.event_count,
+		# event records linked to the incident, and the occurrences they report (a deduplicated
+		# record counts its repeats): not the same number. Wolf Incident.event_count is the former.
+		**_linked_counts(doc.name),
 		"timeline_window": {"since": window.to_utc(start, tz), "until": window.to_utc(end, tz), "padding_minutes": padding,
 							"open_ended": not doc.resolved_at},  # fmt: skip
 		"time_zone": tz,
@@ -170,6 +170,16 @@ def _plain(content):
 	text = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", content or "", flags=re.I)
 	text = html.unescape(frappe.utils.strip_html(text))
 	return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _linked_counts(incident):
+	"""Records linked to the incident, and the occurrences they report, read now (repeats keep
+	coming after an event is linked)."""
+	records, occurrences = frappe.db.sql(
+		"select count(*), coalesce(sum(coalesce(`count`, 1)), 0) from `tabWolf Event` where incident = %s", incident
+	)[0]
+	# event_count keeps its meaning everywhere (records, Wolf Incident.event_count)
+	return {"event_records": cint(records), "event_count": cint(records), "event_occurrences": cint(occurrences)}
 
 
 def _activity(doc, tz):

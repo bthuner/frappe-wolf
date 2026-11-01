@@ -14,7 +14,9 @@ Then it times, server side (no HTTP, no agent authentication):
   * push: ingest.accept() of one host's batch (M metrics, an event every 10th push), in async
     mode (validate + enqueue) and in sync mode (validate + insert + correlate);
   * the queued jobs (store_batch), as a worker would run them;
-  * the overview: get_overview and get_metric_series for every range, and rule queries.
+  * the overview: Desk's get_overview and get_metric_series for every range, the Wolf UI's
+    overview (its six reads, in sequence and the slowest one) and metrics explorer, and rule
+    queries.
 Prints p50 / p95 / max per operation. Not run in CI; ci/integration.sh runs it after
 db_smoke.py when WOLF_LOAD_TEST=1 (flags in WOLF_LOAD_ARGS).
 """
@@ -261,6 +263,42 @@ def main():
 		        for _ in range(args.repeat)]
 		results[f"overview page {range_key} (overview + chart)"] = summary(page)
 		print(f"  overview page {range_key}: {results[f'overview page {range_key} (overview + chart)']}", flush=True)
+
+	# the Wolf UI's overview (/wolf): six reads the browser sends at once
+	from frappe_wolf.api import dashboard, incident_view, metrics, scope
+
+	# get_counts and get_http follow the range picker; the four others ignore it, so they are timed
+	# once rather than once per range
+	ranged = {
+		"get_counts": lambda r: scope.get_counts(range=r),
+		"get_http": lambda r: dashboard.get_http(range=r),
+	}
+	fixed = {
+		"get_signals": dashboard.get_signals,
+		"list_incidents": lambda: incident_view.list_incidents(limit=10),
+		"get_inventory": scope.get_inventory,
+		"get_monitoring": dashboard.get_monitoring,
+	}
+	fixed_runs = [{k: timed(fn)[0] for k, fn in fixed.items()} for _ in range(args.repeat)]
+	for k in fixed:
+		results[f"  {k} (any range)"] = summary([run[k] for run in fixed_runs])
+	for range_key in ("1h", "6h", "24h", "7d"):
+		per, sequence, slowest = {k: [] for k in ranged}, [], []
+		for run in fixed_runs:
+			times = {k: timed(lambda fn=fn, r=range_key: fn(r))[0] for k, fn in ranged.items()} | run
+			for k in ranged:
+				per[k].append(times[k])
+			sequence.append(sum(times.values()))  # one web worker answering all six: the upper bound
+			# enough workers to answer them in parallel; a lower bound, since parallel reads share
+			# the CPU, the disk and the buffer pool
+			slowest.append(max(times.values()))
+		results[f"Wolf UI overview {range_key}, six reads in sequence"] = summary(sequence)
+		results[f"Wolf UI overview {range_key}, slowest read"] = summary(slowest)
+		for k in ranged:
+			results[f"  {k} {range_key}"] = summary(per[k])
+		print(f"  Wolf UI overview {range_key}: {results[f'Wolf UI overview {range_key}, six reads in sequence']}", flush=True)
+		results[f"Wolf UI metrics explorer {range_key} (cpu_usage, {args.hosts} hosts)"] = summary(
+			[timed(lambda r=range_key: metrics.query_metric("cpu_usage", group_by="host", range=r))[0] for _ in range(args.repeat)])
 
 	for minutes, agg in ((5, "avg"), (1440, "max"), (10080, "last")):
 		doc = frappe.get_doc({"doctype": "Wolf Alert Rule", "rule_name": f"load {minutes} {agg}", "signal_type": "metric",

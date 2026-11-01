@@ -88,9 +88,13 @@ telemetry window.
   "unplaced_sites": [],
   "note": "Hosts and benches come from agent registrations and from telemetry in the window. ...",
   "days": 7,
-  "restricted": false
+  "restricted": false,
+  "as_of": "2026-10-30T13:00:02Z"
 }
 ```
+
+`as_of` is when the registrations and telemetry were read: they are cached for a few seconds
+(see "Short cache" below).
 
 Sources: `agent` and `satellite` (what an agent declared when it registered), `events` (by
 when they last happened, so a recurring deduplicated event keeps its site listed), `metrics`
@@ -220,7 +224,26 @@ scope, not set up, or not available here. They are never shown as zero. `counts`
 states per group whatever the 300-series limit. `email` reports the email queue problems the
 site recorded about itself in the last 24 hours. A restricted user sees what each rule checks,
 but not the host, bench or site filters it names. The metric meanings (unit, kind, cadence)
-are in `wolf/catalog.py`.
+are in `wolf/catalog.py`. `as_of` is when the series were read (see "Short cache" below); the
+rules, incidents and states are read with each request.
+
+### Short cache: `get_inventory` and `get_signals`
+
+The overview's two slow reads keep what they read for `wolf_read_cache_seconds` (site config,
+default 30, an agent's push interval; 0 turns it off): `get_inventory` its registrations and
+telemetry triples, `get_signals` its series (newest value and last time seen).
+- The cached value is read **without** access conditions and is the same for every caller. Each
+  request then keeps the rows its caller may see, by the rule of `wolf/scopes.py`; a cached value
+  never carries one user's grants to another.
+- Rules, open incidents and the email queue are read per request: a signal's state follows an
+  incident at once.
+- A series that starts, or a value that changes, shows up to `wolf_read_cache_seconds` later;
+  `as_of` says when the data was read. A live update (below) refetches, and may get the cached
+  value.
+- A change of `wolf_read_cache_seconds` takes effect within a minute: Dodock's web workers keep
+  the site config in memory for up to 60 s.
+- One cached value per site and per scope (`get_signals`' site, bench and host; the inventory's
+  `days`): a dashboard of another scope has its own.
 
 ### `frappe_wolf.api.dashboard.get_http`
 

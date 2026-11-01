@@ -39,6 +39,9 @@ def main():
 	frappe.init(SITE)
 	frappe.connect()
 	frappe.set_user("Administrator")
+	# the checks write and read straight after: the overview's short read cache would hide their
+	# writes. "read cache" turns it on for itself.
+	frappe.local.conf["wolf_read_cache_seconds"] = 0
 	from frappe_wolf import tasks
 	from frappe_wolf.api import ui
 	from frappe_wolf.wolf import conditions, events, incidents, rules, schema
@@ -1155,6 +1158,61 @@ def main():
 		        f"site dashboard has the bench-wide deployment; "
 		        f"5xx 12 with 502 4 inside it, gaps kept; restricted user sees no rule filters")
 
+	def read_cache_check():
+		"""The overview's cached reads: one value for every caller, filtered by each caller's grants."""
+		from frappe_wolf.api import dashboard
+		from frappe_wolf.api import scope as scope_api
+		from frappe_wolf.wolf import access, read_cache
+
+		mine, theirs, late = "smoke-cache-mine", "smoke-cache-theirs", "smoke-cache-late"
+
+		def sample(host):
+			return schema.normalize_metric({"metric_name": "cpu_usage", "value": 5, "host": host}, tz,
+			                               now_datetime() - timedelta(seconds=10))
+
+		def hosts(sig):
+			return {s["host"] for s in sig["series"]}
+
+		events.insert_metrics([sample(mine), sample(theirs)])
+		user = "smoke-scoped@example.com"
+		frappe.db.delete("Wolf User Scope", {"user": user})
+		frappe.get_doc({"doctype": "Wolf User Scope", "user": user, "scope_type": "host", "value": mine}).insert()
+		frappe.db.commit()
+		frappe.local.conf["wolf_read_cache_seconds"] = 30
+		read_cache.clear()
+		access.clear_cache()
+		try:
+			# Administrator reads first: the cache holds every host's series and triples
+			full, full_inv = dashboard.get_signals(), scope_api.get_inventory()
+			assert {mine, theirs} <= hosts(full), sorted(hosts(full))
+			frappe.set_user(user)
+			try:
+				sig, inv = dashboard.get_signals(), scope_api.get_inventory()
+			finally:
+				frappe.set_user("Administrator")
+			# served from what Administrator's read cached, then cut to the user's grant
+			assert sig["as_of"] == full["as_of"] and inv["as_of"] == full_inv["as_of"], "not read from the cache"
+			assert hosts(sig) == {mine}, f"cached signals leaked {sorted(hosts(sig))}"
+			assert sum(sum(c.values()) for c in sig["counts"].values()) == sig["total_series"], sig["counts"]
+			# raw samples are not rolled yet: the inventory knows other hosts (from events), not these
+			assert HOST in {h["host"] for h in full_inv["hosts"]}, full_inv["hosts"]
+			assert {h["host"] for h in inv["hosts"]} <= {mine} and not inv["unplaced_sites"], f"cached inventory leaked {inv['hosts']}"
+			# a series that starts after the read shows once the cached value goes
+			events.insert_metrics([sample(late)])
+			frappe.db.commit()
+			assert late not in hosts(dashboard.get_signals()), "the cache was not used"
+			read_cache.clear()
+			fresh = dashboard.get_signals()
+			assert late in hosts(fresh), sorted(hosts(fresh))
+		finally:
+			frappe.local.conf["wolf_read_cache_seconds"] = 0
+			read_cache.clear()
+			frappe.db.delete("Wolf User Scope", {"user": user})
+			frappe.db.delete("Wolf Metric Sample", {"host": ("in", (mine, theirs, late))})
+			frappe.db.commit()
+			access.clear_cache()
+		return f"a host-scoped user gets {len(sig['series'])} of {full['total_series']} cached series, its host only; a new series shows once the cache goes"
+
 	def explorers():
 		"""Event list paging and search, error groups across sites, a scoped user's view of a group."""
 		from frappe_wolf.api import explore
@@ -1722,7 +1780,7 @@ def main():
 	                 ("metrics report", metrics), ("status page", status_page),
 	                 ("rollup", rollup), ("legacy names", legacy_names), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
-	                 ("incident view", incident_view), ("dashboards", dashboards),
+	                 ("incident view", incident_view), ("dashboards", dashboards), ("read cache", read_cache_check),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("live updates", live_updates),
 	                 ("app security", app_security), ("posture score", posture_score),

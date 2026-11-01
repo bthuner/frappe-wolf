@@ -9,7 +9,7 @@ import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf.api.ui import READ_ROLES, agent_cutoff
-from frappe_wolf.wolf import access, events, inventory, schema, window
+from frappe_wolf.wolf import access, events, inventory, read_cache, schema, window
 
 UNRESOLVED = ("Open", "Acknowledged")
 INVENTORY_DAYS = 7
@@ -134,9 +134,12 @@ def get_counts(range=None, since=None, until=None, site=None, bench=None, host=N
 	}
 
 
-def _observed(doctype, ts_col, since, extra=""):
-	"""(host, bench, site, last_seen) seen in `doctype` since `since` (None: no time bound)."""
-	allowed, params = access.sql_condition(doctype)
+def _observed(doctype, ts_col, since, extra="", restrict=True):
+	"""(host, bench, site, last_seen) seen in `doctype` since `since` (None: no time bound).
+
+	restrict=False reads every row, for a result shared by all callers (read_cache): the caller
+	must then keep only the rows its user may see."""
+	allowed, params = access.sql_condition(doctype) if restrict else ("", {})
 	bound = f"{ts_col} >= %(since)s" if since else "1=1"
 	return frappe.db.sql(
 		f"""select host, bench, site, max({ts_col}) as last_seen from `tab{doctype}`
@@ -151,30 +154,9 @@ def get_inventory(days=INVENTORY_DAYS):
 	"""Hosts > benches > sites the caller may see, with where each one was learnt from."""
 	frappe.only_for(READ_ROLES)
 	days = min(max(cint(days) or INVENTORY_DAYS, 1), 90)
-	since = add_to_date(now_datetime(), days=-days)
 	tz = events.system_tz()
-	# every registration, not only the Wolf Agent rows the caller may read: a host agent's row
-	# names a host, yet its benches list the sites a site-scoped user is granted. Each triple is
-	# checked against the grants below.
-	agents = frappe.get_all("Wolf Agent", fields=["hostname", "kind", "benches", "last_seen"])
-	triples = inventory.agent_triples(agents)
-	# a deduplicated event keeps its first `timestamp`; `last_seen` is when it last happened
-	triples += inventory.observed_triples(_observed("Wolf Event", "coalesce(last_seen, `timestamp`)", since), "events")
-	# hourly rollups cover the window cheaply; minute rollups the hours not closed yet
-	triples += inventory.observed_triples(
-		_observed("Wolf Metric Rollup", "bucket_start", since, "and resolution = 3600"), "metrics"
-	)
-	triples += inventory.observed_triples(
-		_observed("Wolf Metric Rollup", "bucket_start", add_to_date(now_datetime(), hours=-2), "and resolution = 60"),
-		"metrics",
-	)
-	# unresolved incidents whatever their age, as get_counts counts them
-	triples += inventory.observed_triples(
-		_observed("Wolf Incident", "coalesce(last_event_at, started_at)", None, "and status in ('Open', 'Acknowledged')"),
-		"incidents",
-	)
-	# Wolf Agent rows went through permission_query_conditions; registered benches still name
-	# sites the user may not be granted, so every triple is checked against the grants
+	# the same triples for every caller, cached a few seconds; each caller's grants filter them
+	triples, as_of = read_cache.get("inventory", days, lambda: _inventory_triples(days))
 	tree = inventory.build(inventory.visible(triples, access.grants()))
 
 	def utc(node):
@@ -186,4 +168,30 @@ def get_inventory(days=INVENTORY_DAYS):
 
 	tree["hosts"] = [utc(h) for h in tree["hosts"]]
 	tree["unplaced_sites"] = [utc(s) for s in tree["unplaced_sites"]]
-	return {**tree, "days": days, "restricted": access.grants() is not None}
+	return {**tree, "days": days, "restricted": access.grants() is not None, "as_of": window.to_utc(as_of, tz)}
+
+
+def _inventory_triples(days):
+	"""(host, bench, site, source, last_seen) of every registration and record of the last
+	`days`, whoever asks: not filtered by access (get_inventory filters them)."""
+	since = add_to_date(now_datetime(), days=-days)
+	# every registration: a host agent's row names a host, yet its benches list the sites a
+	# site-scoped user is granted
+	agents = frappe.get_all("Wolf Agent", fields=["hostname", "kind", "benches", "last_seen"])
+	triples = inventory.agent_triples(agents)
+	# a deduplicated event keeps its first `timestamp`; `last_seen` is when it last happened
+	triples += inventory.observed_triples(_observed("Wolf Event", "coalesce(last_seen, `timestamp`)", since, restrict=False), "events")
+	# hourly rollups cover the window cheaply; minute rollups the hours not closed yet
+	triples += inventory.observed_triples(
+		_observed("Wolf Metric Rollup", "bucket_start", since, "and resolution = 3600", restrict=False), "metrics"
+	)
+	triples += inventory.observed_triples(
+		_observed("Wolf Metric Rollup", "bucket_start", add_to_date(now_datetime(), hours=-2), "and resolution = 60", restrict=False),
+		"metrics",
+	)
+	# unresolved incidents whatever their age, as get_counts counts them
+	triples += inventory.observed_triples(
+		_observed("Wolf Incident", "coalesce(last_event_at, started_at)", None, "and status in ('Open', 'Acknowledged')", restrict=False),
+		"incidents",
+	)
+	return triples

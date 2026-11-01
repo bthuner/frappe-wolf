@@ -17,6 +17,7 @@ const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled]):not([type=hidden])', 'select:not([disabled])',
   'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])', '[contenteditable="true"]',
 ].join(',')
+const PROGRAMMATIC = '[tabindex="-1"]:not(a[href],button,input,select,textarea)'
 const GIVE_UP_MS = 15000 // a control still disabled after this long is not coming back
 
 function label(el) {
@@ -32,17 +33,38 @@ export function isFocusable(el, visible = laidOut) {
   return !!el && el.isConnected && el.matches(FOCUSABLE) && !el.closest('[inert],[aria-hidden="true"]') && visible(el)
 }
 
-// Where focus should go now that `lost` is gone, from what was recorded when it had focus.
+const FOLLOWING = 4 // Node.DOCUMENT_POSITION_FOLLOWING
+
+// Where each level of the focused control sat when it had focus: its parent and its neighbours.
+export function position(el, doc = document) {
+  const levels = []
+  for (let node = el; node && node.parentElement && node !== doc.body; node = node.parentElement) {
+    levels.push({ parent: node.parentElement, prev: node.previousElementSibling, next: node.nextElementSibling })
+  }
+  return levels
+}
+
+// Where focus should go now that `lost` is gone: in its nearest surviving container, at the
+// place it left. Its re-rendered copy (same tag and label) first, else the next control after
+// that place, else the last one before it.
 export function replacement(lost, visible = laidOut) {
-  const ancestor = lost.ancestors.find((a) => a.isConnected)
-  if (!ancestor) return null
-  const candidates = [...ancestor.querySelectorAll(FOCUSABLE)].filter((c) => isFocusable(c, visible))
-  const same = candidates.find((c) => c.tagName === lost.tag && label(c) === lost.label)
-  return same || candidates[0] || null
+  const level = lost.levels.find((l) => l.parent.isConnected)
+  if (!level) return null
+  const { parent } = level
+  const candidates = [...parent.querySelectorAll(FOCUSABLE)].filter((c) => isFocusable(c, visible))
+  const prev = level.prev?.isConnected && level.prev.parentElement === parent ? level.prev : null
+  const next = level.next?.isConnected && level.next.parentElement === parent ? level.next : null
+  const isAfter = (c) =>
+    prev ? !!(prev.compareDocumentPosition(c) & FOLLOWING) && !prev.contains(c)
+      : next ? c === next || next.contains(c) || !!(next.compareDocumentPosition(c) & FOLLOWING) : true
+  const after = candidates.filter(isAfter)
+  const before = candidates.filter((c) => !isAfter(c))
+  const same = (c) => c.tagName === lost.tag && label(c) === lost.label
+  return after.find(same) || before.findLast(same) || after[0] || before.at(-1) || null
 }
 
 export function installFocusGuard(doc = document, { giveUpMs = GIVE_UP_MS, visible = laidOut } = {}) {
-  let last = null // what had focus: element, its label and its containers
+  let last = null // what had focus: element, its label and where it sat
   let pending = null // a disabled control we wait for
   let timer = null
 
@@ -70,6 +92,7 @@ export function installFocusGuard(doc = document, { giveUpMs = GIVE_UP_MS, visib
     }
     if (!onBody()) {
       if (doc.activeElement === el) cancel() // it kept the focus all along
+      else if (!el.isConnected) last = null // gone, and focus is elsewhere: nothing to do
       return
     }
     if (el.isConnected) {
@@ -80,6 +103,7 @@ export function installFocusGuard(doc = document, { giveUpMs = GIVE_UP_MS, visib
     }
     cancel()
     const next = replacement(last, visible)
+    last = null // handled once: a control added later never pulls the focus
     if (next) next.focus({ preventScroll: true })
   }
 
@@ -87,9 +111,8 @@ export function installFocusGuard(doc = document, { giveUpMs = GIVE_UP_MS, visib
     const el = e.target
     if (!(el instanceof doc.defaultView.Element) || el === doc.body) return
     cancel()
-    const ancestors = []
-    for (let a = el.parentElement; a && a !== doc.body; a = a.parentElement) ancestors.push(a)
-    last = { el, tag: el.tagName, label: label(el), ancestors }
+    // a place focus is only sent to (a page title, a timeline row) is not a control to follow
+    last = el.matches(PROGRAMMATIC) ? null : { el, tag: el.tagName, label: label(el), levels: position(el, doc) }
   }
 
   // a click elsewhere is the user's choice of where focus goes, even if that is nowhere
@@ -121,9 +144,13 @@ export function installFocusGuard(doc = document, { giveUpMs = GIVE_UP_MS, visib
   }
 }
 
-// Focus the new page's <h1 tabindex="-1"> once it has rendered (pages are loaded on demand).
+// Focus the new page's <h1 tabindex="-1"> once it has rendered (pages are loaded on demand),
+// unless the reader has moved focus meanwhile.
 export async function focusPageTitle(doc = document, { tries = 20, wait = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const start = doc.activeElement
   for (let i = 0; i < tries; i++) {
+    const active = doc.activeElement
+    if (active !== start && active !== doc.body && !active?.matches?.('[data-wolf-page-title]')) return null
     const title = doc.querySelector('[data-wolf-page-title]')
     if (title) {
       title.focus({ preventScroll: true })

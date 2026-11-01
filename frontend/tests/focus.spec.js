@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { focusPageTitle, installFocusGuard, replacement } from '@/services/focus'
+import { focusPageTitle, installFocusGuard, position, replacement } from '@/services/focus'
 
 // jsdom lays nothing out and keeps focus on a control that becomes disabled: the tests say
 // "everything is visible" and blur the way Chromium does (the browser tests check Chromium).
@@ -93,10 +93,47 @@ describe('focus guard', () => {
   })
 
   it('skips hidden and inert candidates', () => {
-    document.body.innerHTML = '<div id="g"><button aria-hidden="true">x</button><div inert><button>y</button></div><a href="#z">z</a></div>'
-    const g = document.getElementById('g')
-    expect(replacement({ tag: 'BUTTON', label: 'gone', ancestors: [g] }, visible).textContent).toBe('z')
-    expect(replacement({ tag: 'BUTTON', label: 'gone', ancestors: [g] }, () => false)).toBe(null)
+    document.body.innerHTML = '<div id="g"><button id="lost">gone</button><button aria-hidden="true">x</button><div inert><button>y</button></div><a href="#z">z</a></div>'
+    const lost = { tag: 'BUTTON', label: 'gone', levels: position(document.getElementById('lost')) }
+    document.getElementById('lost').remove()
+    expect(replacement(lost, visible).textContent).toBe('z')
+    expect(replacement(lost, () => false)).toBe(null)
+  })
+
+  it('stays where the control was: the next control after it, else the one just before', async () => {
+    page(`<main><section id="timeline"><a href="#top">first row</a><ol><li><a href="#r1">row 1</a></li><li><a href="#r2">row 2</a></li></ol>
+      <button id="more">Load more</button></section></main>`)
+    document.getElementById('more').focus()
+    document.getElementById('more').remove() // nothing after it: the last row, not the top
+    await flush()
+    expect(document.activeElement.textContent).toBe('row 2')
+  })
+
+  it('finds the re-rendered copy at the same place, not the first one with that label', async () => {
+    page(`<main><ul id="rows"><li><button>Details</button></li><li id="r2"><button>Details</button></li><li><button>Details</button></li></ul></main>`)
+    document.querySelector('#r2 button').focus()
+    document.getElementById('r2').innerHTML = '<button id="copy">Details</button>'
+    await flush()
+    expect(document.activeElement.id).toBe('copy')
+  })
+
+  it('handles a vanished control once: a control added later does not pull the focus', async () => {
+    page('<main><section id="s"><button id="more">Load more</button></section></main>')
+    document.getElementById('more').focus()
+    document.getElementById('more').remove()
+    await flush()
+    expect(document.activeElement).toBe(document.body)
+    document.getElementById('s').innerHTML = '<a href="#new">new link</a>'
+    await flush()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('does not follow a place focus was only sent to (a row, a title)', async () => {
+    page('<main><ol id="rows"><li id="row" tabindex="-1">row</li></ol><a href="#x">x</a></main>')
+    document.getElementById('row').focus()
+    document.getElementById('rows').innerHTML = '<li tabindex="-1">row</li><li><a href="#y">y</a></li>'
+    await flush()
+    expect(document.activeElement).toBe(document.body)
   })
 })
 
@@ -109,6 +146,18 @@ describe('focusPageTitle', () => {
     const title = await focusPageTitle(document, { wait })
     expect(title.textContent).toBe('Incidents')
     expect(document.activeElement).toBe(title)
+  })
+
+  it('never takes the focus the reader moved while the page loaded', async () => {
+    document.body.innerHTML = '<a id="link" href="#a">Incidents</a><input id="search" />'
+    document.getElementById('link').focus()
+    let tick = 0
+    const wait = async () => {
+      if (++tick === 1) document.getElementById('search').focus()
+      if (tick === 2) document.body.insertAdjacentHTML('beforeend', '<h1 data-wolf-page-title tabindex="-1">Incidents</h1>')
+    }
+    expect(await focusPageTitle(document, { wait })).toBe(null)
+    expect(document.activeElement.id).toBe('search')
   })
 
   it('gives up when the page has no title', async () => {

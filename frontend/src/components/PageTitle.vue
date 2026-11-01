@@ -5,5 +5,5 @@ defineProps({ title: { type: String, required: true } })
 </script>
 
 <template>
-  <h1 data-wolf-page-title tabindex="-1" class="wolf-page-title truncate text-lg font-semibold text-ink-gray-9">{{ title }}</h1>
+  <h1 data-wolf-page-title tabindex="-1" class="truncate text-lg font-semibold text-ink-gray-9">{{ title }}</h1>
 </template>

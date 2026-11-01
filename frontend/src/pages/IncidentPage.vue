@@ -171,8 +171,10 @@ async function postComment() {
   try {
     await call('frappe_wolf.api.incident.add_comment', { incident: name.value, content: comment.value }, { post: true })
     comment.value = '' // cleared only once it is saved
-    // the Comment button is disabled now that the box is empty: the box keeps the focus
-    commentBox.value?.querySelector('textarea')?.focus()
+    // the Comment button is disabled now that the box is empty: the box takes the focus, unless
+    // the reader has moved on meanwhile
+    const active = document.activeElement
+    if (!active || active === document.body || commentBox.value?.contains(active)) commentBox.value?.querySelector('textarea')?.focus()
     await timeline.load(families.value, timeline.rows.value.length + 1)
   } catch (e) {
     actionError.value = e.message

@@ -8,6 +8,7 @@ CI runs it from ci/integration.sh.
 """
 
 import json
+import os
 import sys
 import threading
 from datetime import timedelta
@@ -1196,6 +1197,352 @@ def main():
 		return (f"3 mounts ranked by max with early gaps, mb 5xx summed per bucket, wrong aggregations refused, "
 		        f"custom metric listed, 400d clipped, scoped user sees nothing of {mhost}")
 
+	def app_security():
+		from types import SimpleNamespace
+
+		from frappe_wolf.wolf import local_signals
+
+		frappe.db.set_single_value("Wolf Settings", "capture_app_security", 1)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		since = now_datetime() - timedelta(seconds=1)
+
+		def last(category):
+			rows = frappe.get_all("Wolf Event", filters={"category": category, "creation": (">=", since)},
+			                      fields=["title", "severity", "payload"], order_by="creation desc", limit=1)
+			assert rows, f"no {category} event"
+			return rows[0]
+
+		seen = {}
+		cleanup = []
+		try:
+			script = frappe.get_doc({"doctype": "Server Script", "name": "wolf-smoke-ping", "script_type": "API",
+			                         "api_method": "wolf_smoke_ping", "script": "frappe.response['message'] = 'pong'"})
+			script.insert(ignore_permissions=True)
+			cleanup.append(("Server Script", script.name))
+			e = last("server_script_change")
+			assert e.severity == "critical" and "created" in e.title, e  # API scripts are critical
+			script.description = "only the description"
+			script.save(ignore_permissions=True)
+			assert frappe.db.count("Wolf Event", {"category": "server_script_change", "creation": (">=", since)}) == 1
+			seen["server script"] = e.title
+
+			frappe.get_doc({"doctype": "Console Log", "script": "print(1)", "type": "Python"}).insert(ignore_permissions=True)
+			seen["console"] = last("console_execution").title
+
+			ss = frappe.get_doc("System Settings")
+			# a site that never ran the setup wizard has no language / time zone, and Frappe
+			# refuses the save: fill them with what the site already uses
+			ss.language = ss.language or "en"
+			ss.time_zone = ss.time_zone or events.system_tz()
+			original = ss.session_expiry
+			ss.session_expiry = "999:00"
+			ss.save(ignore_permissions=True)
+			e = last("security_settings_weakened")
+			assert json.loads(e.payload)["changes"][0]["field"] == "session_expiry", e
+			ss.reload()
+			ss.session_expiry = original
+			ss.save(ignore_permissions=True)
+			seen["settings"] = e.title
+
+			user = frappe.get_doc({"doctype": "User", "email": "wolf-apikey@example.com", "first_name": "Key",
+			                       "send_welcome_email": 0}).insert(ignore_permissions=True)
+			cleanup.append(("User", user.name))
+			from frappe.core.doctype.user.user import generate_keys
+
+			generate_keys(user.name)
+			e = last("api_key_generated")
+			assert e.severity == "warning" and user.name in e.title, e  # not a privileged user
+			seen["api key"] = e.title
+
+			# Webhook is named by prompt: give it one, as the Desk form asks for
+			hook = frappe.get_doc({"doctype": "Webhook", "name": "wolf-smoke-hook", "__newname": "wolf-smoke-hook",
+			                       "webhook_doctype": "ToDo", "webhook_docevent": "after_insert",
+			                       "request_url": "https://hooks.example.com/wolf", "request_structure": "JSON",
+			                       "webhook_json": "{}", "enabled": 1}).insert(ignore_permissions=True)
+			cleanup.append(("Webhook", hook.name))
+			assert json.loads(last("webhook_external").payload)["domain"] == "hooks.example.com"
+			seen["webhook"] = "hooks.example.com"
+
+			profile = frappe.get_doc({"doctype": "Role Profile", "role_profile": "Wolf Smoke Profile",
+			                          "roles": [{"role": "System Manager"}]}).insert(ignore_permissions=True)
+			cleanup.append(("Role Profile", profile.name))
+			assert "created" in last("permission_change").title
+
+			frappe.form_dict.update({"doctype": "ToDo", "role": "Guest", "permlevel": 0, "ptype": "read", "value": 1})
+			local_signals.after_request(
+				response=SimpleNamespace(status_code=200),
+				request=SimpleNamespace(path="/api/method/frappe.core.page.permission_manager.permission_manager.update"),
+			)
+			e = last("permission_change")
+			assert e.title == "Permission rule changed: Guest on ToDo", e
+			assert any(t["id"] == "T1098" for t in json.loads(e.payload)["mitre_attack"]), e
+			seen["permission manager"] = e.title
+		finally:
+			for key in ("doctype", "role", "permlevel", "ptype", "value"):
+				frappe.form_dict.pop(key, None)
+			for doctype, name in reversed(cleanup):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+		return seen
+
+	def posture_score():
+		from frappe_wolf.api import security
+
+		host = events.local_scope()["host"]
+		now = now_datetime()
+		samples = [
+			schema.normalize_metric({"metric_name": "exposed_services", "value": 1, "host": host}, tz, now),
+			schema.normalize_metric({"metric_name": "site_config_risks", "value": 0, "host": host, "site": SITE}, tz, now),
+			schema.normalize_metric({"metric_name": "backup_age_hours", "value": 2, "host": host, "site": SITE}, tz, now),
+		]
+		events.insert_metrics(samples)
+		result = security.get_posture(SITE)
+		status = {c["id"]: c["status"] for c in result["checks"]}
+		assert result["local"] and status["two_factor"] in ("pass", "fail"), status  # read on the site itself
+		assert status["exposure"] == "fail" and status["backup"] == "pass", status
+		assert status["tls"] == "unknown", status  # no sample: never counted as passed
+		assert 0 <= result["score"] < 100 and result["coverage"] < 100, result
+		before = frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE})
+		security.record_security_scores()
+		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 1
+		assert SITE in security.list_sites()
+		return f"score {result['score']} (coverage {result['coverage']}%), {status}"
+
+	def regulatory_deadlines():
+		from frappe_wolf.api import compliance as compliance_api
+		from frappe_wolf.api import incident_view
+
+		aware = now_datetime() - timedelta(hours=70)
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke NIS2", "severity": "critical",
+		                      "site": "nis2.localhost", "nis2_significant": 1, "nis2_aware_at": aware,
+		                      "gdpr_breach": 1})  # fmt: skip
+		inc.insert(ignore_permissions=True)
+		assert inc.gdpr_aware_at, "ticking the GDPR flag starts its clock"
+		first = compliance_api.check_deadlines()
+		stages = sorted(json.loads(frappe.db.get_value("Wolf Event", n, "payload"))["obligation"] for n in first)
+		assert stages == ["nis2_early_warning", "nis2_notification"], stages  # 24 h passed, 72 h within 6 h
+		assert all(frappe.db.get_value("Wolf Event", n, "incident") == inc.name for n in first)
+		assert compliance_api.check_deadlines() == [], "one reminder per obligation and stage"
+		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
+		                                       "comment_type": "Comment"})  # fmt: skip
+		assert comments == 2, comments
+		view = incident_view.get_incident(inc.name)["regulatory"]
+		assert view["nis2"] and view["gdpr"] and len(view["deadlines"]) == 4, view
+		report = compliance_api.get_report(inc.name)["markdown"]
+		assert "| Incident notification (72 h) |" in report and "OVERDUE" in report, report
+		return f"{len(first)} reminders on {inc.name}, report {len(report)} chars"
+
+	def threat_intel():
+		from types import SimpleNamespace
+
+		from frappe_wolf.api import threat
+
+		path = frappe.get_site_path("private", "files", "wolf_smoke_list.txt")
+		with open(path, "w") as f:
+			f.write("# smoke\n203.0.113.0/24\n")
+		values = {"ip_reputation_enabled": 1, "ip_reputation_sources": "smoke private/files/wolf_smoke_list.txt",
+		          "honeytoken_users": "decoy@example.com", "honeytoken_api_keys": "decoykey123",
+		          "honeytoken_paths": "/app/backup-admin"}  # fmt: skip
+		for k, v in values.items():
+			frappe.db.set_single_value("Wolf Settings", k, v)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		saved_request = getattr(frappe.local, "request", None)
+		try:
+			status = threat.refresh_reputation()
+			assert status["lists"]["smoke"] == {"entries": 1, "ok": True}, status
+			name = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "ssh_failed_login", "severity": "warning", "host": HOST,
+				 "payload": {"ip": "203.0.113.9", "count": 3}}, tz, now_datetime()))  # fmt: skip
+			ev = frappe.db.get_value("Wolf Event", name, ["severity", "payload"], as_dict=True)
+			assert ev.severity == "critical", ev
+			assert json.loads(ev.payload)["reputation"] == {"listed": True, "lists": ["smoke"]}, ev.payload
+
+			log = frappe.get_doc({"doctype": "Activity Log", "operation": "Login", "status": "Failed",
+			                      "user": "decoy@example.com", "ip_address": "198.51.100.20", "subject": "x"})  # fmt: skip
+			log.flags.ignore_links = True
+			log.insert(ignore_permissions=True)
+			kinds = []
+			for kind, request in (
+				("api_key", SimpleNamespace(path="/api/method/frappe.auth.get_logged_user",
+				                            headers={"Authorization": "token decoykey123:whatever"})),
+				("path", SimpleNamespace(path="/app/backup-admin/", headers={})),
+			):  # fmt: skip
+				frappe.local.request = request
+				threat.before_request()
+				kinds.append(kind)
+			rows = frappe.get_all("Wolf Event", filters={"category": "honeytoken_triggered"}, fields=["severity", "payload"])
+			seen = sorted(json.loads(r.payload)["kind"] for r in rows)
+			assert seen == ["api_key", "path", "user"], seen
+			assert all(r.severity == "critical" for r in rows)
+		finally:
+			frappe.local.request = saved_request
+			for k in values:
+				frappe.db.set_single_value("Wolf Settings", k, 0 if k == "ip_reputation_enabled" else None)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			os.remove(path)
+		return f"reputation tagged {name} critical; honeytokens {seen}"
+
+	def response_actions():
+		from frappe_wolf.api import ingest as ingest_api
+		from frappe_wolf.api import response as response_api
+
+		agent = frappe.get_doc({"doctype": "Wolf Agent", "hostname": "smoke-responder", "status": "Active",
+		                        "kind": "agent"}).insert(ignore_permissions=True).name  # fmt: skip
+		user = frappe.get_doc({"doctype": "User", "email": "wolf-intruder@example.com", "first_name": "Intruder",
+		                       "send_welcome_email": 0}).insert(ignore_permissions=True).name  # fmt: skip
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke response", "severity": "critical",
+		                      "host": "smoke-responder"}).insert(ignore_permissions=True)  # fmt: skip
+		for data, by in (
+			({"type": "security", "category": "ssh_failed_login", "severity": "critical", "host": "smoke-responder",
+			  "payload": {"ip": "45.33.32.156", "count": 30}}, agent),
+			({"type": "security", "category": "web_attack_probe", "host": "smoke-responder",
+			  "payload": {"ip": "10.0.0.9"}}, agent),
+			({"type": "security", "category": "api_key_generated", "site": SITE,
+			  "payload": {"user": user}}, None),
+		):  # fmt: skip
+			name = events.insert_event(schema.normalize_event(data, tz, now_datetime()), agent=by)
+			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		proposals = {(p["action"], p["target"]) for p in response_api.get_response(inc.name)["proposals"]}
+		assert ("block_ip", "45.33.32.156") in proposals and ("block_ip", "10.0.0.9") not in proposals, proposals
+		assert ("disable_user", user) in proposals, proposals
+
+		block = response_api.approve(inc.name, "block_ip", "45.33.32.156", agent=agent, duration_hours=2)
+		assert block["status"] == "Approved" and block["host"] == "smoke-responder", block
+		res = ingest_api.accept(agent, {"hostname": "smoke-responder", "metrics": [], "events": []})
+		assert [a["ip"] for a in res["actions"]] == ["45.33.32.156"] and res["actions"][0]["seconds"] > 7000, res
+		res = ingest_api.accept(agent, {"hostname": "smoke-responder", "metrics": [], "events": [],
+		                                "action_results": [{"id": block["name"], "ok": True, "detail": "blocked"}]})  # fmt: skip
+		assert res["actions"] == [], res["actions"]  # applied: not handed out again
+		assert frappe.db.get_value("Wolf Response Action", block["name"], "status") == "Applied"
+		assert ("block_ip", "45.33.32.156") not in {(p["action"], p["target"]) for p in response_api.get_response(inc.name)["proposals"]}
+
+		disabled = response_api.approve(inc.name, "disable_user", user)
+		assert disabled["status"] == "Applied" and not frappe.db.get_value("User", user, "enabled"), disabled
+		for action, target in (("disable_user", "Administrator"), ("block_ip", "10.0.0.9")):
+			try:
+				response_api.approve(inc.name, action, target, agent=agent)
+				raise AssertionError(f"{action} {target} was accepted")
+			except frappe.ValidationError:
+				frappe.clear_messages()
+		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
+		                                       "comment_type": "Comment"})  # fmt: skip
+		assert comments >= 3, comments  # approved, applied on the host, user disabled
+		expired = response_api.expire_actions(now_datetime() + timedelta(hours=3))
+		assert block["name"] in expired, expired
+		return f"{block['name']} blocked then expired, {disabled['name']} {disabled['result']}, refusals ok"
+
+	def journal_chain():
+		from frappe_wolf.api import journal as journal_api
+
+		ev = events.insert_event(schema.normalize_event(
+			{"type": "security", "category": "ssh_failed_login", "host": HOST, "payload": {"ip": "45.33.32.1"}},
+			tz, now_datetime()))  # fmt: skip
+		assert frappe.db.exists("Wolf Journal Entry", {"ref_name": ev, "kind": "security_event", "seq": 0})
+		settings = frappe.get_doc("Wolf Settings")
+		settings.honeytoken_paths = "/app/secret-decoy"
+		settings.save(ignore_permissions=True)
+		pending = frappe.db.count("Wolf Journal Entry", {"seq": 0})
+		while journal_api.chain_journal():
+			pass
+		result = journal_api.verify_journal()
+		assert result["ok"] and result["pending"] == 0 and result["checked"] >= pending, result
+		anchor = journal_api.get_status()["anchor"]
+		assert journal_api.verify_journal(anchor)["ok"]
+
+		entry = frappe.get_all("Wolf Journal Entry", filters={"kind": "settings"}, fields=["content"], order_by="seq desc", limit=1)[0]
+		assert "honeytoken_paths" in entry.content and "secret-decoy" not in entry.content, entry.content  # names only
+
+		row = frappe.db.sql("""select name, seq, content from `tabWolf Journal Entry` where seq > 0
+			order by seq asc limit 1 offset 1""", as_dict=True)[0]  # fmt: skip
+		frappe.db.sql("update `tabWolf Journal Entry` set content = %s where name = %s", ("{}", row.name))
+		broken = journal_api.verify_journal()
+		assert not broken["ok"] and broken["problem"]["seq"] == row.seq, broken
+		frappe.db.sql("update `tabWolf Journal Entry` set content = %s where name = %s", (row.content, row.name))
+		assert journal_api.verify_journal(anchor)["ok"]
+
+		doc = frappe.get_doc("Wolf Journal Entry", row.name)
+		doc.summary = "rewritten"
+		try:
+			doc.save(ignore_permissions=True)
+			raise AssertionError("a journal entry was edited through the ORM")
+		except frappe.PermissionError:
+			frappe.clear_messages()
+		settings.reload()
+		settings.honeytoken_paths = None
+		settings.save(ignore_permissions=True)
+		return f"{result['checked']} entries chained and verified, edit detected at seq {row.seq}, anchor {anchor[:20]}…"
+
+	def siem_export():
+		import socketserver
+
+		from frappe_wolf.api import journal as journal_api
+		from frappe_wolf.api import siem as siem_api
+		from frappe_wolf.wolf import siem as siem_fmt
+
+		received = []
+
+		class Collector(socketserver.BaseRequestHandler):
+			def handle(self):
+				data = b""
+				while chunk := self.request.recv(65536):
+					data += chunk
+				received.extend(siem_fmt.unframe(data))
+
+		server = socketserver.TCPServer(("127.0.0.1", 0), Collector)
+		threading.Thread(target=server.serve_forever, daemon=True).start()
+		port = server.server_address[1]
+		values = {"siem_enabled": 1, "siem_host": "127.0.0.1", "siem_port": port, "siem_transport": "tcp",
+		          "siem_format": "ocsf", "siem_min_severity": "warning", "siem_event_types": "security", "siem_journal": 1}  # fmt: skip
+		for k, v in values.items():
+			frappe.db.set_single_value("Wolf Settings", k, v)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		frappe.db.set_global(siem_api.CURSOR_KEY, None)
+		try:
+			ev = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "web_attack_probe", "severity": "critical", "host": HOST,
+				 "title": "SIEM smoke probe", "payload": {"ip": "45.33.32.156"}}, tz, now_datetime()))  # fmt: skip
+			quiet = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "web_attack_probe", "severity": "info", "host": HOST,
+				 "title": "SIEM smoke below the minimum"}, tz, now_datetime()))  # fmt: skip
+			while journal_api.chain_journal():
+				pass
+			import time
+
+			def settle(count):
+				deadline = time.monotonic() + 10
+				while len(received) < count and time.monotonic() < deadline:  # the collector reads in its thread
+					time.sleep(0.05)
+
+			sent = siem_api.export_siem()  # default lag: events created just now wait for the next run
+			settle(sent)
+			# (the journal entries may name it: only a finding for it would be wrong)
+			assert not any(f'"uid": "{ev}"' in m for m in received), "an event younger than the lag was exported"
+			sent += siem_api.export_siem(lag_seconds=0)
+			settle(sent)
+			server.shutdown()
+			bodies = [m.split(" - ", 2)[2] for m in received]
+			findings = [json.loads(b) for b in bodies if b.startswith("{") and "class_uid" in b]
+			mine = [f for f in findings if f["finding_info"]["uid"] == ev]
+			assert mine and mine[0]["class_uid"] == 2004 and mine[0]["src_endpoint"]["ip"] == "45.33.32.156", findings[-1:]
+			assert not [f for f in findings if f["finding_info"]["uid"] == quiet], "below the minimum severity"
+			assert any('"wolf_journal"' in b for b in bodies), "journal entries are exported"
+			assert sent == len(received), (sent, len(received))
+			cursor = siem_api.get_status()
+			assert cursor["last_error"] is None and cursor["journal_seq"], cursor
+
+			frappe.db.set_single_value("Wolf Settings", "siem_port", 1)  # nothing listens there
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "ssh_failed_login", "severity": "warning", "host": HOST,
+				 "title": "SIEM smoke while down"}, tz, now_datetime()))  # fmt: skip
+			assert siem_api.export_siem(lag_seconds=0) == 0
+			down = siem_api.get_status()
+			assert down["last_error"] and down["event_name"] == cursor["event_name"], down  # nothing skipped
+		finally:
+			server.server_close()
+			frappe.db.set_single_value("Wolf Settings", "siem_enabled", 0)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1206,7 +1553,11 @@ def main():
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
-	                 ("explorers", explorers), ("metrics explorer", metrics_explorer)]:
+	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
+	                 ("app security", app_security), ("posture score", posture_score),
+	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
+	                 ("response actions", response_actions), ("journal", journal_chain),
+	                 ("siem export", siem_export)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

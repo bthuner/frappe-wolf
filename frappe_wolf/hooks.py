@@ -44,17 +44,40 @@ permission_query_conditions = {
 	"Wolf Incident": "frappe_wolf.wolf.access.incident_query",
 	"Wolf Silence": "frappe_wolf.wolf.access.silence_query",
 	"Wolf Agent": "frappe_wolf.wolf.access.agent_query",
+	"Wolf Response Action": "frappe_wolf.wolf.access.response_query",
 }
 has_permission = {
 	doctype: "frappe_wolf.wolf.access.has_permission"
-	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Incident", "Wolf Silence", "Wolf Agent")
+	for doctype in ("Wolf Event", "Wolf Metric Sample", "Wolf Metric Rollup", "Wolf Incident", "Wolf Silence", "Wolf Agent",
+	                "Wolf Response Action")  # fmt: skip
 }
 
 doc_events = {
 	"Error Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_error_log"},
 	"Activity Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_activity_log"},
-	"User": {"on_update": "frappe_wolf.wolf.local_signals.on_user_update"},
+	"User": {
+		"before_save": "frappe_wolf.wolf.local_signals.on_user_before_save",
+		"on_update": "frappe_wolf.wolf.local_signals.on_user_update",
+	},
+	# Frappe application security (Wolf Settings → Flag risky application changes)
+	"Server Script": {"on_update": "frappe_wolf.wolf.local_signals.on_server_script"},
+	"Client Script": {"on_update": "frappe_wolf.wolf.local_signals.on_client_script"},
+	"Console Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_console_log"},
+	"Role Profile": {"on_update": "frappe_wolf.wolf.local_signals.on_role_profile"},
+	"System Settings": {"on_update": "frappe_wolf.wolf.local_signals.on_system_settings"},
+	"Webhook": {"on_update": "frappe_wolf.wolf.local_signals.on_webhook"},
+	# tamper-evident journal (api/journal.py): unsigned entries, chained every minute
+	"Wolf Event": {"after_insert": "frappe_wolf.api.journal.on_event"},
+	"Wolf Incident": {"on_update": "frappe_wolf.api.journal.on_incident"},
+	"Wolf Response Action": {"on_update": "frappe_wolf.api.journal.on_response_action"},
+	"Wolf Settings": {"on_update": "frappe_wolf.api.journal.on_settings"},
+	"Comment": {"after_insert": "frappe_wolf.api.journal.on_comment"},
 }
+
+# Role Permission Manager changes bypass doc events (raw SQL): read from the request
+after_request = ["frappe_wolf.wolf.local_signals.after_request"]
+# decoy API keys and paths, checked before Frappe validates the token (api/threat.py)
+before_request = ["frappe_wolf.api.threat.before_request"]
 
 scheduler_events = {
 	"cron": {
@@ -63,10 +86,21 @@ scheduler_events = {
 			"frappe_wolf.tasks.check_incidents",
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
+			"frappe_wolf.api.journal.chain_journal",
+			"frappe_wolf.api.siem.export_siem",
 		],
-		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
+		"0 * * * *": [
+			"frappe_wolf.tasks.send_digests",
+			"frappe_wolf.api.security.record_security_scores",
+			"frappe_wolf.api.response.expire_actions",
+		],
 		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],
-		"*/5 * * * *": ["frappe_wolf.tasks.check_agents", "frappe_wolf.tasks.check_email_queue"],
+		"*/5 * * * *": [
+			"frappe_wolf.tasks.check_agents",
+			"frappe_wolf.tasks.check_email_queue",
+			"frappe_wolf.api.compliance.check_deadlines",
+		],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
+		"41 4 * * *": ["frappe_wolf.api.threat.refresh_reputation"],
 	},
 }

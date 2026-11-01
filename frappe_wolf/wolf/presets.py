@@ -250,6 +250,153 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	# --- cyber: host and web attack signals (agent auth and nginx parsers) ---
+	{
+		"rule_name": "SSH login after brute force",
+		"description": "An SSH login succeeded from an address that failed 5+ times in the hour before: "
+		"the brute force probably worked. Lock the account and check the session (MITRE T1110).",
+		"signal_type": "event", "event_type": "security", "event_category": "ssh_login_after_failures",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Repeated sudo failures",
+		"description": "Wrong sudo passwords or users outside sudoers trying to escalate (MITRE T1548.003).",
+		"signal_type": "event", "event_type": "security", "event_category": "sudo_failure",
+		"operator": ">=", "threshold": 3, "window_minutes": 10, "group_by": "host",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "New system account",
+		"description": "useradd created a local account on a host (persistence, MITRE T1136.001). "
+		"Silence it during planned provisioning.",
+		"signal_type": "event", "event_type": "security", "event_category": "account_created",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "User added to admin group",
+		"description": "A user joined sudo, wheel, admin, root, adm, docker or lxd on a host "
+		"(MITRE T1098).",
+		"signal_type": "event", "event_type": "security", "event_category": "admin_group_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Web attack scan",
+		"description": "100+ requests in 10 minutes probing a site for secrets, CMS panels, path "
+		"traversal or injections (MITRE T1595). Scans are constant on the Internet: this "
+		"catches the heavy ones.",
+		"signal_type": "event", "event_type": "security", "event_category": "web_attack_probe",
+		"operator": ">=", "threshold": 100, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "Sensitive file served",
+		"description": "nginx answered 2xx to a request for .env, .git/, site_config.json, a private "
+		"key or a database dump: the file was probably leaked. Rotate the secrets (MITRE T1552.001).",
+		"signal_type": "event", "event_type": "security", "event_category": "web_sensitive_file_exposed",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	# --- cyber: Frappe application security (site signals, Wolf Settings → Flag risky application changes) ---
+	{
+		"rule_name": "Server Script can run new code",
+		"description": "A Server Script was created, enabled or had its code, type or trigger changed "
+		"(MITRE T1059.006). Critical for API and scheduled scripts or guest access.",
+		"signal_type": "event", "event_type": "security", "event_category": "server_script_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Client Script can run new code",
+		"description": "A Client Script was created, enabled or changed: it runs in every user's browser "
+		"on that form (MITRE T1059.007).",
+		"signal_type": "event", "event_type": "security", "event_category": "client_script_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "System Console used",
+		"description": "Someone ran Python or SQL in the System Console (MITRE T1059.006).",
+		"signal_type": "event", "event_type": "security", "event_category": "console_execution",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "Security settings weakened",
+		"description": "System Settings lowered a defence: 2FA or the password policy off, lockout "
+		"loosened, longer sessions, guest uploads (MITRE T1562.001).",
+		"signal_type": "event", "event_type": "security", "event_category": "security_settings_weakened",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Permission rules changed",
+		"description": "Role Permission Manager rules or a Role Profile changed (MITRE T1098).",
+		"signal_type": "event", "event_type": "security", "event_category": "permission_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "API key generated",
+		"description": "A new API secret was written for a user: anyone holding it acts as that "
+		"user (MITRE T1098.001). Critical for privileged users.",
+		"signal_type": "event", "event_type": "security", "event_category": "api_key_generated",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Webhook to a new host",
+		"description": "A Webhook was created, enabled or pointed at another host: it sends documents "
+		"out of the site (MITRE T1567).",
+		"signal_type": "event", "event_type": "security", "event_category": "webhook_external",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	# --- cyber: posture (hourly score, api/security.py) ---
+	{
+		"rule_name": "Security score low",
+		"description": "A site's security score (checks Wolf could prove passed, out of 100) is below 60. "
+		"Open Wolf → Security for the failing checks and their fixes.",
+		"signal_type": "metric", "metric_name": "security_score", "aggregation": "last",
+		"operator": "<", "threshold": 60, "window_minutes": 180, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Bench service exposed",
+		"description": "MariaDB, a bench Redis, socket.io or gunicorn listens beyond loopback on a host "
+		"(exposed_services). Redis has no password by default.",
+		"signal_type": "metric", "metric_name": "exposed_services", "aggregation": "last",
+		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "host",
+		"severity": "critical", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Development settings in production",
+		"description": "developer_mode, allow_tests, a plain-HTTP host_name or allow_cors * in a site's "
+		"site_config.json (site_config_risks).",
+		"signal_type": "metric", "metric_name": "site_config_risks", "aggregation": "last",
+		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
+	# --- deception: honeytokens (Wolf Settings → Threat intelligence and deception) ---
+	{
+		"rule_name": "Honeytoken touched",
+		"description": "A decoy user, API key or path was used. Nobody legitimate knows them: treat it "
+		"as an intrusion until proven otherwise.",
+		"signal_type": "event", "event_type": "security", "event_category": "honeytoken_triggered",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	# --- compliance: NIS2 / GDPR deadlines on flagged incidents (api/compliance.py) ---
+	{
+		"rule_name": "Regulatory deadline",
+		"description": "A NIS2 or GDPR reporting deadline of a flagged incident is within 6 h, or has "
+		"passed. Add the channels of whoever reports to the CSIRT / CNIL.",
+		"signal_type": "event", "event_type": "security", "event_category": "regulatory_deadline",
+		"operator": ">=", "threshold": 1, "window_minutes": 15, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
 ]  # fmt: skip
 
 

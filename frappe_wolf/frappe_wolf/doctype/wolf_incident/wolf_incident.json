@@ -42,6 +42,18 @@
   "notes_section",
   "notes",
   "assigned_to",
+  "regulatory_section",
+  "nis2_significant",
+  "nis2_aware_at",
+  "nis2_early_warning_at",
+  "nis2_notification_at",
+  "nis2_final_report_at",
+  "cb_regulatory",
+  "gdpr_breach",
+  "gdpr_aware_at",
+  "gdpr_notified_at",
+  "regulatory_reference",
+  "regulatory_html",
   "related_section",
   "merged_into",
   "split_from",
@@ -279,6 +291,80 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
+   "fieldname": "regulatory_section",
+   "fieldtype": "Section Break",
+   "label": "Regulatory reporting (NIS2 / GDPR)",
+   "description": "Wolf tracks the deadlines; it does not decide whether the incident is reportable and sends nothing to an authority."
+  },
+  {
+   "default": "0",
+   "fieldname": "nis2_significant",
+   "fieldtype": "Check",
+   "label": "Significant incident (NIS2 Art. 23)"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant",
+   "description": "Deadlines count from here: early warning 24 h, incident notification 72 h, final report one month after the notification. Set to now when the flag is ticked.",
+   "fieldname": "nis2_aware_at",
+   "fieldtype": "Datetime",
+   "label": "Aware since (NIS2)"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant",
+   "fieldname": "nis2_early_warning_at",
+   "fieldtype": "Datetime",
+   "label": "Early warning sent at"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant",
+   "fieldname": "nis2_notification_at",
+   "fieldtype": "Datetime",
+   "label": "Incident notification sent at"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant",
+   "fieldname": "nis2_final_report_at",
+   "fieldtype": "Datetime",
+   "label": "Final report sent at"
+  },
+  {
+   "fieldname": "cb_regulatory",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "gdpr_breach",
+   "fieldtype": "Check",
+   "label": "Personal data breach (GDPR Art. 33)"
+  },
+  {
+   "depends_on": "eval:doc.gdpr_breach",
+   "description": "Notify the supervisory authority (CNIL in France) within 72 h. Set to now when the flag is ticked.",
+   "fieldname": "gdpr_aware_at",
+   "fieldtype": "Datetime",
+   "label": "Aware since (GDPR)"
+  },
+  {
+   "depends_on": "eval:doc.gdpr_breach",
+   "fieldname": "gdpr_notified_at",
+   "fieldtype": "Datetime",
+   "label": "Authority notified at"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
+   "fieldname": "regulatory_reference",
+   "fieldtype": "Data",
+   "label": "Authority reference"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
+   "fieldname": "regulatory_html",
+   "fieldtype": "HTML",
+   "label": "Deadlines"
+  },
+  {
+   "collapsible": 1,
    "collapsible_depends_on": "eval:doc.merged_into || doc.split_from || doc.postmortem || doc.public_title",
    "fieldname": "related_section",
    "fieldtype": "Section Break",
@@ -325,7 +411,7 @@
    "link_fieldname": "incident"
   }
  ],
- "modified": "2026-10-30 12:00:00.000000",
+ "modified": "2026-11-01 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Incident",

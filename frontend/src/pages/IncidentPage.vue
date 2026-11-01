@@ -3,6 +3,7 @@ import { Button, PageHeader, PageHeaderTitle, TabButtons, Textarea, TextInput } 
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import ResponsePanel from '@/components/ResponsePanel.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
@@ -94,6 +95,25 @@ async function refresh() {
   if (incident.value) await timeline.load(families.value, timeline.rows.value.length)
 }
 
+// NIS2 / GDPR deadlines (api/compliance.py): tracked here, set in Desk, nothing sent anywhere
+const REG_STATUS = {
+  open: 'Open',
+  due_soon: 'Due within 6 h',
+  overdue: 'Overdue',
+  done: 'Sent on time',
+  done_late: 'Sent late',
+}
+const report = ref(null)
+const reportError = ref(null)
+async function loadReport() {
+  reportError.value = null
+  try {
+    report.value = (await call('frappe_wolf.api.compliance.get_report', { incident: name.value })).markdown
+  } catch (e) {
+    reportError.value = e.message
+  }
+}
+
 async function act(action) {
   acting.value = action
   actionError.value = null
@@ -141,7 +161,12 @@ onMounted(async () => {
   await revealHash()
 })
 watch(families, () => timeline.load(families.value))
-watch(name, refresh)
+watch(name, () => {
+  // another incident: never show the previous one's report draft
+  report.value = null
+  reportError.value = null
+  refresh()
+})
 </script>
 
 <template>
@@ -194,6 +219,40 @@ watch(name, refresh)
         <dt>Linked events</dt>
         <dd>{{ incident.event_records }} records, {{ incident.event_count }} reported occurrences</dd>
       </dl>
+      <section v-if="incident.regulatory" class="space-y-2 border-t border-outline-gray-1 pt-2" aria-label="Regulatory reporting">
+        <h2 class="text-sm font-semibold text-ink-gray-9">
+          Regulatory reporting:
+          {{ [incident.regulatory.nis2 && 'NIS2 significant incident', incident.regulatory.gdpr && 'GDPR personal data breach'].filter(Boolean).join(', ') }}
+          <span v-if="incident.regulatory.reference" class="font-normal text-ink-gray-6">· reference {{ incident.regulatory.reference }}</span>
+        </h2>
+        <table class="w-full text-left text-sm">
+          <thead class="text-ink-gray-6">
+            <tr>
+              <th class="py-1 font-normal">Obligation</th>
+              <th class="py-1 font-normal">Due</th>
+              <th class="py-1 font-normal">Sent</th>
+              <th class="py-1 font-normal">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in incident.regulatory.deadlines" :key="d.id" class="border-t border-outline-gray-1">
+              <td class="py-1 pr-3">{{ d.label }}</td>
+              <td class="wolf-data py-1 pr-3">{{ full(d.due_at, tz) }}<span v-if="d.estimated"> (estimated)</span></td>
+              <td class="wolf-data py-1 pr-3">{{ d.done_at ? full(d.done_at, tz) : '—' }}</td>
+              <td class="py-1" :style="d.status === 'overdue' ? { color: 'var(--wolf-critical)', fontWeight: 600 } : null">
+                {{ REG_STATUS[d.status] }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-sm text-ink-gray-6">
+          Wolf tracks the dates; it does not decide whether the incident is reportable and sends nothing. Record the
+          sending times in Desk.
+          <Button size="sm" variant="ghost" label="Report draft" @click="loadReport" />
+        </p>
+        <p v-if="reportError" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ reportError }}</p>
+        <pre v-if="report" class="wolf-data max-h-96 overflow-auto whitespace-pre-wrap rounded bg-surface-gray-1 p-3 text-xs">{{ report }}</pre>
+      </section>
       <p v-if="incident.merged_into" class="text-sm">
         Merged into
         <RouterLink class="wolf-link" :to="{ name: 'incident', params: { incident: incident.merged_into } }">{{ incident.merged_into }}</RouterLink>.
@@ -208,6 +267,8 @@ watch(name, refresh)
       </div>
       <p v-if="actionError" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ actionError }}</p>
     </header>
+
+    <ResponsePanel :incident="incident.name" :time-zone="tz" @changed="refresh" />
 
     <section class="space-y-3" aria-label="Timeline">
       <div class="flex flex-wrap items-center gap-3">

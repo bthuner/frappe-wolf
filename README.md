@@ -291,8 +291,10 @@ Results at 100 hosts × 7 days: [docs/load-test.md](docs/load-test.md). Push p95
 HTTP. Metric rows are stored in metric and time order, and the inventory reads an index alone.
 Reads of known metrics scan the primary key by name range, chart buckets are summed in SQL, and
 the newest value of each series is picked in one pass. The Wolf UI's overview went from 13 to 24 s
-down to 1.5 s, then 0.73 s for its slowest read, under #10's 1 s. `--reads-only` times the reads
-again on data already loaded.
+down to 1.5 s, then 0.73 s for its slowest read, under #10's 1 s. In Chromium, the whole page is
+drawn in 0.9 to 1.0 s at the median and 1.0 to 1.3 s at p95
+([`frontend/scripts/page-time.mjs`](frontend/scripts/page-time.mjs)). `--reads-only` times the
+reads again on data already loaded.
 
 **Optional time-series backend (design, not built).** The read path goes through two functions,
 `rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through

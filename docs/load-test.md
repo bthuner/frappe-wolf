@@ -13,9 +13,10 @@ The target is #10's "done when": a synthetic load of 100 hosts for 7 days keeps 
 | `push` p95 under 200 ms | **Met.** 115 ms over HTTP | **Met.** 108 ms over HTTP | **Met.** 20.7 ms server side (HTTP not run again) |
 | Desk overview under 1 s | Met, except its 24 h chart: 2.1 s | Met, except its 24 h chart: 1.8 s | **Met.** 0.56 s at most (24 h) |
 | Wolf UI overview under 1 s | **Not met: 13.8 to 23.8 s** | **Not met: 1.5 s** | **Met per read: 0.73 s for the slowest** |
+| Wolf UI overview page in a browser | | | **Half met: p50 0.89 to 0.97 s, p95 1.01 to 1.26 s** |
 
-The Wolf UI's six reads go out at once; one after another they add up to 1.4 s. A browser's
-full page time was not measured (see "Not measured").
+The page time is from navigation start until every panel is drawn, in Chromium on the bench
+(see "The page in a browser"). Its median is under 1 s, its p95 is not.
 
 All runs used synthetic data and a demo bench, not production observations.
 
@@ -181,6 +182,41 @@ slowest one:
 #55 timed the reads that ignore the range once per range: its ranges there are run-to-run
 spread.
 
+### The page in a browser
+
+[`frontend/scripts/page-time.mjs`](../frontend/scripts/page-time.mjs) opens `/wolf` in headless
+Chromium 153, logged in, through the bench's nginx. A page is ready once its six reads have
+answered and no panel says it is loading. Two series of 10 runs each:
+- cold: a new browser context each time, so the app's scripts and styles are fetched again;
+- warm: the same tab navigating again, with its cache.
+
+Two runs, straight after a fresh load of the same data, in ms:
+
+| | Cold p50 | Cold p95 | Warm p50 | Warm p95 |
+|---|---|---|---|---|
+| **Page ready** | **971 to 973** | **1,129 to 1,262** | **887 to 892** | **1,008 to 1,134** |
+| App shell (DOMContentLoaded) | 109 | 134 to 140 | 79 to 85 | 103 to 143 |
+| First read sent (app up, session checked) | 211 to 213 | 254 to 262 | 103 to 110 | 130 to 166 |
+| Reads, first sent to last answered | 568 to 569 | 631 to 705 | 586 to 595 | 738 to 801 |
+| Drawing, last answer to panels drawn | 189 | 270 | 120 | 317 |
+
+Where the time goes, at the median of a cold page:
+- 0.21 s before the first read: the app's scripts, then its session check.
+- 0.57 s of reads. They go out at once and overlap well:
+  - `get_inventory`, 0.56 s, and `get_signals`, 0.51 s, set the length;
+  - the other four answer in 23 to 62 ms.
+  
+  In parallel, each takes about what it takes alone (0.57 s and 0.56 s in-process): the bench's
+  two gunicorn workers run them side by side.
+- 0.19 s to draw them: the signals table holds its first 300 series, the inventory 101 hosts.
+
+So the p95 goes over 1 s by up to a quarter of a second, in the two slow reads and in drawing.
+
+The demo's nginx serves one site whatever the host name (`wolf.localhost`). The measurement used
+a second nginx in the same container, on another port, with the same configuration set to the
+load site. A first run through the demo's own nginx timed the demo site, not the load: it is not
+counted.
+
 **Other reads:**
 
 | Read | 1 h | 6 h | 24 h | 7 d |
@@ -197,19 +233,25 @@ spread.
 
 ## What is left
 
-Nothing timed is over 1 s. The closest:
-- `get_inventory`, 0.73 s: which host, bench and site sent anything in 7 days, from the index
-  alone, over every rollup row of the window.
-- The metrics explorer over 24 h, 0.86 s.
-- The six Wolf UI reads together, 1.4 s one after another. In a browser they go out at once and
-  share 4 vCPU, the disk and the 128 MB buffer pool: that page time is not measured.
+Each read is under 1 s; the overview page in a browser is under 1 s at the median, not at p95:
+- The two slow reads, 0.5 to 0.6 s each, set the page:
+  - `get_inventory` reads which host, bench and site sent anything in 7 days, from the index
+    alone, over every rollup row of the window;
+  - `get_signals` reads the newest values of 2 h and the hourly rollups of 7 days.
+
+  Both read the same rows on every visit. A short cache would cut them, as long as it stays
+  access-aware (#19).
+- Drawing, 0.12 to 0.32 s, for 300 signal rows and 101 hosts. Drawing the first rows, and the
+  rest on demand, would cut most of it.
+- The metrics explorer over 24 h, 0.86 s, is the closest other read.
 
 These margins are for 100 hosts on this bench. At several times that, the inventory and the 24 h
 reads grow with the rows of their window.
 
 ## Not measured
 
-- A browser's full page time, with the six reads at once.
+- A user's network: the page was opened on the bench itself, without latency.
+- Browsers other than Chromium, and slower machines than this bench's 4 vCPU.
 - Rows named before #56 at the scale of an upgraded site: only one metric's day was renamed.
 - Postgres. CI installs the app there, which creates the new index, but nothing was timed and
   the upgrade from the old indexes was run on MariaDB only. Postgres stores rows roughly in
@@ -231,6 +273,16 @@ reads grow with the rows of their window.
   `--reads-only`.
 - On a site loaded before, empty the three tables first (`truncate`). The script deletes its own
   rows one transaction per table, which on 20 M rows takes long and needs as much undo space.
+
+The page in a browser, from `frontend/` once `yarn install` has run:
+
+```bash
+node scripts/page-time.mjs --url http://127.0.0.1:8080 --site <site> --password <admin password> --runs 10
+```
+
+- `--url` is the bench's nginx. It must serve `<site>`: the demo's serves `wolf.localhost` only
+  (see "The page in a browser").
+- `--path` and `--reads` time another page: its path, and how many Wolf reads it sends.
 
 `load_http.py` comes second:
 - Its agents report as 100 more hosts (`load-http-NNN`), which the reads would then include. The

@@ -158,7 +158,7 @@ def replace_buckets(res, start, end, partials):
 		)  # fmt: skip
 		for key, p in partials.items()
 	]
-	values.sort(key=lambda row: row[0])  # in name order, the order InnoDB stores them in
+	values.sort()  # in name order (names are unique and first), the order InnoDB stores them in
 	insert_rows(f"tab{ROLLUP_DOCTYPE}", ROLLUP_FIELDS, values)
 	return len(values)
 

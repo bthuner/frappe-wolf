@@ -19,9 +19,11 @@ def on_doctype_update():
 	# (api/scope.py) reads which host, bench and site sent anything in a range: with them in the
 	# index, it reads the index alone instead of fetching every row of the range.
 	frappe.db.add_index("Wolf Metric Rollup", ["resolution", "bucket_start", "host", "bench", "site"])
-	# replaced by the index above, of which it is the start (bucket_start's own index is gone too:
-	# no read filters bucket_start without a resolution)
+	# replaced by the index above, of which it is the start
 	_drop_index("Wolf Metric Rollup", "resolution_bucket_start_index")
+	# no read filters bucket_start without a resolution. The field lost search_index, so the schema
+	# sync drops this index already; dropped here too, whatever the database.
+	_drop_index("Wolf Metric Rollup", "bucket_start")
 
 
 def _drop_index(doctype, index_name):

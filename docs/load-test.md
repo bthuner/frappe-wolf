@@ -64,6 +64,14 @@ The names are now 33 characters for rollups and 28 for samples, against 32 and 1
 - Rows are named as the app names them. #55's run named its synthetic rows in sequence, so in
   time order. Only the last 48 h, written by the rollup job, had the scattered layout of a real
   site. A real site was therefore slower than #55 measured, not faster.
+- All hosts' samples of one instant go in at once, in name order. Real pushes arrive host by host
+  and a little out of time order, so a real sample table is somewhat less dense than this one.
+- The data end when loading starts, and read windows end when they are read:
+  - the full run read 20 to 35 min after the newest data;
+  - the "after" reads (`--reads-only`, once the index was in) read 40 to 45 min after it.
+
+  Between the two runs, reads the index does not touch moved by 11 % at most. `--reads-only`
+  refuses data over 2 h old.
 - Bench: the [demo stack](../dev/demo/README.md) in Docker, on 4 vCPU and 15 GB RAM:
   - Dodock 5.18.8;
   - gunicorn, 2 workers × 4 threads;

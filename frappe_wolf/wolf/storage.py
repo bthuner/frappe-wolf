@@ -9,6 +9,7 @@ its watermark (end of the last rolled bucket), then finer rollups, then raw samp
 tail that is not rolled yet. See plan_segments().
 """
 
+import functools
 import hashlib
 from datetime import datetime, timedelta, timezone
 
@@ -155,14 +156,20 @@ def clamp_sum(partial):
 	return True
 
 
+@functools.lru_cache(maxsize=1024)
 def _metric_part(metric):
 	"""Fixed-width stand-in for a metric name (any text up to 140 characters) in a row name."""
 	return hashlib.md5(str(metric).encode()).hexdigest()[:6]
 
 
-def _stamp(ts, digits):
-	"""YYMMDDHHMM[SS] of a datetime or of its string form."""
-	return "".join(c for c in str(ts) if c.isdigit())[2 : 2 + digits]
+def _stamp(ts, fmt):
+	"""`ts` (a datetime, or its "YYYY-MM-DD HH:MM:SS" string) in `fmt`. Two-digit years sort
+	right until 2100."""
+	if isinstance(ts, str):
+		ts = datetime.fromisoformat(ts)
+	if not isinstance(ts, datetime):
+		raise TypeError(f"a datetime is needed in a row name, not {type(ts).__name__}")
+	return ts.strftime(fmt)
 
 
 # InnoDB stores a table's rows in primary key order, and Frappe's primary key is `name`. A random
@@ -184,13 +191,14 @@ def rollup_name(resolution, key):
 	"""
 	text = "|".join([str(resolution)] + ["\\0" if part is None else str(part) for part in key])
 	digest = hashlib.sha1(text.encode()).hexdigest()[:16]
-	return f"{RESOLUTION_CODES.get(resolution, resolution)}{_metric_part(key[0])}{_stamp(key[5], 10)}{digest}"
+	# a resolution without a code fails here rather than naming rows out of order
+	return f"{RESOLUTION_CODES[resolution]}{_metric_part(key[0])}{_stamp(key[5], '%y%m%d%H%M')}{digest}"
 
 
 def sample_name(metric, timestamp, suffix):
 	"""Raw sample row name: metric and time (to the second) first, for the same reason; `suffix`
 	makes it unique."""
-	return f"{_metric_part(metric)}{_stamp(timestamp, 12)}{suffix}"
+	return f"{_metric_part(metric)}{_stamp(timestamp, '%y%m%d%H%M%S')}{suffix}"
 
 
 def finalize(partial, aggregation):

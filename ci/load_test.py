@@ -93,6 +93,11 @@ class Loader:
 		self.seq += 1
 		return f"ld{self.seq:011d}"
 
+	def suffix(self):
+		"""Unique end of a sample name, 10 characters like ingest's random one."""
+		self.seq += 1
+		return f"{self.seq:010d}"
+
 	def bulk(self, doctype, fields, rows, chunk=2000):
 		"""Multi-row INSERT (faster than frappe.db.bulk_insert for millions of rows), one commit per call."""
 		cols = ", ".join(f"`{f}`" for f in fields)
@@ -123,9 +128,10 @@ class Loader:
 		end = self.now - timedelta(seconds=self.args.interval)
 		while ts < end:
 			t = ts.strftime("%Y-%m-%d %H:%M:%S")
-			# named and ordered as events.insert_metrics names and orders them: the row order is
-			# what reads pay for
-			batch += sorted((self.storage.sample_name(metric, t, f"{self.name()[-10:]}"), t, t, "Administrator",
+			# named as events.insert_metrics names them: the row order is what reads pay for. All
+			# hosts' samples of one instant go in at once, in name order; real pushes arrive host
+			# by host and a little out of time order, so a real table is somewhat less dense.
+			batch += sorted((self.storage.sample_name(metric, t, self.suffix()), t, t, "Administrator",
 			                 "Administrator", 0, metric, self.pooled(), t, host, None, None, None, None)
 			                for host in self.hosts for metric in self.metrics)
 			if len(batch) >= 50_000:
@@ -220,8 +226,18 @@ def main():
 	      f"{args.days} days, raw every {args.interval}s for {args.raw_hours}h", flush=True)
 	results = {}
 
-	# --reads-only: time the reads on the data a previous run loaded (after an index change, say)
-	if not args.reads_only:
+	# --reads-only: time the reads on the data a previous run loaded (after an index change, say).
+	# Read windows end now, so data loaded long ago leaves them empty and the reads look fast.
+	if args.reads_only:
+		newest = frappe.db.sql("select max(bucket_start) from `tabWolf Metric Rollup` where host like %(p)s "
+		                       "and host not like 'load-http-%%'", {"p": PREFIX + "%"})[0][0]  # fmt: skip
+		age = (now_datetime() - newest) if newest else None
+		if age is None or age > timedelta(hours=2):
+			sys.exit(f"--reads-only: the newest loaded rollup is {age or 'missing'} old; load again (over 2 h, "
+			         "the 1 h, 6 h and rule windows would be compared on less data)")  # fmt: skip
+		results["data age (minutes)"] = round(age.total_seconds() / 60)
+		print(f"  reads on data loaded {results['data age (minutes)']} min ago", flush=True)
+	else:
 		loader.clean()
 		for step in ("synthetic_rollups", "raw", "events"):
 			results[f"load {step}"] = {"seconds": round(timed(getattr(loader, step))[0], 1)}

@@ -40,7 +40,7 @@ def insert_metrics(rows, agent=None):
 		)  # fmt: skip
 		for r in rows
 	]
-	values.sort(key=lambda row: row[0])  # in name order, the order InnoDB stores them in
+	values.sort()  # in name order (names are unique and first), the order InnoDB stores them in
 	frappe.db.bulk_insert("Wolf Metric Sample", fields, values)
 	# samples for minutes that are rolled up already (spool replay) get them rolled again
 	from frappe_wolf.wolf import rollups

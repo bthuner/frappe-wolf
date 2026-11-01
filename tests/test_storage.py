@@ -42,6 +42,11 @@ class TestBuckets(unittest.TestCase):
 		# every secondary index entry repeats the name: no longer than the hash it replaced
 		self.assertEqual(len(storage.rollup_name(MINUTE, key)), 33)
 		self.assertEqual(len(storage.sample_name("cpu_usage", T0, "x" * 10)), 28)
+		# no silent fallback: an unknown resolution or a time without a datetime fails
+		with self.assertRaises(KeyError):
+			storage.rollup_name(86400, key)
+		with self.assertRaises(TypeError):
+			storage.sample_name("cpu_usage", 1767225600, "x")
 
 	def test_names_keep_a_metric_in_time_order(self):
 		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous

@@ -17,6 +17,7 @@ const error = ref(null)
 
 async function load() {
   error.value = null
+  group.value = null // another fingerprint: never show the previous group under it
   try {
     group.value = await call('frappe_wolf.api.explore.get_error_group', { fingerprint: route.params.fingerprint })
   } catch (e) {
@@ -44,7 +45,7 @@ const where = (s) => [s.site, s.bench, s.host].filter(Boolean).join(' · ')
     <RouterLink class="wolf-link" :to="{ name: 'errors' }">Back to errors</RouterLink>
   </section>
   <div v-else-if="!group" class="p-5"><LoadingNote what="the error group" /></div>
-  <div v-else-if="group" class="mx-auto max-w-6xl space-y-5 p-5">
+  <div v-else class="mx-auto max-w-6xl space-y-5 p-5">
     <header class="wolf-card space-y-2">
       <SeverityGlyph :severity="group.severity" />
       <h1 class="text-xl font-semibold text-ink-gray-9">{{ group.title }}</h1>

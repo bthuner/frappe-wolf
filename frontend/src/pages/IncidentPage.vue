@@ -240,6 +240,10 @@ onMounted(async () => {
 })
 watch(families, () => timeline.load(families.value))
 watch(name, () => {
+  // another incident: never show the previous one under the new name while it loads
+  incident.value = null
+  loadError.value = null
+  timeline.reset()
   fresh.value = []
   workflowNote.value = null
   // another incident: never show the previous one's report draft
@@ -397,8 +401,8 @@ watch(name, () => {
           />
         </template>
       </ol>
-      <LoadingNote v-if="timeline.loading.value && !timeline.rows.value.length && !timeline.error.value" what="the timeline" />
-      <p v-if="!timeline.loading.value && !timeline.error.value && !visible.length" class="text-sm text-ink-gray-6">
+      <LoadingNote v-if="!timeline.loaded.value && !timeline.error.value" what="the timeline" />
+      <p v-if="timeline.loaded.value && !timeline.loading.value && !timeline.error.value && !visible.length" class="text-sm text-ink-gray-6">
         {{ filtered ? 'No rows match this filter.' : 'Nothing recorded in this window.' }}
       </p>
       <Button

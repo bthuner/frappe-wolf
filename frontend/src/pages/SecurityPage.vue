@@ -20,6 +20,7 @@ const site = useQueryParam('site')
 const sites = ref([])
 const posture = ref(null)
 const error = ref(null)
+const sitesError = ref(null)
 const loading = ref(false)
 let ticket = 0
 
@@ -30,7 +31,7 @@ async function loadSites() {
   try {
     sites.value = await call('frappe_wolf.api.security.list_sites')
   } catch (e) {
-    error.value = failure(e, 'the sites')
+    sitesError.value = failure(e, 'the sites')
   }
 }
 
@@ -44,7 +45,7 @@ async function load() {
   } catch (e) {
     if (mine === ticket) {
       posture.value = null
-      error.value = e.status === 403 ? 'You may not see this site.' : e.message
+      error.value = failure(e, 'this site')
     }
   } finally {
     if (mine === ticket) loading.value = false
@@ -97,6 +98,7 @@ watch(site, load, { immediate: true })
   </PageHeader>
 
   <div class="mx-auto max-w-5xl space-y-5 p-5">
+    <p v-if="sitesError" role="alert" class="text-sm" style="color: var(--wolf-critical)">Sites: {{ sitesError }}</p>
     <p v-if="error" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ error }}</p>
 
     <LoadingNote v-if="loading && !posture && !error" what="the security score" />

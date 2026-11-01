@@ -35,14 +35,29 @@ const VIEWS = [
 ] // prettier-ignore
 
 const NOTHING = /No unresolved incidents|Nothing recorded|No event records|No error groups|No samples of this metric/
+const CLAIMS = ['No unresolved incidents', 'Nothing recorded', 'No event records', 'No error groups', 'No samples of this metric']
+
+// Records every "nothing" claim the page ever shows, even for a single frame.
+async function watchClaims(page) {
+  await page.addInitScript((claims) => {
+    window.__claims = []
+    new MutationObserver(() => {
+      const text = document.body?.innerText || ''
+      for (const c of claims) if (text.includes(c) && !window.__claims.includes(c)) window.__claims.push(c)
+    }).observe(document, { subtree: true, childList: true, characterData: true })
+  }, CLAIMS)
+}
+const claims = (page) => page.evaluate(() => window.__claims)
 
 for (const view of VIEWS) {
   test.describe(view.name, () => {
     test('loading says so, and claims nothing yet', async ({ page }) => {
+      await watchClaims(page)
       await mockApi(page, { [view.read]: slow(view.read) })
       await page.goto(view.path)
       await expect(page.getByRole('status').filter({ hasText: 'Loading' }).first()).toBeVisible()
-      await expect(page.getByText(NOTHING)).toHaveCount(0)
+      await page.waitForTimeout(1500) // still reading
+      expect(await claims(page), 'a "nothing" claim while reading').toEqual([])
     })
 
     if (view.empty) {
@@ -55,10 +70,11 @@ for (const view of VIEWS) {
     }
 
     test('an error says why, and claims nothing', async ({ page }) => {
+      await watchClaims(page)
       await mockApi(page, { [view.read]: () => fail(500, 'database is down') })
       await page.goto(view.path)
       await expect(page.getByRole('alert').filter({ hasText: 'database is down' }).first()).toBeVisible()
-      await expect(page.getByText(NOTHING)).toHaveCount(0)
+      expect(await claims(page), 'a "nothing" claim after a failed read').toEqual([])
     })
 
     test('a refusal says what may not be seen', async ({ page }) => {
@@ -70,6 +86,31 @@ for (const view of VIEWS) {
     })
   })
 }
+
+test('an ended session asks to log in again, not "you may not see"', async ({ page }) => {
+  await mockApi(page, { 'frappe_wolf.api.incident_view.list_incidents': () => fail(403, 'Not permitted', { expired: true }) })
+  await page.goto('/wolf/incidents')
+  await expect(page.getByRole('alert')).toHaveText('Your session has ended: reload the page to log in again.')
+})
+
+test('the overview says when its monitoring panel fails, and the metric catalog while it loads', async ({ page }) => {
+  await mockApi(page, {
+    'frappe_wolf.api.dashboard.get_monitoring': () => fail(500, 'redis unreachable'),
+    'frappe_wolf.api.metrics.get_metric_catalog': slow('frappe_wolf.api.metrics.get_metric_catalog'),
+  })
+  await page.goto('/wolf/')
+  await expect(page.getByRole('alert').filter({ hasText: 'Monitoring: redis unreachable' })).toBeVisible()
+  await page.goto('/wolf/metrics')
+  await expect(page.getByRole('status').filter({ hasText: 'Loading the metric catalog' })).toBeVisible()
+})
+
+test('a slow timeline never says "Nothing recorded" before it has read', async ({ page }) => {
+  await watchClaims(page)
+  await mockApi(page, { 'frappe_wolf.api.incident_view.get_timeline': slow('frappe_wolf.api.incident_view.get_timeline') })
+  await page.goto('/wolf/incidents/WINC-00001')
+  await expect(page.getByText('restarting workers')).toBeVisible({ timeout: 10000 })
+  expect(await claims(page)).toEqual([])
+})
 
 test('filtered-empty is not the same as empty', async ({ page }) => {
   await mockApi(page, { 'frappe_wolf.api.incident_view.list_incidents': () => ({ incidents: [], paging: { has_more: false } }) })

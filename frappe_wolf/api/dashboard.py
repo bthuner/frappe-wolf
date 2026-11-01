@@ -178,7 +178,7 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	where, params = _where(scope, HTTP_METRICS)
 	# whole buckets only: the newest data shows once its bucket closes (storage.whole_buckets)
 	first, end, buckets = storage.whole_buckets(win.since, win.until, bucket)
-	rows = [r for r in rollups.series_rows(where, params, resolution, first, end) if get_datetime(r["timestamp"]) < end]
+	rows = [r for r in rollups.series_rows(where, params, resolution, first, end, HTTP_METRICS) if get_datetime(r["timestamp"]) < end]
 
 	# interval counts: the sum per bucket, every label together. A bucket without samples is a
 	# gap (None), not a zero.

@@ -198,11 +198,15 @@ def rollup_name(resolution, key):
 	return f"{RESOLUTION_CODES[resolution]}{_metric_part(key[0])}{_stamp(key[5], '%y%m%d%H%M')}{digest}"
 
 
+NAMES_FROM = datetime(2000, 1, 1)  # names carry two-digit years, which sort right from here to 2100
+
+
 def rollup_name_range(resolution, metric, start, end):
 	"""[low, high) holding the names of `metric`'s rows at `resolution` with start <= bucket_start
 	< end. A read can then scan that stretch of the primary key instead of looking each row up
 	through a secondary index. A superset: other metrics may share the 6-character hash."""
 	prefix = f"{RESOLUTION_CODES[resolution]}{_metric_part(metric)}"
+	start = max(start, NAMES_FROM)  # two-digit years: a 1999 start would sort above the end
 	return prefix + _stamp(floor(start, 60), "%y%m%d%H%M"), prefix + _stamp(ceil(end, 60), "%y%m%d%H%M")
 
 

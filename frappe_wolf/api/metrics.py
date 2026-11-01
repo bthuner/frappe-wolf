@@ -119,6 +119,8 @@ def query_metric(metric, aggregation=None, group_by=None, label=None, range=None
 	shown = totals[:MAX_GROUPS]
 	keys = [tuple(r.get(c) for c in group_cols) for r in shown]
 	only_shown = [*where, _group_condition(group_cols, keys, params)] if group_cols and keys else where
+	shown_keys = set(keys)
+	cells = {key: part for key, part in cells.items() if key[0] in shown_keys}  # only charted groups are kept
 
 	# freshness only means something when the window reaches now; it is read from the newest
 	# sample, not from the last whole bucket (which lags up to a bucket behind)

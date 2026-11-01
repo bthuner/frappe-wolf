@@ -68,6 +68,12 @@ class TestBuckets(unittest.TestCase):
 					self.assertGreater(name, storage.LEGACY_ROLLUP_NAMES_BELOW)
 		self.assertLess("f" * 32, storage.LEGACY_ROLLUP_NAMES_BELOW)
 
+	def test_name_range_of_a_window_from_before_2000(self):
+		# names carry two-digit years: a range from 1999 must still hold the rows from 2000 on
+		low, high = storage.rollup_name_range(MINUTE, "cpu_usage", datetime(1999, 12, 1), datetime(2000, 1, 10))
+		name = storage.rollup_name(MINUTE, ("cpu_usage", "h1", None, None, None, datetime(2000, 1, 5)))
+		self.assertTrue(low <= name < high)
+
 	def test_names_keep_a_metric_in_time_order(self):
 		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous
 		# and sorted by time, whatever the hosts and whatever the metric names

@@ -348,7 +348,9 @@ def name_passes(res, metrics, start, end):
 		ranges.append(f"(`name` >= %(name_lo{i})s and `name` < %(name_hi{i})s)")
 	passes = [(f"({' or '.join(ranges)})", params)]
 	if _has_legacy_names():
-		passes.append(("`name` < %(legacy_below)s", {"legacy_below": storage.LEGACY_ROLLUP_NAMES_BELOW}))
+		# through a function, so it filters the rows the bucket indexes find: as a primary key range
+		# it could be read as one, over every row named before #56 (millions on an upgraded site)
+		passes.append(("left(`name`, 1) < %(legacy_below)s", {"legacy_below": storage.LEGACY_ROLLUP_NAMES_BELOW}))
 	return passes
 
 

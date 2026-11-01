@@ -1,6 +1,6 @@
 import { ref, shallowRef } from 'vue'
 
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 
 const METHOD = 'frappe_wolf.api.incident_view.get_timeline'
 export const PAGE_SIZE = 100
@@ -23,7 +23,7 @@ export function useTimeline(incident, { fetchFn } = {}) {
       const page = await call(METHOD, { incident: incident(), ...args }, { fetchFn })
       return mine === ticket ? page : null
     } catch (e) {
-      if (mine === ticket) error.value = e.message
+      if (mine === ticket) error.value = failure(e, "this incident's timeline")
       return null
     } finally {
       if (mine === ticket) loading.value = false

@@ -4,10 +4,11 @@ import { LineChart } from 'frappe-ui/charts'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import ScopeInputs from '@/components/ScopeInputs.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { RANGES } from '@/services/filters'
 import { ago, axisLabel, full } from '@/services/time'
 
@@ -62,7 +63,7 @@ async function loadCatalog() {
   try {
     catalog.value = (await call('frappe_wolf.api.metrics.get_metric_catalog')).metrics
   } catch (e) {
-    error.value = e.message
+    error.value = failure(e, 'the metric catalog')
   }
 }
 
@@ -98,7 +99,7 @@ async function query() {
     const answer = await call('frappe_wolf.api.metrics.query_metric', args)
     if (mine === ticket) result.value = answer
   } catch (e) {
-    if (mine === ticket) error.value = e.message
+    if (mine === ticket) error.value = failure(e, 'this metric')
   } finally {
     if (mine === ticket) loading.value = false
   }
@@ -186,6 +187,7 @@ watch([metric, site, host, bench], loadLabels)
     </p>
     <p v-if="error" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ error }}</p>
 
+    <LoadingNote v-if="loading && !result && !error" what="the samples" />
     <section v-if="result" class="wolf-card space-y-2" aria-label="Chart">
       <p class="text-sm text-ink-gray-6">
         {{ result.aggregation }} per {{ result.bucket_seconds >= 3600 ? `${result.bucket_seconds / 3600} h` : `${result.bucket_seconds / 60} min` }},

@@ -4,6 +4,7 @@ import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import LoadingNote from '@/components/LoadingNote.vue'
 import MergeDialog from '@/components/MergeDialog.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import ResponsePanel from '@/components/ResponsePanel.vue'
@@ -13,7 +14,7 @@ import TimelineRow from '@/components/TimelineRow.vue'
 import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { useTimeline } from '@/composables/useTimeline'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { clock, day, duration, full } from '@/services/time'
 
 const route = useRoute()
@@ -98,7 +99,7 @@ async function loadIncident() {
     incident.value = await call('frappe_wolf.api.incident_view.get_incident', { incident: name.value })
   } catch (e) {
     incident.value = null
-    loadError.value = e.status === 403 ? 'You may not see this incident.' : e.message
+    loadError.value = failure(e, 'this incident')
   }
 }
 
@@ -258,11 +259,12 @@ watch(name, () => {
   </PageHeader>
 
   <section v-if="loadError" class="max-w-2xl p-5 text-base text-ink-gray-8">
-    <p>{{ loadError }}</p>
+    <p role="alert">{{ loadError }}</p>
     <RouterLink class="wolf-link" :to="{ name: 'incidents' }">Back to incidents</RouterLink>
   </section>
 
-  <div v-else-if="incident" class="mx-auto max-w-5xl space-y-5 p-5">
+  <div v-else-if="!incident" class="p-5"><LoadingNote what="the incident" /></div>
+  <div v-else class="mx-auto max-w-5xl space-y-5 p-5">
     <header class="wolf-card space-y-2">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-gray-6">
         <SeverityGlyph :severity="incident.severity" />
@@ -395,7 +397,8 @@ watch(name, () => {
           />
         </template>
       </ol>
-      <p v-if="!timeline.loading.value && !visible.length" class="text-sm text-ink-gray-6">
+      <LoadingNote v-if="timeline.loading.value && !timeline.rows.value.length && !timeline.error.value" what="the timeline" />
+      <p v-if="!timeline.loading.value && !timeline.error.value && !visible.length" class="text-sm text-ink-gray-6">
         {{ filtered ? 'No rows match this filter.' : 'Nothing recorded in this window.' }}
       </p>
       <Button

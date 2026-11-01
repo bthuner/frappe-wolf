@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { RANGES, pick } from '@/services/filters'
 
 // A paged list driven by the URL's filters: a newer filter's answer always wins, and
@@ -36,7 +36,7 @@ export function useExplore(method, key, { extraArgs = () => ({}), itemKey }) {
       hasMore.value = page.paging.has_more
       meta.value = page
     } catch (e) {
-      if (mine === ticket) error.value = e.message
+      if (mine === ticket) error.value = failure(e, 'these records')
     } finally {
       if (mine === ticket) loading.value = false
     }

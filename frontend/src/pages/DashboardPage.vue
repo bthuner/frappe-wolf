@@ -4,6 +4,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import LoadingNote from '@/components/LoadingNote.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useLive } from '@/composables/useLive'
@@ -12,7 +13,7 @@ import CountTiles from '@/components/dash/CountTiles.vue'
 import HttpChart from '@/components/dash/HttpChart.vue'
 import MonitoringPanel from '@/components/dash/MonitoringPanel.vue'
 import SignalsPanel from '@/components/dash/SignalsPanel.vue'
-import { call } from '@/services/api'
+import { call, failure } from '@/services/api'
 import { clock, full } from '@/services/time'
 
 // The overview (no scope) and the site, host and bench dashboards (scope from the route).
@@ -42,6 +43,8 @@ const errors = ref({})
 const loading = ref(false)
 let ticket = 0
 
+const PANELS = { counts: 'these counts', http: 'HTTP activity', signals: 'these signals', incidents: 'these incidents', inventory: 'the inventory', monitoring: "Wolf's own monitoring" }
+
 async function load() {
   const mine = ++ticket
   loading.value = true
@@ -62,7 +65,7 @@ async function load() {
   const failed = {}
   Object.keys(jobs).forEach((k, i) => {
     if (settled[i].status === 'fulfilled') next[k] = settled[i].value
-    else failed[k] = settled[i].reason.message // each panel says it failed; the others still show
+    else failed[k] = failure(settled[i].reason, PANELS[k]) // each panel says it failed; the others still show
   })
   data.value = next
   errors.value = failed
@@ -114,6 +117,7 @@ const live = useLive(hub, {
   <div class="mx-auto max-w-6xl space-y-5 p-5">
     <p v-if="data.counts?.restricted" class="text-sm text-ink-gray-6">You see the sites, benches and hosts you were granted.</p>
 
+    <LoadingNote v-if="loading && !data.counts && !errors.counts" />
     <CountTiles v-if="data.counts" :counts="data.counts" />
     <p v-else-if="errors.counts" role="alert" class="text-sm" style="color: var(--wolf-critical)">Counts: {{ errors.counts }}</p>
 

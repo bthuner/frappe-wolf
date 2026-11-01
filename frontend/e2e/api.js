@@ -104,6 +104,12 @@ export function fixtures() {
   }
 }
 
+// A handler result that answers with an HTTP error, as Frappe does (403 PermissionError, 500...).
+export function fail(status, message) {
+  return { [FAIL]: { status, message } }
+}
+const FAIL = Symbol('fail')
+
 // Answer every API call of `page` from the fixtures (and `overrides`); returns the call log.
 export async function mockApi(page, overrides = {}) {
   const handlers = { ...fixtures(), ...overrides }
@@ -119,7 +125,13 @@ export async function mockApi(page, overrides = {}) {
     if (!handler) {
       return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ exception: `frappe.DoesNotExistError: ${method} not mocked` }) })
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: await handler(body) }) })
+    const result = await handler(body)
+    if (result && result[FAIL]) {
+      const { status, message } = result[FAIL]
+      const exception = status === 403 ? `frappe.exceptions.PermissionError: ${message}` : `Exception: ${message}`
+      return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ exception }) })
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: result }) })
   })
   return calls
 }

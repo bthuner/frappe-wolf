@@ -18,6 +18,13 @@ function serverMessage(body) {
   return (body.exception || '').split(':').slice(1).join(':').trim() || null
 }
 
+// What the reader is told when a read fails: a refusal says what may not be seen, in words,
+// not as Frappe's exception text; anything else keeps the server's reason.
+export function failure(e, what) {
+  if (e?.status === 403) return `You may not see ${what}.`
+  return e?.message || String(e)
+}
+
 export async function call(method, args = {}, { post = false, fetchFn = window.fetch.bind(window), signal } = {}) {
   const url = `/api/method/${method}`
   const init = { headers: { Accept: 'application/json' }, signal }

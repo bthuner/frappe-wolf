@@ -267,28 +267,37 @@ def main():
 	# the Wolf UI's overview (/wolf): six reads the browser sends at once
 	from frappe_wolf.api import dashboard, incident_view, metrics, scope
 
-	spa = {
+	# get_counts and get_http follow the range picker; the four others ignore it, so they are timed
+	# once rather than once per range
+	ranged = {
 		"get_counts": lambda r: scope.get_counts(range=r),
 		"get_http": lambda r: dashboard.get_http(range=r),
-		"get_signals": lambda r: dashboard.get_signals(),
-		"list_incidents": lambda r: incident_view.list_incidents(limit=10),
-		"get_inventory": lambda r: scope.get_inventory(),
-		"get_monitoring": lambda r: dashboard.get_monitoring(),
 	}
+	fixed = {
+		"get_signals": dashboard.get_signals,
+		"list_incidents": lambda: incident_view.list_incidents(limit=10),
+		"get_inventory": scope.get_inventory,
+		"get_monitoring": dashboard.get_monitoring,
+	}
+	fixed_runs = [{k: timed(fn)[0] for k, fn in fixed.items()} for _ in range(args.repeat)]
+	for k in fixed:
+		results[f"  {k} (any range)"] = summary([run[k] for run in fixed_runs])
 	for range_key in ("1h", "6h", "24h", "7d"):
-		per, sequence, slowest = {k: [] for k in spa}, [], []
-		for _ in range(args.repeat):
-			times = {k: timed(lambda fn=fn, r=range_key: fn(r))[0] for k, fn in spa.items()}
-			for k, t in times.items():
-				per[k].append(t)
+		per, sequence, slowest = {k: [] for k in ranged}, [], []
+		for run in fixed_runs:
+			times = {k: timed(lambda fn=fn, r=range_key: fn(r))[0] for k, fn in ranged.items()} | run
+			for k in ranged:
+				per[k].append(times[k])
 			sequence.append(sum(times.values()))  # one web worker answering all six: the upper bound
-			slowest.append(max(times.values()))  # enough workers to answer them in parallel
+			# enough workers to answer them in parallel; a lower bound, since parallel reads share
+			# the CPU, the disk and the buffer pool
+			slowest.append(max(times.values()))
 		results[f"Wolf UI overview {range_key}, six reads in sequence"] = summary(sequence)
 		results[f"Wolf UI overview {range_key}, slowest read"] = summary(slowest)
-		for k in spa:
+		for k in ranged:
 			results[f"  {k} {range_key}"] = summary(per[k])
 		print(f"  Wolf UI overview {range_key}: {results[f'Wolf UI overview {range_key}, six reads in sequence']}", flush=True)
-		results[f"Wolf UI metrics explorer {range_key} (cpu_usage, 100 hosts)"] = summary(
+		results[f"Wolf UI metrics explorer {range_key} (cpu_usage, {args.hosts} hosts)"] = summary(
 			[timed(lambda r=range_key: metrics.query_metric("cpu_usage", group_by="host", range=r))[0] for _ in range(args.repeat)])
 
 	for minutes, agg in ((5, "avg"), (1440, "max"), (10080, "last")):

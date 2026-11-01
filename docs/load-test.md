@@ -5,7 +5,7 @@ keeps `push` p95 under 200 ms and the overview under 1 s.
 
 | Target | Result |
 |---|---|
-| `push` p95 under 200 ms | **Met.** 115 ms over HTTP (8 agents at once), 16.5 ms server side. |
+| `push` p95 under 200 ms | **Met.** 115 ms over HTTP (100 agents through 8 connections at once), 16.5 ms server side. |
 | Overview under 1 s | **Met by Desk's overview, except its 24 h chart. Not met by the Wolf UI's overview: 13 to 24 s.** |
 
 Both runs used synthetic data and a demo bench, not production observations.
@@ -28,7 +28,7 @@ Both runs used synthetic data and a demo bench, not production observations.
 
 ## Results
 
-p95 of 10 runs, in milliseconds.
+In milliseconds. Reads: p95 of 10 runs. Pushes: over every timed push.
 
 **Push, server side** (`ingest.accept()`, 200 pushes of 15 metrics):
 
@@ -55,7 +55,9 @@ headers, straight to gunicorn):
 
 The 24 h chart alone takes 1,899 ms: it reads 1-minute rollups.
 
-**Wolf UI overview** (`/wolf`). Its six reads go out at once, so a page waits for the slowest one:
+**Wolf UI overview** (`/wolf`). Its six reads go out at once, so a page waits at least for the
+slowest one: the reads were timed one after another, and run in parallel they share the CPU, the
+disk and the buffer pool, so the page itself is slower.
 
 | Read | 1 h | 6 h | 24 h | 7 d |
 |---|---|---|---|---|
@@ -65,6 +67,10 @@ The 24 h chart alone takes 1,899 ms: it reads 1-minute rollups.
 | list_incidents | 1.0 | 1.0 | 0.9 | 4.3 |
 | **get_inventory** | **23,799** | **16,887** | **21,214** | **13,836** |
 | get_monitoring | 13.2 | 11.4 | 15.0 | 11.7 |
+
+Only `get_counts` and `get_http` follow the range. The four others ignore it: in their rows the
+four columns are four series of the same read, and their spread (8.0 to 10.6 s, 13.8 to 23.8 s)
+is run-to-run variation. `load_test.py` now times them once.
 
 **Other reads:**
 
@@ -114,3 +120,8 @@ from the table. Three things make that slow.
 ```
 
 `load_test.py` deletes and rewrites the site's metric tables: never point it at a real site.
+
+`load_http.py` comes second. Its agents report as 100 more hosts (`load-http-NNN`), which the reads
+would then include; the next `load_test.py` run deletes them. It raises the site's push limit for
+the run and puts it back afterwards. Its p50 / p95 are over accepted pushes (HTTP 200) only; every
+other status or connection error is counted separately.

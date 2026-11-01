@@ -890,6 +890,7 @@ def main():
 		                      "deployment_event": deploy, "deployment_at": at - timedelta(minutes=90)}).insert()
 		for name in linked:
 			frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		frappe.db.set_value("Wolf Event", linked[0], "count", 5)  # a deduplicated record: 5 occurrences
 		for i in range(3):
 			frappe.get_doc({"doctype": "Wolf Delivery", "incident": inc.name, "at": at, "kind": "webhook",
 			                "channel_type": "webhook", "action": "opened", "ok": i != 2, "http_status": 200 if i != 2 else 500,
@@ -904,6 +905,8 @@ def main():
 
 		detail = view.get_incident(inc.name)
 		assert detail["deployment"]["available"] and detail["event_records"] == 7, detail
+		# records and the occurrences they report are not the same number
+		assert detail["event_count"] == 11, (detail["event_records"], detail["event_count"])
 		assert detail["can"]["acknowledge"] and detail["can"]["resolve"], detail["can"]
 		full = view.get_timeline(inc.name, limit=500)
 		ids = [r["id"] for r in full["rows"]]

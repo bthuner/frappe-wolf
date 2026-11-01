@@ -5,6 +5,7 @@ apply to it; the dashboard never invents a threshold of its own. HTTP charts kee
 5xx and 502 apart (502 is part of 5xx) and keep gaps as gaps.
 """
 
+import json
 from collections import defaultdict
 from datetime import timedelta
 
@@ -14,7 +15,7 @@ from frappe.utils import cint, get_datetime, now_datetime
 from frappe_wolf import satellite
 from frappe_wolf.api.scope import _scope, _window
 from frappe_wolf.api.ui import READ_ROLES, agent_cutoff
-from frappe_wolf.wolf import access, catalog, events, health, inventory, rollups, storage, window
+from frappe_wolf.wolf import access, catalog, events, health, inventory, read_cache, rollups, scopes, storage, window
 
 SERIES_KEY = ("metric_name", "host", "bench", "site", "label_key")
 RECENT = timedelta(hours=2)  # the newest value is read from here (1m rollups + raw tail)
@@ -25,10 +26,12 @@ HTTP_METRICS = ("http_requests", "http_5xx", "http_502")
 EMAIL_CATEGORIES = ("email_queue_backlog", "email_queue_error")
 
 
-def _where(scope, metrics):
+def _where(scope, metrics, restrict=True):
+	"""SQL conditions on metric rows in scope; restrict=False for a result shared by all callers
+	(read_cache), which the caller then filters itself."""
 	where = ["metric_name in %(metrics)s", *(f"`{k}` = %({k})s" for k in scope)]
 	params = {"metrics": tuple(metrics), **scope}
-	allowed, allowed_params = access.sql_condition("Wolf Metric Rollup")  # same columns as samples
+	allowed, allowed_params = access.sql_condition("Wolf Metric Rollup") if restrict else ("", {})  # same columns as samples
 	if allowed:
 		where.append(allowed.removeprefix(" and "))
 		params.update(allowed_params)
@@ -61,31 +64,11 @@ def get_signals(site=None, bench=None, host=None):
 	now = now_datetime()
 	restricted = access.grants() is not None
 	metrics = [m for m in catalog.CATALOG if m not in HTTP_METRICS]
-	where, params = _where(scope, metrics)
-
-	recent = rollups.aggregate(where, params, list(SERIES_KEY), [], "last", storage.MINUTE, now - RECENT, now, metrics)
-	series = {
-		tuple(r.get(k) for k in SERIES_KEY): {**{k: r.get(k) for k in SERIES_KEY}, "value": r.value, "last_at": get_datetime(r.last_at), "recent": True}
-		for r in recent
-	}
-	# quieter series: when they were last seen, from the hourly rollups (no value: it is old)
-	since = now - timedelta(days=LOOKBACK_DAYS)
-	older = []
-	for name_where, name_params in rollups.name_passes(storage.HOUR, metrics, since, now + timedelta(hours=1)):
-		older += frappe.db.sql(
-			f"""select metric_name, host, bench, site, label_key, max(last_ts) as last_at from `tabWolf Metric Rollup`
-			where resolution = 3600 and bucket_start >= %(since)s and {' and '.join([*where, *([name_where] if name_where else [])])}
-			group by metric_name, host, bench, site, label_key""",
-			{**params, **name_params, "since": since},
-			as_dict=True,
-		)
-	# newest first: the first row of a series is kept, and one named both ways (#56) comes twice
-	older.sort(key=lambda r: get_datetime(r.last_at), reverse=True)
-	for r in older:
-		key = tuple(r.get(k) for k in SERIES_KEY)
-		if key not in series:
-			# nothing in the recent read: stale whatever its cadence says
-			series[key] = {**{k: r.get(k) for k in SERIES_KEY}, "value": None, "last_at": get_datetime(r.last_at), "recent": False}
+	# the same series for every caller, cached a few seconds; each caller's grants filter them
+	cached, as_of = read_cache.get("signals", json.dumps(scope, sort_keys=True), lambda: _signal_series(scope, metrics))
+	grants = access.grants()
+	columns = scopes.COLUMNS["Wolf Metric Rollup"]
+	series = {key: s for key, s in cached if scopes.row_visible(s, grants, columns)}
 
 	rules = _rules(metrics, restricted)
 	incidents = frappe.get_list(
@@ -124,8 +107,40 @@ def get_signals(site=None, bench=None, host=None):
 		"caveats": catalog.CAVEATS,
 		"email": _email(scope, now, tz),
 		"lookback_days": LOOKBACK_DAYS,
+		"as_of": window.to_utc(as_of, tz),  # when the series were read (read_cache)
 		"time_zone": tz,
 	}
+
+
+def _signal_series(scope, metrics):
+	"""[(series key, series)] of every signal series in scope, whoever asks: not filtered by
+	access (get_signals filters them). The newest value of the last RECENT; series quiet since
+	then only say when they were last seen, from the hourly rollups (no value: it is old)."""
+	now = now_datetime()
+	where, params = _where(scope, metrics, restrict=False)
+	recent = rollups.aggregate(where, params, list(SERIES_KEY), [], "last", storage.MINUTE, now - RECENT, now, metrics)
+	series = {
+		tuple(r.get(k) for k in SERIES_KEY): {**{k: r.get(k) for k in SERIES_KEY}, "value": r.value, "last_at": get_datetime(r.last_at), "recent": True}
+		for r in recent
+	}
+	since = now - timedelta(days=LOOKBACK_DAYS)
+	older = []
+	for name_where, name_params in rollups.name_passes(storage.HOUR, metrics, since, now + timedelta(hours=1)):
+		older += frappe.db.sql(
+			f"""select metric_name, host, bench, site, label_key, max(last_ts) as last_at from `tabWolf Metric Rollup`
+			where resolution = 3600 and bucket_start >= %(since)s and {' and '.join([*where, *([name_where] if name_where else [])])}
+			group by metric_name, host, bench, site, label_key""",
+			{**params, **name_params, "since": since},
+			as_dict=True,
+		)
+	# newest first: the first row of a series is kept, and one named both ways (#56) comes twice
+	older.sort(key=lambda r: get_datetime(r.last_at), reverse=True)
+	for r in older:
+		key = tuple(r.get(k) for k in SERIES_KEY)
+		if key not in series:
+			# nothing in the recent read: stale whatever its cadence says
+			series[key] = {**{k: r.get(k) for k in SERIES_KEY}, "value": None, "last_at": get_datetime(r.last_at), "recent": False}
+	return list(series.items())
 
 
 def _email(scope, now, tz):

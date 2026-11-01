@@ -24,17 +24,21 @@ const splitting = ref(false)
 const error = ref(null)
 let request = 0
 
-async function load() {
+// the linked events once per opening, then only the preview for each selection
+async function load({ withEvents = false } = {}) {
   const mine = ++request
   loading.value = true
   error.value = null
   try {
-    const args = { incident: props.incident }
+    const args = { incident: props.incident, with_events: withEvents ? 1 : 0 }
     if (selected.value.length) args.events = JSON.stringify(selected.value)
     const answer = await call('frappe_wolf.api.incident_view.split_preview', args)
-    if (mine === request) data.value = answer
+    if (mine === request) data.value = withEvents ? answer : { ...data.value, preview: answer.preview }
   } catch (e) {
-    if (mine === request) error.value = e.message
+    if (mine === request) {
+      error.value = e.message
+      if (data.value) data.value = { ...data.value, preview: null } // no preview for a selection it is not about
+    }
   } finally {
     if (mine === request) loading.value = false
   }
@@ -45,11 +49,25 @@ watch(open, (value) => {
   selected.value = []
   title.value = ''
   data.value = null
-  load()
+  load({ withEvents: true })
 })
-watch(selected, () => open.value && load(), { deep: true })
+watch(
+  selected,
+  (value) => {
+    if (!open.value) return
+    if (value.length) load()
+    else if (data.value) data.value = { ...data.value, preview: null }
+  },
+  { deep: true },
+)
 
-const preview = computed(() => (selected.value.length ? data.value?.preview : null))
+// shown and confirmable only for the selection it describes
+const preview = computed(() => {
+  const p = data.value?.preview
+  if (!p || !selected.value.length) return null
+  const same = p.selection.length === selected.value.length && p.selection.every((n) => selected.value.includes(n))
+  return same ? p : null
+})
 const plural = (n, noun) => `${n} ${n === 1 ? noun : `${noun}s`}`
 
 async function split() {

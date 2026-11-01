@@ -14,7 +14,6 @@ from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 
 from frappe_wolf.api.ui import READ_ROLES
 from frappe_wolf.wolf import access, events, incident_ops, incidents, schema, timeline, window, workflow
-from frappe_wolf.wolf import events as events_module
 from frappe_wolf.wolf.spa import MANAGER_ROLES
 from frappe_wolf.wolf.workflow import ACTIVITY_LIMITS, activity_filters, get_activity
 
@@ -43,11 +42,16 @@ def _allowed(doc, action):
 	return False
 
 
+def _postmortem(doc):
+	"""The incident's postmortem if it still exists (one deleted in Desk is written again)."""
+	return doc.postmortem if doc.postmortem and frappe.db.exists("Wolf Postmortem", doc.postmortem) else None
+
+
 def _manager():
 	return bool(set(frappe.get_roles()) & set(MANAGER_ROLES)) or frappe.session.user == "Administrator"
 
 
-def _can(doc):
+def _can(doc, records=None):
 	manager = _manager()
 	write = manager and frappe.has_permission("Wolf Incident", "write", doc=doc)
 	live = not doc.merged_into
@@ -57,9 +61,9 @@ def _can(doc):
 		"workflow": write,  # editing in Desk
 		# the workflow's own checks (wolf/workflow.py), so a button is never offered to fail
 		"merge": write and live,
-		"split": write and live and frappe.db.count("Wolf Event", {"incident": doc.name}) >= 2,
+		"split": write and live and (records if records is not None else frappe.db.count("Wolf Event", {"incident": doc.name})) >= 2,
 		# write an existing one, or start it once resolved
-		"postmortem": manager and live and (bool(doc.postmortem) or doc.status == "Resolved"),
+		"postmortem": manager and live and (bool(_postmortem(doc)) or doc.status == "Resolved"),
 	}
 
 
@@ -72,6 +76,7 @@ def get_incident(incident):
 	"""Everything the incident header needs, in one call."""
 	doc = _incident(incident)
 	tz = events.system_tz()
+	counts = _linked_counts(doc.name)
 	start, end, padding = incidents.incident_window(doc)
 	deployment = None
 	if doc.deployment_at or doc.deployment_event:
@@ -107,15 +112,15 @@ def get_incident(incident):
 		"escalated_at": _utc(doc.escalated_at, tz),
 		"merged_into": doc.merged_into,
 		"split_from": doc.split_from,
-		"postmortem": doc.postmortem,
+		"postmortem": _postmortem(doc),
 		# event records linked to the incident, and the occurrences they report (a deduplicated
 		# record counts its repeats): not the same number. Wolf Incident.event_count is the former.
-		**_linked_counts(doc.name),
+		**counts,
 		"timeline_window": {"since": window.to_utc(start, tz), "until": window.to_utc(end, tz), "padding_minutes": padding,
 							"open_ended": not doc.resolved_at},  # fmt: skip
 		"time_zone": tz,
 		"regulatory": _regulatory(doc, tz),
-		"can": _can(doc),
+		"can": _can(doc, counts["event_records"]),
 	}
 
 
@@ -355,6 +360,7 @@ def list_incidents(status="unresolved", cursor=None, limit=50, site=None, bench=
 
 MERGE_CANDIDATES = 50
 SPLIT_EVENTS = 500
+_system_tz = events.system_tz  # split_preview's `events` argument hides the module
 
 
 def _incident_card(row, tz):
@@ -365,39 +371,39 @@ def _incident_card(row, tz):
 	}  # fmt: skip
 
 
-def _comment_count(incident):
-	return frappe.db.count(
-		"Comment",
-		{"reference_doctype": "Wolf Incident", "reference_name": incident, "comment_type": ("in", workflow.MOVED_COMMENT_TYPES)},
-	)
+def _merge_candidates(src):
+	"""Unresolved, unmerged incidents the caller may write, the source's site first, then the
+	rest, newest first in each; (rows, more)."""
+	fields = ["name", "title", "status", "severity", "site", "bench", "host", "started_at"]
+	base = {"name": ("!=", src.name), "status": ("in", incidents.OPEN), "merged_into": ("is", "not set")}
+	rows, seen = [], set()
+	scopes = [{"site": src.site}, {}] if src.site else [{}]
+	for extra in scopes:
+		for r in frappe.get_list("Wolf Incident", filters={**base, **extra}, fields=fields, order_by="started_at desc",
+		                         limit_page_length=MERGE_CANDIDATES * 2):  # fmt: skip
+			if r.name in seen or not frappe.has_permission("Wolf Incident", "write", doc=r.name):
+				continue
+			seen.add(r.name)
+			rows.append(r)
+	more = len(rows) > MERGE_CANDIDATES
+	return rows[:MERGE_CANDIDATES], more
 
 
 @frappe.whitelist()
-def merge_preview(source, target=None):
+def merge_preview(source, target=None, with_candidates=1):
 	"""Where `source` may be merged, and, for `target`, what would move and what both become.
 
-	Candidates are unresolved, unmerged incidents the caller may write, its own site first. Nothing
-	is written: api/incident.py merge() does it, with the same checks.
+	Candidates are unresolved, unmerged incidents the caller may write, its own site first.
+	Nothing is written: api/incident.py merge() does it, with the same checks.
 	"""
 	src = _incident(source)
 	workflow.require_manager(src)
-	tz = events.system_tz()
-	rows = frappe.get_list(
-		"Wolf Incident",
-		filters={"name": ("!=", src.name), "status": ("in", incidents.OPEN), "merged_into": ("is", "not set")},
-		fields=["name", "title", "status", "severity", "site", "bench", "host", "started_at"],
-		order_by="started_at desc",
-		limit_page_length=MERGE_CANDIDATES + 1,
-	)
-	more = len(rows) > MERGE_CANDIDATES
-	rows = rows[:MERGE_CANDIDATES]
-	rows.sort(key=lambda r: (r.site != src.site, r.bench != src.bench))  # stable: newest first in each
-	out = {
-		"source": _incident_card(src, tz),
-		"candidates": [_incident_card(r, tz) for r in rows],
-		"more_candidates": more,  # the list is the newest ones: say so
-		"preview": None,
-	}
+	tz = _system_tz()
+	out = {"source": _incident_card(src, tz), "candidates": None, "more_candidates": False, "preview": None}
+	if cint(with_candidates):
+		rows, more = _merge_candidates(src)
+		out["candidates"] = [_incident_card(r, tz) for r in rows]
+		out["more_candidates"] = more  # the list is the newest ones: say so
 	if target:
 		tgt = _incident(target)
 		error = incident_ops.check_merge(src.as_dict(), tgt.as_dict())
@@ -408,7 +414,7 @@ def merge_preview(source, target=None):
 			"error": error,
 			"target": _incident_card(tgt, tz),
 			"events": frappe.db.count("Wolf Event", {"incident": src.name}),
-			"comments": _comment_count(src.name),
+			"comments": workflow.moved_comment_count(src.name),
 			# what the target becomes: the source's whole window and the worse severity
 			"target_after": {"severity": after.get("severity"), "started_at": _utc(after.get("started_at"), tz),
 			                 "status": tgt.status},  # fmt: skip
@@ -419,44 +425,46 @@ def merge_preview(source, target=None):
 
 
 @frappe.whitelist()
-def split_preview(incident, events=None):
+def split_preview(incident, events=None, with_events=1):
 	"""The events linked to `incident` that a split may move, and, for a selection, the incident
 	it would create. Nothing is written: api/incident.py split() does it, with the same checks."""
 	src = _incident(incident)
 	workflow.require_manager(src)
-	tz = events_module.system_tz()
-	linked = frappe.get_all(
-		"Wolf Event",
-		filters={"incident": src.name},
-		fields=["name", "title", "severity", "category", "event_type", "timestamp", "last_seen", "count", "site", "bench", "host"],
-		order_by="timestamp asc, name asc",
-		limit=SPLIT_EVENTS + 1,
-	)
-	more = len(linked) > SPLIT_EVENTS
-	linked = linked[:SPLIT_EVENTS]
-	out = {
-		"incident": _incident_card(src, tz),
-		"merged_into": src.merged_into,
-		"events": [
+	tz = _system_tz()
+	out = {"incident": _incident_card(src, tz), "merged_into": src.merged_into, "events": None, "more_events": False,
+	       "preview": None}  # fmt: skip
+	if cint(with_events):
+		linked = frappe.get_all(
+			"Wolf Event",
+			filters={"incident": src.name},
+			fields=["name", "title", "severity", "category", "event_type", "timestamp", "last_seen", "count", "site", "bench", "host"],
+			order_by="timestamp asc, name asc",
+			limit=SPLIT_EVENTS + 1,
+		)
+		out["more_events"] = len(linked) > SPLIT_EVENTS
+		out["events"] = [
 			{"name": e.name, "title": e.title, "severity": e.severity, "kind": e.category or e.event_type,
 			 "at": _utc(e.timestamp, tz), "last_seen": _utc(e.last_seen, tz), "count": cint(e.count) or 1,
 			 "scope": {"site": e.site, "bench": e.bench, "host": e.host}}
-			for e in linked
-		],  # fmt: skip
-		"more_events": more,
-		"preview": None,
-	}
+			for e in linked[:SPLIT_EVENTS]
+		]  # fmt: skip
 	if events is not None:
-		error, names = incident_ops.check_split([e.name for e in linked], events)
-		rows = [e for e in linked if e.name in set(names)]
-		fields = incident_ops.split_fields(rows) if rows else {}
+		# every linked event, as workflow.split() checks them, not only the ones listed
+		rows = frappe.get_all("Wolf Event", filters={"incident": src.name},
+		                      fields=["name", "title", "severity", "timestamp", "last_seen"], limit=workflow.SPLIT_LIMIT)  # fmt: skip
+		error, names = incident_ops.check_split([r.name for r in rows], events)
+		if src.merged_into:
+			error = f"This incident was merged into {src.merged_into}."
+		picked = [r for r in rows if r.name in set(names)] if not error else []
+		fields = incident_ops.split_fields(picked) if picked else {}
 		out["preview"] = {
 			"error": error,
-			"moved": len(names),
-			"kept": len(linked) - len(names) if not error else len(linked),
+			"selection": incident_ops.parse_names(events),  # what this preview is about
+			"moved": len(picked),
+			"kept": len(rows) - len(picked),
 			# a split incident has no rule: it never resolves by itself
 			"new_incident": {
-				"title": incident_ops.split_title(src.title, rows) if rows else None,
+				"title": incident_ops.split_title(src.title, picked) if picked else None,
 				"severity": fields.get("severity"),
 				"started_at": _utc(fields.get("started_at"), tz),
 				"status": "Resolved" if src.status == "Resolved" else "Open",

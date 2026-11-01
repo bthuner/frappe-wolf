@@ -121,7 +121,7 @@ describe('SplitDialog', () => {
   const answer = (selected) => ({
     incident: card('WINC-1'), merged_into: null, events: EVENTS, more_events: false,
     preview: selected && {
-      error: null, moved: selected.length, kept: EVENTS.length - selected.length,
+      error: null, selection: selected, moved: selected.length, kept: EVENTS.length - selected.length,
       new_incident: { title: 'Job failed', severity: 'warning', started_at: '2026-10-30T01:10:00Z', status: 'Open' },
     },
   }) // prettier-ignore
@@ -146,6 +146,23 @@ describe('SplitDialog', () => {
     const split = calls.filter((c) => c.method.endsWith('.split'))
     expect(split.map((c) => c.args)).toEqual([{ incident: 'WINC-1', events: '["E2"]', title: 'Nightly job' }])
     expect(dialog.emitted('split')).toEqual([['WINC-7']])
+  })
+
+  it('never offers to confirm a preview made for another selection', async () => {
+    let fail = false
+    server({
+      'frappe_wolf.api.incident_view.split_preview': (args) => (fail ? new Response('{}', { status: 502 }) : answer(args.events && JSON.parse(args.events))),
+    })
+    await mounted(SplitDialog, { incident: 'WINC-1' })
+    const boxes = document.body.querySelectorAll('input[type="checkbox"]')
+    boxes[1].click()
+    await flushPromises()
+    expect(button('Split 1 event').disabled).toBe(false)
+    fail = true // the next preview fails: the one shown is about [E2] only
+    boxes[0].click()
+    await flushPromises()
+    expect(body()).not.toContain('Moves 1 event')
+    expect(button('Split 2 events').disabled).toBe(true)
   })
 
   it('keeps the selection and title when the server refuses', async () => {

@@ -23,15 +23,23 @@ const merging = ref(false)
 const error = ref(null)
 let request = 0
 
-async function load() {
+// the destinations once per opening, then only the preview for each choice
+async function load({ withCandidates = false } = {}) {
   const mine = ++request
   loading.value = true
   error.value = null
   try {
-    const answer = await call('frappe_wolf.api.incident_view.merge_preview', { source: props.incident, target: target.value || null })
-    if (mine === request) data.value = answer
+    const answer = await call('frappe_wolf.api.incident_view.merge_preview', {
+      source: props.incident,
+      target: target.value || null,
+      with_candidates: withCandidates ? 1 : 0,
+    })
+    if (mine === request) data.value = withCandidates ? answer : { ...data.value, preview: answer.preview }
   } catch (e) {
-    if (mine === request) error.value = e.message
+    if (mine === request) {
+      error.value = e.message
+      if (data.value) data.value = { ...data.value, preview: null } // no preview for a choice it is not about
+    }
   } finally {
     if (mine === request) loading.value = false
   }
@@ -41,9 +49,13 @@ watch(open, (value) => {
   if (!value) return
   target.value = ''
   data.value = null
-  load()
+  load({ withCandidates: true })
 })
-watch(target, () => open.value && load())
+watch(target, (value) => {
+  if (!open.value) return
+  if (value) load()
+  else if (data.value) data.value = { ...data.value, preview: null }
+})
 
 const preview = computed(() => (target.value && data.value?.preview?.target?.name === target.value ? data.value.preview : null))
 const plural = (n, noun) => `${n} ${n === 1 ? noun : `${noun}s`}`

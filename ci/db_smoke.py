@@ -1253,7 +1253,9 @@ def main():
 			assert e.severity == "warning" and user.name in e.title, e  # not a privileged user
 			seen["api key"] = e.title
 
-			hook = frappe.get_doc({"doctype": "Webhook", "webhook_doctype": "ToDo", "webhook_docevent": "after_insert",
+			# Webhook is named by prompt: give it one, as the Desk form asks for
+			hook = frappe.get_doc({"doctype": "Webhook", "name": "wolf-smoke-hook", "__newname": "wolf-smoke-hook",
+			                       "webhook_doctype": "ToDo", "webhook_docevent": "after_insert",
 			                       "request_url": "https://hooks.example.com/wolf", "request_structure": "JSON",
 			                       "webhook_json": "{}", "enabled": 1}).insert(ignore_permissions=True)
 			cleanup.append(("Webhook", hook.name))

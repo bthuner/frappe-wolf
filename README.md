@@ -12,6 +12,8 @@ before customers notice, and keeps all data on your own Frappe site.
   DocTypes, evaluates alert rules every minute, and shows a timeline in Desk.
 - **Wolf Agent** (`agent/`): a stdlib-only Python daemon on each host. It tails nginx, bench and
   auth logs, reads `/proc`, and ships batches over HTTPS.
+- **Security**: web attack and host intrusion detection, MITRE ATT&CK tags on every security
+  event, and a roadmap towards a Frappe-native SOC layer: [`docs/cyber.md`](docs/cyber.md).
 - Wire protocol: [`docs/protocol.md`](docs/protocol.md). The design story is in the [making-of](https://bthuner.github.io/frappe-wolf/).
 
 ## Install the app
@@ -79,7 +81,9 @@ High load · Agent silent · Scheduler stalled · Background jobs failing · Lon
 job · No background workers · Queue Redis memory high · Queue Redis evicting keys · No backup for
 26 h · Backup failed · TLS certificate expiring within 14 days · TLS certificate expiring within 3
 days · Database connections high · Slow queries · Replication lag · Replication stopped · Bench
-process down · Email queue backlog · Email sending errors · Admin login from new country.
+process down · Email queue backlog · Email sending errors · Admin login from new country ·
+SSH login after brute force · Repeated sudo failures · New system account · User added to admin
+group · Web attack scan · Sensitive file served.
 
 | Preset | Signal (source) | Fires when |
 |---|---|---|
@@ -97,6 +101,11 @@ process down · Email queue backlog · Email sending errors · Admin login from 
 | Bench process down | `bench_processes_down` (agent) | a supervisor/systemd process of the bench down for 3 min (critical) |
 | Email queue backlog / sending errors | `error` / `email_queue_backlog`, `email_queue_error` (site) | emails waiting longer than Email Queue Stale Minutes (30) / emails in Error in the last 15 min (warning) |
 | Admin login from new country | `security` / `admin_login_new_country` (site) | a privileged login from a country none of the user's earlier logins came from (critical, needs a GeoIP database) |
+| SSH login after brute force | `security` / `ssh_login_after_failures` (agent) | a login succeeded from an address that failed 5+ times in the hour before (critical) |
+| Repeated sudo failures | `security` / `sudo_failure` (agent) | 3+ failed sudo attempts in 10 min, per host (warning) |
+| New system account / User added to admin group | `security` / `account_created`, `admin_group_change` (agent) | `useradd` (warning) / a user joined sudo, wheel, docker... (critical) |
+| Web attack scan | `security` / `web_attack_probe` (agent, nginx) | 100+ probe requests (secrets, CMS panels, traversal, injections, scanners) in 10 min, per site (warning) |
+| Sensitive file served | `security` / `web_sensitive_file_exposed` (agent, nginx) | `.env`, `.git/`, keys or a dump answered with a 2xx (critical) |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 

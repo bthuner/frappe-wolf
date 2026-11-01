@@ -250,6 +250,55 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	# --- cyber: host and web attack signals (agent auth and nginx parsers) ---
+	{
+		"rule_name": "SSH login after brute force",
+		"description": "An SSH login succeeded from an address that failed 5+ times in the hour before: "
+		"the brute force probably worked. Lock the account and check the session (MITRE T1110).",
+		"signal_type": "event", "event_type": "security", "event_category": "ssh_login_after_failures",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Repeated sudo failures",
+		"description": "Wrong sudo passwords or users outside sudoers trying to escalate (MITRE T1548.003).",
+		"signal_type": "event", "event_type": "security", "event_category": "sudo_failure",
+		"operator": ">=", "threshold": 3, "window_minutes": 10, "group_by": "host",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "New system account",
+		"description": "useradd created a local account on a host (persistence, MITRE T1136.001). "
+		"Silence it during planned provisioning.",
+		"signal_type": "event", "event_type": "security", "event_category": "account_created",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "User added to admin group",
+		"description": "A user joined sudo, wheel, admin, root, adm, docker or lxd on a host "
+		"(MITRE T1098).",
+		"signal_type": "event", "event_type": "security", "event_category": "admin_group_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Web attack scan",
+		"description": "100+ requests in 10 minutes probing a site for secrets, CMS panels, path "
+		"traversal or injections (MITRE T1595). Scans are constant on the Internet: this "
+		"catches the heavy ones.",
+		"signal_type": "event", "event_type": "security", "event_category": "web_attack_probe",
+		"operator": ">=", "threshold": 100, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "Sensitive file served",
+		"description": "nginx answered 2xx to a request for .env, .git/, site_config.json, a private "
+		"key or a database dump: the file was probably leaked. Rotate the secrets (MITRE T1552.001).",
+		"signal_type": "event", "event_type": "security", "event_category": "web_sensitive_file_exposed",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
 ]  # fmt: skip
 
 

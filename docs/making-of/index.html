@@ -691,6 +691,7 @@ X-Wolf-Agent-Secret: ••••••••
           <li class="done"><time>2026-11-01 · Workflow</time><b>Merge and split in the Wolf UI.</b><p>The dialogs ask the server what would move (events, comments) and what each incident becomes, before anything does, with the same checks as the actions themselves. A refusal keeps what the reader chose. The postmortem starts from the incident page and is written in Desk.</p></li>
           <li class="done"><time>2026-11-01 · States</time><b>Every state of every view.</b><p>A browser test walks each view through loading, empty, filtered-empty, error, forbidden, partial, stale and disconnected, and fails on any "nothing" said while a view reads. It found views that showed nothing while loading, Frappe's raw "Not permitted", and a timeline that said "Nothing recorded" under its own error.</p></li>
           <li class="done"><time>2026-11-01 · Load test</time><b>100 hosts × 7 days, measured.</b><p>About 20 M rows on the demo bench. The push holds (p95 115 ms over HTTP). The Wolf UI's overview does not: its inventory and signals take 13 to 24 s. Rows named by random hash scatter a day of rollups over the whole table, the default 128 MB buffer pool holds none of it, and MariaDB picks an index that cannot use the time range.</p></li>
+          <li class="done"><time>2026-11-01 · Row order</time><b>Rows stored in metric order.</b><p>InnoDB stores rows in name order, so metric rows are now named by resolution, metric and time, and inserted in that order. One more index lets the inventory read the index alone. A first try put the whole metric name in the row name: every index entry repeats it, and the table grew by half. Names now stay as long as the hash they replace. The Wolf UI's overview went from 13 to 24 s down to 1.5 s at the default 128 MB cache. The rest is CPU, not disk.</p></li>
         </ol>
       </div>
     </div>
@@ -713,7 +714,7 @@ X-Wolf-Agent-Secret: ••••••••
         </div>
         <div class="prose" style="margin-top:32px">
           <h3>Next</h3>
-          <p>Log search once raw-line storage exists, which Wolf deliberately doesn't have yet. A run on a real Press server and a real Pilot host. And the overview under 1 s at 100 hosts: the <a href="https://github.com/bthuner/frappe-wolf/blob/main/docs/load-test.md">load test</a> says where the time goes.</p>
+          <p>Log search once raw-line storage exists, which Wolf deliberately doesn't have yet. A run on a real Press server and a real Pilot host. And the overview under 1 s at 100 hosts: it is at 1.5 s, and the <a href="https://github.com/bthuner/frappe-wolf/blob/main/docs/load-test.md">load test</a> says the rest belongs in SQL, not in an index.</p>
         </div>
       </div>
     </div>

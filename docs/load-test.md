@@ -1,30 +1,75 @@
 # Load test: 100 hosts for 7 days (#10)
 
-Measured on 2026-11-01. The target is #10's "done when": a synthetic load of 100 hosts for 7 days
-keeps `push` p95 under 200 ms and the overview under 1 s.
+Measured on 2026-11-01, twice:
+- first as #55 found it;
+- then after the row order and inventory index of the next section.
 
-| Target | Result |
-|---|---|
-| `push` p95 under 200 ms | **Met.** 115 ms over HTTP (100 agents through 8 connections at once), 16.5 ms server side. |
-| Overview under 1 s | **Met by Desk's overview, except its 24 h chart. Not met by the Wolf UI's overview: 13 to 24 s.** |
+The target is #10's "done when": a synthetic load of 100 hosts for 7 days keeps `push` p95 under
+200 ms and the overview under 1 s.
 
-Both runs used synthetic data and a demo bench, not production observations.
+| Target | Before (#55) | After |
+|---|---|---|
+| `push` p95 under 200 ms | **Met.** 115 ms over HTTP | **Met.** 108 ms over HTTP |
+| Desk overview under 1 s | Met, except its 24 h chart: 2.1 s | Met, except its 24 h chart: 1.8 s |
+| Wolf UI overview under 1 s | **Not met: 13.8 to 23.8 s** | **Not met: 1.5 s** |
+
+All runs used synthetic data and a demo bench, not production observations.
+
+## What changed
+
+1. **Row order.** InnoDB stores a table's rows in primary key order, and Frappe's primary key
+   is `name`.
+   - Before, metric samples got a random name and rollups a hash of their key. One metric's
+     day was spread over the whole table, and each row of a read was a page read of its own.
+   - Now names start with the resolution, a 6-character hash of the metric and the time, then
+     end with a hash of the key ([`storage.rollup_name`](../frappe_wolf/wolf/storage.py),
+     `sample_name`). A time range of one metric is read from neighbouring pages.
+   - Rows are inserted in name order, so InnoDB fills its pages instead of splitting them in
+     the middle.
+2. **Inventory index.** `get_inventory` asks which host, bench and site sent anything in a
+   range.
+   - MariaDB answered through `(resolution, metric_name, bucket_start)`, then fetched every row
+     of the range.
+   - `(resolution, bucket_start, host, bench, site)` answers it from the index alone.
+   - It replaces `(resolution, bucket_start)`, which it starts with. That index served the
+     rollup job and the purge, and still does. `bucket_start` loses its own index too: no read
+     filters it without a resolution.
+
+A first try put the full metric name in the row name (61 characters). That made the rollup
+table 50 % bigger and filled the bench's disk:
+- every secondary index entry repeats the primary key;
+- rows of one bucket arrived in hash order, so pages split in the middle.
+
+The names are now 33 characters for rollups and 28 for samples, against 32 and 12 before.
+
+| Table (data + indexes) | Before | After |
+|---|---|---|
+| Wolf Metric Rollup | 7.2 GB for 15.2 M rows | 7.3 GB for 15.5 M rows |
+| Wolf Metric Sample | 2.2 GB for 8.7 M rows | 3.1 GB for 8.7 M rows (kept 48 h) |
+
+**On an existing site:**
+- `bench migrate` creates the index and drops the two it replaces. On 15 M rows, that took
+  1.5 min.
+- Rows already stored keep their names, so a read speeds up once its window holds only new
+  rows: after a day for the 24 h explorer, 7 days for the hourly reads.
 
 ## Data and machine
 
 - Data, written by [`ci/load_test.py`](../ci/load_test.py) on a throwaway site:
   - 100 hosts × 15 metrics × 7 days, samples every 30 s;
-  - raw samples for the last 48 h (8.72 M rows);
+  - raw samples for the last 48 h (8.7 M rows);
   - 1-minute and 1-hour rollups before that, then the real rollup job over the raw window
-    (15.2 M minute and 252 k hour rollups);
+    (15.5 M rollups);
   - 16,900 events (one per host per hour).
+- Rows are named as the app names them. #55's run named its synthetic rows in sequence, so in
+  time order. Only the last 48 h, written by the rollup job, had the scattered layout of a real
+  site. A real site was therefore slower than #55 measured, not faster.
 - Bench: the [demo stack](../dev/demo/README.md) in Docker, on 4 vCPU and 15 GB RAM:
   - Dodock 5.18.8;
   - gunicorn, 2 workers × 4 threads;
   - MariaDB 10.6 with its default 128 MB `innodb_buffer_pool_size`.
-- Table sizes: Wolf Metric Rollup 6.2 GB, Wolf Metric Sample 2.1 GB.
-- Loading took 75 min. 32 min of it was the rollup job catching up on 48 h of raw samples at once,
-  which a running site never does.
+- Loading took 34 min, down from 75. The rollup job caught up on 48 h of raw samples at once in
+  12.5 min, down from 32. A running site never does that.
 
 ## Results
 
@@ -32,18 +77,20 @@ In milliseconds. Reads: p95 of 10 runs. Pushes: over every timed push.
 
 **Push, server side** (`ingest.accept()`, 200 pushes of 15 metrics):
 
-| Mode | p50 | p95 | max |
-|---|---|---|---|
-| async (validate and queue) | 11.5 | 16.5 | 51.1 |
-| store_batch (the worker) | 5.2 | 9.8 | 22.8 |
-| sync | 15.3 | 22.6 | 38.6 |
+| Mode | Before p95 | After p95 |
+|---|---|---|
+| async (validate and queue) | 16.5 | 15.2 |
+| store_batch (the worker) | 9.8 | 11.0 |
+| sync | 22.6 | 20.1 |
 
-**Push, over HTTP** ([`ci/load_http.py`](../ci/load_http.py), the agent's request with its
-headers, straight to gunicorn):
+**Push, over HTTP** ([`ci/load_http.py`](../ci/load_http.py)):
+- the agent's request with its headers, straight to gunicorn;
+- 600 pushes from 100 agents, through 8 connections at once.
 
-| Pushes | Concurrency | Statuses | p50 | p95 | max | Throughput |
-|---|---|---|---|---|---|---|
-| 600 | 8 | 600 × 200 | 64.4 | 114.9 | 170.4 | 116 pushes/s |
+| | Statuses | p50 | p95 | max | Throughput |
+|---|---|---|---|---|---|
+| Before | 600 × 200 | 64.4 | 114.9 | 170.4 | 116 pushes/s |
+| After | 600 × 200 | 58.0 | 107.9 | 195.3 | 125 pushes/s |
 
 100 hosts every 30 s need 3.3 pushes/s.
 
@@ -51,62 +98,70 @@ headers, straight to gunicorn):
 
 | Range | 1 h | 6 h | 24 h | 7 d |
 |---|---|---|---|---|
-| overview + chart | 176 | 606 | **2,102** | 240 |
+| Before | 176 | 606 | **2,102** | 240 |
+| After | 207 | 516 | **1,754** | 214 |
 
-The 24 h chart alone takes 1,899 ms: it reads 1-minute rollups.
+The 24 h chart reads one host's minute rollups. The new order keeps a metric together, not a
+host. That host's rows are still one per page.
 
 **Wolf UI overview** (`/wolf`). Its six reads go out at once, so a page waits at least for the
-slowest one: the reads were timed one after another, and run in parallel they share the CPU, the
-disk and the buffer pool, so the page itself is slower.
+slowest one:
+- the reads were timed one after another;
+- run in parallel, they share the CPU, the disk and the buffer pool, so the page itself is
+  slower.
 
-| Read | 1 h | 6 h | 24 h | 7 d |
-|---|---|---|---|---|
-| get_counts | 6.8 | 10.4 | 29.4 | 75.3 |
-| get_http | 7.3 | 16.6 | 16.7 | 12.5 |
-| **get_signals** | **10,569** | **9,873** | **9,002** | **7,971** |
-| list_incidents | 1.0 | 1.0 | 0.9 | 4.3 |
-| **get_inventory** | **23,799** | **16,887** | **21,214** | **13,836** |
-| get_monitoring | 13.2 | 11.4 | 15.0 | 11.7 |
+| Read | Before | After |
+|---|---|---|
+| **get_signals** | **7,971 to 10,569** | **1,471** |
+| **get_inventory** | **13,836 to 23,799** | 870 |
+| get_counts (1 h to 7 d) | 6.8 to 75.3 | 4.2 to 29.1 |
+| get_http (1 h to 7 d) | 7.3 to 16.7 | 4.0 to 7.6 |
+| list_incidents | 0.9 to 4.3 | 1.1 |
+| get_monitoring | 11.4 to 15.0 | 41.1 |
+| **Page, slowest read** | **13,836 to 23,799** | **1,471** |
 
-Only `get_counts` and `get_http` follow the range. The four others ignore it: in their rows the
-four columns are four series of the same read, and their spread (8.0 to 10.6 s, 13.8 to 23.8 s)
-is run-to-run variation. `load_test.py` now times them once.
+#55 timed the reads that ignore the range once per range: its ranges there are run-to-run
+spread.
 
 **Other reads:**
 
 | Read | 1 h | 6 h | 24 h | 7 d |
 |---|---|---|---|---|
-| Metrics explorer, cpu_usage by host | 1,757 | 7,126 | **25,762** | 2,467 |
+| Metrics explorer, cpu_usage by host, before | 1,757 | 7,126 | **25,762** | 2,467 |
+| Metrics explorer, after | 219 | 914 | **2,936** | 506 |
 
-| Rule query | p95 |
-|---|---|
-| 5 min avg by host | 1.7 |
-| 24 h max by host | **11,355**, at every evaluation |
-| 7 d last by host | 2,244 |
+| Rule query | Before p95 | After p95 |
+|---|---|---|
+| 5 min avg by host | 1.7 | 6.2 |
+| 24 h max by host | **11,355** | 906 |
+| 7 d last by host | 2,244 | 261 |
 
-## Why
+## What is left over 1 s
 
-Reads that cover hours of 1-minute rollups, or days of hourly ones, fetch every matching row
-from the table. Three things make that slow.
+These reads now wait on the CPU, not on the disk. They read 20 k to 300 k rows, each with a
+B-tree lookup, and Python merges them.
 
-1. **Row order.** Wolf Metric Sample and Wolf Metric Rollup are named by random hash, and
-   InnoDB stores rows in name order. One metric's rows for one day are therefore spread over the
-   whole 6.2 GB table, and each is a random read.
-2. **Cache size.** The default 128 MB buffer pool holds none of the 6 GB working set.
-   - With 4 GB, set online and warmed by a first run: `get_signals` 1.4 s, `get_inventory` 1.8 s,
-     explorer 24 h 2.9 s, rule 24 h 1.1 s.
-   - Better, but still over 1 s: memory alone does not meet the target.
-3. **Index choice.** The inventory groups hourly rollups by host, bench and site, and
-   MariaDB picks `(resolution, host, bucket_start)`, which cannot use the time range.
-   - A covering index `(resolution, host, bench, site, bucket_start)`, tried on the load site,
-     cut its two queries from 8.0 s to 0.15 s and from 5.5 s to 0.43 s. They are then read from
-     the index alone.
-   - It is not in the app yet.
+- `get_signals`, 1.5 s. Three queries:
+  - the newest minute rollups;
+  - the last value of each series;
+  - the hourly rollups of 7 days, for series that went quiet.
+- The metrics explorer over 24 h, 2.9 s:
+  - it reads one metric's 144 k minute rollups twice, once for the totals and once for the
+    chart;
+  - the chart's buckets are merged in Python.
+- Desk's 24 h host chart, 1.8 s: one host's rows are spread one per page.
+
+An index does not shorten these. What would:
+- chart buckets computed in SQL rather than in Python;
+- one read instead of two in the explorer;
+- the latest value of each series kept where `get_signals` can read it without scanning.
 
 ## Not measured
 
 - A browser's full page time.
-- Postgres.
+- Postgres. CI installs the app there, which creates the new index, but nothing was timed and
+  the upgrade from the old indexes was run on MariaDB only. Postgres stores rows roughly in
+  insertion order, which is already time order, so row names matter less there.
 - Several sites at once.
 - Rule evaluation of every preset at once.
 - Disk other than this container's.
@@ -120,8 +175,14 @@ from the table. Three things make that slow.
 ```
 
 `load_test.py` deletes and rewrites the site's metric tables: never point it at a real site.
+- To time the reads again on the data already loaded, for instance after an index change, add
+  `--reads-only`.
+- On a site loaded before, empty the three tables first (`truncate`). The script deletes its own
+  rows one transaction per table, which on 20 M rows takes long and needs as much undo space.
 
-`load_http.py` comes second. Its agents report as 100 more hosts (`load-http-NNN`), which the reads
-would then include; the next `load_test.py` run deletes them. It raises the site's push limit for
-the run and puts it back afterwards. Its p50 / p95 are over accepted pushes (HTTP 200) only; every
-other status or connection error is counted separately.
+`load_http.py` comes second:
+- Its agents report as 100 more hosts (`load-http-NNN`), which the reads would then include. The
+  next `load_test.py` run deletes them.
+- It raises the site's push limit for the run and puts it back afterwards.
+- Its p50 / p95 are over accepted pushes (HTTP 200) only. Every other status or connection error
+  is counted separately.

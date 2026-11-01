@@ -299,6 +299,61 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	# --- cyber: Frappe application security (site signals, Wolf Settings → Flag risky application changes) ---
+	{
+		"rule_name": "Server Script can run new code",
+		"description": "A Server Script was created, enabled or had its code, type or trigger changed "
+		"(MITRE T1059.006). Critical for API and scheduled scripts or guest access.",
+		"signal_type": "event", "event_type": "security", "event_category": "server_script_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Client Script can run new code",
+		"description": "A Client Script was created, enabled or changed: it runs in every user's browser "
+		"on that form (MITRE T1059.007).",
+		"signal_type": "event", "event_type": "security", "event_category": "client_script_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "System Console used",
+		"description": "Someone ran Python or SQL in the System Console (MITRE T1059.006).",
+		"signal_type": "event", "event_type": "security", "event_category": "console_execution",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "Security settings weakened",
+		"description": "System Settings lowered a defence: 2FA or the password policy off, lockout "
+		"loosened, longer sessions, guest uploads (MITRE T1562.001).",
+		"signal_type": "event", "event_type": "security", "event_category": "security_settings_weakened",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Permission rules changed",
+		"description": "Role Permission Manager rules or a Role Profile changed (MITRE T1098).",
+		"signal_type": "event", "event_type": "security", "event_category": "permission_change",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,
+	},
+	{
+		"rule_name": "API key generated",
+		"description": "A new API secret was written for a user: anyone holding it acts as that "
+		"user (MITRE T1098.001). Critical for privileged users.",
+		"signal_type": "event", "event_type": "security", "event_category": "api_key_generated",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Webhook to a new host",
+		"description": "A Webhook was created, enabled or pointed at another host: it sends documents "
+		"out of the site (MITRE T1567).",
+		"signal_type": "event", "event_type": "security", "event_category": "webhook_external",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
 ]  # fmt: skip
 
 

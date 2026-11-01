@@ -127,22 +127,35 @@ probes in 10 min per site), Sensitive file served.
 
 Each step stands on its own, so a step can ship without the ones after it.
 
-### Step 2: Frappe application security
+### Step 2: Frappe application security (built, except exfiltration)
 
-Detections inside the site, raised by doc events and hooks that `local_signals.py` already uses:
+Site signals (`local_signals.py`, rules in `app_security.py`), behind **Wolf Settings → Flag
+risky application changes** (on by default):
 
-- **Code execution surfaces** (T1059): a Server Script, Client Script or System Console run is
-  created or enabled; a scheduled Server Script is added.
-- **Permission drift** (T1098): changes to Role Permission, Custom DocPerm, User Permission or
-  Role Profile; a Website user given a desk role.
-- **Weakened settings** (T1562): 2FA disabled, password policy relaxed, `allow_guests_to_upload_files`,
-  session expiry lengthened, login attempts limit removed.
-- **API keys** (T1078.004): API key generated for a privileged user, or used from an IP never
-  seen for it.
-- **Exfiltration** (T1567/T1030): report exports, Data Export or `frappe.client.get_list` with
-  very large page sizes, above a per-user baseline.
-- **Outbound webhooks** (T1567.004): a Webhook or Integration Request created towards a new
-  external domain.
+- **Code execution surfaces** (T1059.006 / T1059.007): a Server or Client Script created,
+  enabled, or with its code, type or trigger changed (`server_script_change`,
+  `client_script_change`); each System Console run (`console_execution`). Editing a
+  description or disabling a script raises nothing.
+- **Permission drift** (T1098): Role Permission Manager add, update, remove and reset
+  (`permission_change`). Frappe writes `update`, `remove` and `reset` with raw SQL, so Wolf reads
+  them from the request through the `after_request` hook; also a Role Profile created or granting
+  more roles.
+- **Weakened settings** (T1562.001, critical): System Settings saves that turn 2FA, the password
+  policy, one session per user, SSO-only login or logout on password reset off, lower the
+  password score or the lockout duration, allow more failed logins (or no lockout), lengthen
+  sessions or let guests upload files (`security_settings_weakened`).
+- **API keys** (T1098.001): a new API secret written for a user (`api_key_generated`), critical
+  for privileged users.
+- **Outbound webhooks** (T1567): a Webhook created, enabled or pointed at another host
+  (`webhook_external`).
+- Seven presets, one per signal.
+
+Not built yet: **exfiltration** (T1567/T1030): report exports, Data Export or large
+`get_list` page sizes above a per-user baseline. It needs a baseline per user. API key *use*
+from an IP never seen for it also needs request logs Wolf does not keep yet.
+
+Limits: permission rules changed outside the Role Permission Manager (Data Import, the REST API
+on Custom DocPerm) are not seen. Script events keep the first 300 characters of the code.
 
 ### Step 3: posture score and exposure
 
@@ -207,3 +220,9 @@ is proposed on the incident, applied only after a Wolf Manager confirms it, and 
 | `frappe_failed_login` | site | T1110 |
 | `new_admin_ip`, `admin_login_new_country` | site | T1078 Valid Accounts |
 | `privileged_user` | site | T1098 |
+| `server_script_change`, `console_execution` | site | T1059.006 Python |
+| `client_script_change` | site | T1059.007 JavaScript |
+| `permission_change` | site | T1098 Account Manipulation |
+| `security_settings_weakened` | site | T1562.001 Disable or Modify Tools |
+| `api_key_generated` | site | T1098.001 Additional Cloud Credentials |
+| `webhook_external` | site | T1567 Exfiltration Over Web Service |

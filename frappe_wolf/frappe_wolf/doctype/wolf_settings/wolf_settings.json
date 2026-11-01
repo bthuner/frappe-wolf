@@ -37,6 +37,7 @@
   "capture_admin_logins",
   "capture_privileged_users",
   "privileged_roles",
+  "capture_app_security",
   "signals_section",
   "capture_email_queue",
   "email_queue_stale_minutes",
@@ -267,6 +268,13 @@
    "label": "Privileged Roles"
   },
   {
+   "default": "1",
+   "description": "Server and Client Scripts that can run new code, System Console runs, permission rule and Role Profile changes, weakened System Settings (2FA, password policy, lockout, sessions), API keys generated and Webhooks to a new host.",
+   "fieldname": "capture_app_security",
+   "fieldtype": "Check",
+   "label": "Flag risky application changes"
+  },
+  {
    "fieldname": "signals_section",
    "fieldtype": "Section Break",
    "label": "Email queue and login geography (this site)"
@@ -366,7 +374,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-30 13:00:00.000000",
+ "modified": "2026-11-01 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

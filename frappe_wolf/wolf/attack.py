@@ -14,7 +14,10 @@ TECHNIQUES = {
 	"T1078": ("Valid Accounts", "initial-access"),
 	"T1078.003": ("Valid Accounts: Local Accounts", "privilege-escalation"),
 	"T1078.004": ("Valid Accounts: Cloud Accounts", "initial-access"),
+	"T1059.006": ("Command and Scripting Interpreter: Python", "execution"),
+	"T1059.007": ("Command and Scripting Interpreter: JavaScript", "execution"),
 	"T1098": ("Account Manipulation", "persistence"),
+	"T1098.001": ("Account Manipulation: Additional Cloud Credentials", "persistence"),
 	"T1110": ("Brute Force", "credential-access"),
 	"T1136.001": ("Create Account: Local Account", "persistence"),
 	"T1189": ("Drive-by Compromise", "initial-access"),
@@ -24,6 +27,8 @@ TECHNIQUES = {
 	"T1548.003": ("Abuse Elevation Control Mechanism: Sudo and Sudo Caching", "privilege-escalation"),
 	"T1552.001": ("Unsecured Credentials: Credentials In Files", "credential-access"),
 	"T1552.004": ("Unsecured Credentials: Private Keys", "credential-access"),
+	"T1562.001": ("Impair Defenses: Disable or Modify Tools", "defense-evasion"),
+	"T1567": ("Exfiltration Over Web Service", "exfiltration"),
 	"T1595.002": ("Active Scanning: Vulnerability Scanning", "reconnaissance"),
 	"T1595.003": ("Active Scanning: Wordlist Scanning", "reconnaissance"),
 }
@@ -45,6 +50,14 @@ CATEGORIES = {
 	"new_admin_ip": ["T1078"],
 	"admin_login_new_country": ["T1078"],
 	"privileged_user": ["T1098"],
+	# Frappe application security (local signals)
+	"server_script_change": ["T1059.006"],
+	"client_script_change": ["T1059.007"],
+	"console_execution": ["T1059.006"],
+	"permission_change": ["T1098"],
+	"security_settings_weakened": ["T1562.001"],
+	"api_key_generated": ["T1098.001"],
+	"webhook_external": ["T1567"],
 }
 
 _ID_RE = re.compile(r"^T\d{4}(?:\.\d{3})?$")

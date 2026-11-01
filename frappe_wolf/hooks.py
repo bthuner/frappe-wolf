@@ -54,7 +54,17 @@ doc_events = {
 	"Error Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_error_log"},
 	"Activity Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_activity_log"},
 	"User": {"on_update": "frappe_wolf.wolf.local_signals.on_user_update"},
+	# Frappe application security (Wolf Settings → Flag risky application changes)
+	"Server Script": {"on_update": "frappe_wolf.wolf.local_signals.on_server_script"},
+	"Client Script": {"on_update": "frappe_wolf.wolf.local_signals.on_client_script"},
+	"Console Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_console_log"},
+	"Role Profile": {"on_update": "frappe_wolf.wolf.local_signals.on_role_profile"},
+	"System Settings": {"on_update": "frappe_wolf.wolf.local_signals.on_system_settings"},
+	"Webhook": {"on_update": "frappe_wolf.wolf.local_signals.on_webhook"},
 }
+
+# Role Permission Manager changes bypass doc events (raw SQL): read from the request
+after_request = ["frappe_wolf.wolf.local_signals.after_request"]
 
 scheduler_events = {
 	"cron": {

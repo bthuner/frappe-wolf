@@ -5,7 +5,7 @@ import os
 import frappe
 from frappe.utils import cint
 
-from frappe_wolf.wolf import events, geoip
+from frappe_wolf.wolf import app_security, events, geoip
 from frappe_wolf.wolf.schema import fingerprint
 
 
@@ -149,6 +149,7 @@ def check_new_country(doc, previous, settings):
 @_safe
 def on_user_update(doc):
 	settings = _settings()
+	check_api_key(doc, settings)
 	if not cint(settings.capture_privileged_users) or not doc.enabled:
 		return
 	privileged = privileged_roles(settings)
@@ -165,6 +166,181 @@ def on_user_update(doc):
 		source="frappe",
 		payload={"user": doc.name, "roles": added, "by": frappe.session.user, "new_user": before is None},
 	)
+
+
+# --- Frappe application security (Wolf Settings → Flag risky application changes) ---
+
+
+def _app_security(settings=None):
+	return cint((settings or _settings()).get("capture_app_security"))
+
+
+def _before(doc):
+	before = doc.get_doc_before_save()
+	return before.as_dict() if before else None
+
+
+def check_api_key(doc, settings):
+	"""`api_key_generated`: a User save wrote a new API secret (generate keys, or by hand)."""
+	if not _app_security(settings) or not app_security.new_api_secret(doc.get("api_secret")):
+		return
+	privileged = is_privileged(doc.name, settings)
+	events.emit(
+		"security",
+		f"API key generated for {'privileged user ' if privileged else ''}{doc.name}",
+		severity="critical" if privileged else "warning",
+		category="api_key_generated",
+		source="frappe",
+		payload={"user": doc.name, "api_key": doc.get("api_key"), "privileged": privileged, "by": frappe.session.user},
+	)
+
+
+def _script_event(doc, kind, fields, category, label):
+	if not _app_security():
+		return
+	change = app_security.script_change(_before(doc), doc.as_dict(), fields)
+	if not change:
+		return
+	critical = kind == "server" and (doc.get("script_type") in ("API", "Scheduler Event") or cint(doc.get("allow_guest")))
+	target = doc.get("api_method") or doc.get("reference_doctype") or doc.get("dt") or doc.get("event_frequency") or ""
+	events.emit(
+		"security",
+		f"{label} {doc.name} {change}" + (f" ({target})" if target else ""),
+		severity="critical" if critical else "warning",
+		category=category,
+		source="frappe",
+		payload={
+			"script": doc.name, "change": change, "script_type": doc.get("script_type"),
+			"reference_doctype": doc.get("reference_doctype") or doc.get("dt"), "api_method": doc.get("api_method"),
+			"allow_guest": cint(doc.get("allow_guest")), "event_frequency": doc.get("event_frequency"),
+			"by": frappe.session.user, "excerpt": app_security.excerpt(doc.get("script")),
+		},
+	)  # fmt: skip
+
+
+@_safe
+def on_server_script(doc):
+	_script_event(doc, "server", app_security.SERVER_SCRIPT_FIELDS, "server_script_change", "Server Script")
+
+
+@_safe
+def on_client_script(doc):
+	_script_event(doc, "client", app_security.CLIENT_SCRIPT_FIELDS, "client_script_change", "Client Script")
+
+
+@_safe
+def on_console_log(doc):
+	"""System Console runs arbitrary Python (or SQL) as the user: record each run."""
+	if not _app_security():
+		return
+	events.emit(
+		"security",
+		f"System Console run by {doc.owner}" + (" (committed)" if cint(doc.get("committed")) else ""),
+		severity="warning",
+		category="console_execution",
+		source="frappe",
+		payload={
+			"console_log": doc.name, "by": doc.owner, "type": doc.get("type"), "committed": cint(doc.get("committed")),
+			"excerpt": app_security.excerpt(doc.get("script")),
+		},
+	)  # fmt: skip
+
+
+# Role Permission Manager (Desk): `add` inserts a Custom DocPerm, but `update`, `remove` and
+# `reset` write it with raw SQL, so no doc event fires. They are read from the request instead.
+PERMISSION_MANAGER = "frappe.core.page.permission_manager.permission_manager."
+PERMISSION_ACTIONS = {"add": "added", "update": "changed", "remove": "removed", "reset": "reset to standard"}
+
+
+def after_request(response=None, request=None):
+	"""hooks.py after_request: runs after the request's commit, so it commits its own event."""
+	try:
+		path = getattr(request, "path", "") or ""
+		if not path.startswith("/api/method/" + PERMISSION_MANAGER):
+			return
+		action = PERMISSION_ACTIONS.get(path.rsplit(".", 1)[-1])
+		if not action or getattr(response, "status_code", None) != 200 or not _app_security():
+			return
+		args = frappe.form_dict
+		doctype = args.get("doctype") or args.get("parent")
+		role = args.get("role")
+		detail = {k: args.get(k) for k in ("permlevel", "ptype", "value", "if_owner") if args.get(k) is not None}
+		subject = f"{role} on {doctype}" if role else doctype
+		events.emit(
+			"security",
+			f"Permission rule {action}: {subject}"[:255],
+			severity="warning",
+			category="permission_change",
+			source="frappe",
+			payload={"doctype": doctype, "role": role, "action": action, **detail, "by": frappe.session.user},
+			fingerprint=fingerprint("permission_change", doctype, role),
+			dedupe_minutes=10,
+		)
+		frappe.db.commit()
+	except Exception:
+		frappe.logger("frappe_wolf").exception("could not record a permission change")
+
+
+@_safe
+def on_role_profile(doc):
+	"""A Role Profile change re-grants its roles to every user who has the profile."""
+	if not _app_security():
+		return
+	before = _before(doc)
+	roles = sorted({r.role for r in doc.get("roles") or []})
+	old = sorted({r.get("role") for r in (before or {}).get("roles") or []})
+	added = sorted(set(roles) - set(old))
+	if before and not added:
+		return  # roles only removed, or nothing that grants more
+	events.emit(
+		"security",
+		f"Role Profile {doc.name} {'created' if not before else 'now grants ' + ', '.join(added)}"[:255],
+		severity="warning",
+		category="permission_change",
+		source="frappe",
+		payload={"role_profile": doc.name, "roles": roles, "added": added, "by": frappe.session.user},
+	)
+
+
+@_safe
+def on_system_settings(doc):
+	"""`security_settings_weakened`: a System Settings save lowered a defence."""
+	if not _app_security():
+		return
+	rows = app_security.weakened(_before(doc), doc.as_dict())
+	if not rows:
+		return
+	events.emit(
+		"security",
+		f"Security settings weakened: {', '.join(r['label'] for r in rows)}"[:255],
+		severity="critical",
+		category="security_settings_weakened",
+		source="frappe",
+		payload={"changes": rows, "by": frappe.session.user},
+	)
+
+
+@_safe
+def on_webhook(doc):
+	"""`webhook_external`: a Webhook created, enabled or pointed at another host sends documents out."""
+	if not _app_security() or not cint(doc.get("enabled")):
+		return
+	before = _before(doc)
+	domain = app_security.url_domain(doc.get("request_url"))
+	if before and cint(before.get("enabled")) and app_security.url_domain(before.get("request_url")) == domain:
+		return
+	events.emit(
+		"security",
+		f"Webhook {doc.name} sends {doc.get('webhook_doctype')} to {domain or 'an unknown host'}"[:255],
+		severity="warning",
+		category="webhook_external",
+		source="frappe",
+		payload={
+			"webhook": doc.name, "doctype": doc.get("webhook_doctype"), "event": doc.get("webhook_docevent"),
+			"domain": domain, "previous_domain": app_security.url_domain((before or {}).get("request_url")),
+			"by": frappe.session.user,
+		},
+	)  # fmt: skip
 
 
 def after_migrate_marker():

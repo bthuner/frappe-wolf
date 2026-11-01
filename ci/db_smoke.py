@@ -1196,6 +1196,87 @@ def main():
 		return (f"3 mounts ranked by max with early gaps, mb 5xx summed per bucket, wrong aggregations refused, "
 		        f"custom metric listed, 400d clipped, scoped user sees nothing of {mhost}")
 
+	def app_security():
+		from types import SimpleNamespace
+
+		from frappe_wolf.wolf import local_signals
+
+		frappe.db.set_single_value("Wolf Settings", "capture_app_security", 1)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		since = now_datetime() - timedelta(seconds=1)
+
+		def last(category):
+			rows = frappe.get_all("Wolf Event", filters={"category": category, "creation": (">=", since)},
+			                      fields=["title", "severity", "payload"], order_by="creation desc", limit=1)
+			assert rows, f"no {category} event"
+			return rows[0]
+
+		seen = {}
+		cleanup = []
+		try:
+			script = frappe.get_doc({"doctype": "Server Script", "name": "wolf-smoke-ping", "script_type": "API",
+			                         "api_method": "wolf_smoke_ping", "script": "frappe.response['message'] = 'pong'"})
+			script.insert(ignore_permissions=True)
+			cleanup.append(("Server Script", script.name))
+			e = last("server_script_change")
+			assert e.severity == "critical" and "created" in e.title, e  # API scripts are critical
+			script.description = "only the description"
+			script.save(ignore_permissions=True)
+			assert frappe.db.count("Wolf Event", {"category": "server_script_change", "creation": (">=", since)}) == 1
+			seen["server script"] = e.title
+
+			frappe.get_doc({"doctype": "Console Log", "script": "print(1)", "type": "Python"}).insert(ignore_permissions=True)
+			seen["console"] = last("console_execution").title
+
+			ss = frappe.get_doc("System Settings")
+			original = ss.session_expiry
+			ss.session_expiry = "999:00"
+			ss.save(ignore_permissions=True)
+			e = last("security_settings_weakened")
+			assert json.loads(e.payload)["changes"][0]["field"] == "session_expiry", e
+			ss.reload()
+			ss.session_expiry = original
+			ss.save(ignore_permissions=True)
+			seen["settings"] = e.title
+
+			user = frappe.get_doc({"doctype": "User", "email": "wolf-apikey@example.com", "first_name": "Key",
+			                       "send_welcome_email": 0}).insert(ignore_permissions=True)
+			cleanup.append(("User", user.name))
+			from frappe.core.doctype.user.user import generate_keys
+
+			generate_keys(user.name)
+			e = last("api_key_generated")
+			assert e.severity == "warning" and user.name in e.title, e  # not a privileged user
+			seen["api key"] = e.title
+
+			hook = frappe.get_doc({"doctype": "Webhook", "webhook_doctype": "ToDo", "webhook_docevent": "after_insert",
+			                       "request_url": "https://hooks.example.com/wolf", "request_structure": "JSON",
+			                       "webhook_json": "{}", "enabled": 1}).insert(ignore_permissions=True)
+			cleanup.append(("Webhook", hook.name))
+			assert json.loads(last("webhook_external").payload)["domain"] == "hooks.example.com"
+			seen["webhook"] = "hooks.example.com"
+
+			profile = frappe.get_doc({"doctype": "Role Profile", "role_profile": "Wolf Smoke Profile",
+			                          "roles": [{"role": "System Manager"}]}).insert(ignore_permissions=True)
+			cleanup.append(("Role Profile", profile.name))
+			assert "created" in last("permission_change").title
+
+			frappe.form_dict.update({"doctype": "ToDo", "role": "Guest", "permlevel": 0, "ptype": "read", "value": 1})
+			local_signals.after_request(
+				response=SimpleNamespace(status_code=200),
+				request=SimpleNamespace(path="/api/method/frappe.core.page.permission_manager.permission_manager.update"),
+			)
+			e = last("permission_change")
+			assert e.title == "Permission rule changed: Guest on ToDo", e
+			assert any(t["id"] == "T1098" for t in json.loads(e.payload)["mitre_attack"]), e
+			seen["permission manager"] = e.title
+		finally:
+			for key in ("doctype", "role", "permlevel", "ptype", "value"):
+				frappe.form_dict.pop(key, None)
+			for doctype, name in reversed(cleanup):
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+		return seen
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1206,7 +1287,8 @@ def main():
 	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
-	                 ("explorers", explorers), ("metrics explorer", metrics_explorer)]:
+	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
+	                 ("app security", app_security)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

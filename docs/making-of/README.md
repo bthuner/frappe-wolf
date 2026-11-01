@@ -86,7 +86,8 @@ the same session and permissions. Desk keeps configuration.
    merged: missing, stale, unwatched, within its rules, firing. The same page serves each site,
    host and bench. A bench is always addressed through its host.
 2. **Incident** (built): the timeline of chapter 05, scope first, with acknowledge, assign and
-   resolve when the server allows them. Merge, split and the postmortem stay in Desk.
+   resolve when the server allows them. Merge and split too, once the server has said what
+   would move. The postmortem starts there and is written in Desk.
 3. **Alert Rule** (built, in Desk): a form that reads like the brief's sentence, *when X > Y for
    Z minutes, send alert*. "For Z minutes" is the `min` aggregation over the window.
 
@@ -144,6 +145,7 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 - **2026-11-01 · Merge and split in the Wolf UI**: dialogs that ask the server what would move (events, comments) and what each incident becomes, before anything does; the same checks as the actions themselves. The postmortem starts from the incident page and is written in Desk.
 - **2026-11-01 · Every state of every view**: a browser test walks each view through loading, empty, filtered-empty, error, forbidden, partial, stale and disconnected. It found that most views showed nothing while loading, the incident page not even a busy button; that a refusal showed Frappe's "Not permitted"; that the timeline said "Nothing recorded" under its own error; and that the incident page's load error was not announced.
 - **2026-11-01 · Load test, 100 hosts × 7 days**: about 20 M rows on the demo bench. The push holds (p95 115 ms over HTTP), but the Wolf UI's overview does not: inventory and signals take 13 to 24 s. Rows named by random hash scatter a day of rollups over the whole table, the default 128 MB buffer pool holds none of it, and MariaDB picks an index that cannot use the time range. Measured, written down, not fixed yet.
+- **2026-11-01 · Rows in metric order**: InnoDB stores rows in name order, so metric rows are now named by resolution, metric and time, and inserted in that order. One more index lets the inventory read the index alone. A first try put the whole metric name in the row name: since every index entry repeats the name, the table grew by half and filled the bench's disk. Names now stay 33 characters, as long as the hash they replace. The Wolf UI's overview went from 13 to 24 s down to 1.5 s at the default 128 MB cache, the 24 h rule from 11.4 s to 0.9 s. The rest is CPU, not disk, and no index will shorten it.
 
 ## 09 · Trade-offs
 
@@ -157,4 +159,5 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 
 - **Log search:** waits for raw-line storage, which Wolf deliberately doesn't have yet.
 - **A real Press server and Pilot host:** the integrations still need to run on one.
-- **A load test at 100 hosts:** it will put numbers on the storage's promises.
+- **The overview under 1 s at 100 hosts:** it is at 1.5 s ([`docs/load-test.md`](../load-test.md)).
+  The rest is reads that merge 20 k to 300 k rows in Python: chart buckets belong in SQL.

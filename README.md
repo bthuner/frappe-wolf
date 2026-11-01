@@ -287,9 +287,11 @@ and times push and the overview. CI does not run it. Run it on a bench from `sit
 `docker run ... integration.sh` command below. At 100 hosts × 7 days it writes about 20 M rows,
 which takes 15 to 25 minutes on a GitHub runner before any timing starts.
 [`ci/load_http.py`](ci/load_http.py) times the agent's push over HTTP on the same site.
-Results at 100 hosts × 7 days: [docs/load-test.md](docs/load-test.md). Push p95 is 115 ms over
-HTTP, but the Wolf UI's overview takes 13 to 24 s there: its inventory and signals reads do not
-scale yet.
+Results at 100 hosts × 7 days: [docs/load-test.md](docs/load-test.md). Push p95 is 108 ms over
+HTTP. Metric rows are stored in metric and time order, and the inventory reads an index alone.
+That brought the Wolf UI's overview from 13 to 24 s down to 1.5 s, still over #10's 1 s:
+`get_signals` and the 24 h explorer now wait on the CPU, not the disk. `--reads-only` times the
+reads again on data already loaded.
 
 **Optional time-series backend (design, not built).** The read path goes through two functions,
 `rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through

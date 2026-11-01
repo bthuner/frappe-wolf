@@ -39,7 +39,35 @@ class TestBuckets(unittest.TestCase):
 		self.assertNotEqual(storage.rollup_name(MINUTE, key), storage.rollup_name(HOUR, key))
 		# NULL and empty bench are different groups in SQL, so they need different names
 		self.assertNotEqual(storage.rollup_name(MINUTE, key), storage.rollup_name(MINUTE, ("cpu_usage", "h1", "", None, None, T0)))
-		self.assertEqual(len(storage.rollup_name(MINUTE, key)), 32)
+		# every secondary index entry repeats the name: no longer than the hash it replaced
+		self.assertEqual(len(storage.rollup_name(MINUTE, key)), 33)
+		self.assertEqual(len(storage.sample_name("cpu_usage", T0, "x" * 10)), 28)
+		# no silent fallback: an unknown resolution or a time without a datetime fails
+		with self.assertRaises(KeyError):
+			storage.rollup_name(86400, key)
+		with self.assertRaises(TypeError):
+			storage.sample_name("cpu_usage", 1767225600, "x")
+
+	def test_names_keep_a_metric_in_time_order(self):
+		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous
+		# and sorted by time, whatever the hosts and whatever the metric names
+		metrics = ["cpu_usage", "cpu_usage_x", "a" * 140, "load-1", "load-10"]
+		hosts = ["h2", "h1", None]
+		times = [T0 + timedelta(minutes=m) for m in (0, 1, 59, 600)]
+		rows = [(storage.rollup_name(res, (m, h, None, None, None, t)), res, m, t)
+		        for res in (MINUTE, HOUR) for m in metrics for h in hosts for t in times]  # fmt: skip
+		ordered = [r[1:] for r in sorted(rows)]
+		runs = [k for i, k in enumerate((res, m) for res, m, _ in ordered) if i == 0 or k != (ordered[i - 1][0], ordered[i - 1][1])]
+		self.assertEqual(len(runs), len(set(runs)), "a metric's rows are split by another metric's")
+		for key in set(runs):
+			self.assertEqual([t for res, m, t in ordered if (res, m) == key], sorted(t for res, m, t in ordered if (res, m) == key))
+		samples = sorted((storage.sample_name(m, t, str(n)), m, t) for n, (m, t) in enumerate((m, t) for m in metrics for t in times))
+		order = [m for _, m, _ in samples]
+		self.assertEqual(sum(1 for i, m in enumerate(order) if i == 0 or m != order[i - 1]), len(metrics))
+		for m in metrics:
+			self.assertEqual([t for _, mm, t in samples if mm == m], times)
+		# a timestamp string and its datetime give the same name
+		self.assertEqual(storage.sample_name("m", T0, "x"), storage.sample_name("m", T0.strftime("%Y-%m-%d %H:%M:%S"), "x"))
 
 
 class TestRollupExactness(unittest.TestCase):

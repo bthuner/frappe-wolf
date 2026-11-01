@@ -7,6 +7,13 @@ DEFAULTS = {
 	"capture_app_security": 1,
 	"ip_reputation_sources": "firehol_level1 https://iplists.firehol.org/files/firehol_level1.netset\n"
 	"spamhaus_drop https://www.spamhaus.org/drop/drop.txt",
+	"siem_port": 514,
+	"siem_transport": "tcp",
+	"siem_format": "ocsf",
+	"siem_min_severity": "warning",
+	"siem_event_types": "security",
+	"siem_journal": 1,
+	"siem_verify_tls": 1,
 }
 
 

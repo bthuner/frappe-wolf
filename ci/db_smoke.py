@@ -1471,6 +1471,71 @@ def main():
 		settings.save(ignore_permissions=True)
 		return f"{result['checked']} entries chained and verified, edit detected at seq {row.seq}, anchor {anchor[:20]}…"
 
+	def siem_export():
+		import socketserver
+
+		from frappe_wolf.api import journal as journal_api
+		from frappe_wolf.api import siem as siem_api
+		from frappe_wolf.wolf import siem as siem_fmt
+
+		received = []
+
+		class Collector(socketserver.BaseRequestHandler):
+			def handle(self):
+				data = b""
+				while chunk := self.request.recv(65536):
+					data += chunk
+				received.extend(siem_fmt.unframe(data))
+
+		server = socketserver.TCPServer(("127.0.0.1", 0), Collector)
+		threading.Thread(target=server.serve_forever, daemon=True).start()
+		port = server.server_address[1]
+		values = {"siem_enabled": 1, "siem_host": "127.0.0.1", "siem_port": port, "siem_transport": "tcp",
+		          "siem_format": "ocsf", "siem_min_severity": "warning", "siem_event_types": "security", "siem_journal": 1,
+		          "siem_cursor": None}  # fmt: skip
+		for k, v in values.items():
+			frappe.db.set_single_value("Wolf Settings", k, v)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		try:
+			ev = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "web_attack_probe", "severity": "critical", "host": HOST,
+				 "title": "SIEM smoke probe", "payload": {"ip": "45.33.32.156"}}, tz, now_datetime()))  # fmt: skip
+			quiet = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "web_attack_probe", "severity": "info", "host": HOST,
+				 "title": "SIEM smoke below the minimum"}, tz, now_datetime()))  # fmt: skip
+			while journal_api.chain_journal():
+				pass
+			sent = siem_api.export_siem()
+			import time
+
+			deadline = time.monotonic() + 10
+			while len(received) < sent and time.monotonic() < deadline:  # the collector reads in its thread
+				time.sleep(0.05)
+			server.shutdown()
+			bodies = [m.split(" - ", 2)[2] for m in received]
+			findings = [json.loads(b) for b in bodies if b.startswith("{") and "class_uid" in b]
+			mine = [f for f in findings if f["finding_info"]["uid"] == ev]
+			assert mine and mine[0]["class_uid"] == 2004 and mine[0]["src_endpoint"]["ip"] == "45.33.32.156", findings[-1:]
+			assert not [f for f in findings if f["finding_info"]["uid"] == quiet], "below the minimum severity"
+			assert any('"wolf_journal"' in b for b in bodies), "journal entries are exported"
+			assert sent == len(received), (sent, len(received))
+			cursor = siem_api.get_status()
+			assert cursor["last_error"] is None and cursor["journal_seq"], cursor
+
+			frappe.db.set_single_value("Wolf Settings", "siem_port", 1)  # nothing listens there
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "ssh_failed_login", "severity": "warning", "host": HOST,
+				 "title": "SIEM smoke while down"}, tz, now_datetime()))  # fmt: skip
+			assert siem_api.export_siem() == 0
+			down = siem_api.get_status()
+			assert down["last_error"] and down["event_name"] == cursor["event_name"], down  # nothing skipped
+		finally:
+			server.server_close()
+			frappe.db.set_single_value("Wolf Settings", "siem_enabled", 0)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1484,7 +1549,8 @@ def main():
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("app security", app_security), ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
-	                 ("response actions", response_actions), ("journal", journal_chain)]:
+	                 ("response actions", response_actions), ("journal", journal_chain),
+	                 ("siem export", siem_export)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

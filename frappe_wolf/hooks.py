@@ -87,6 +87,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
 			"frappe_wolf.api.journal.chain_journal",
+			"frappe_wolf.api.siem.export_siem",
 		],
 		"0 * * * *": [
 			"frappe_wolf.tasks.send_digests",

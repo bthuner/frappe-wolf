@@ -545,7 +545,7 @@ Deployment shortly before: 2026-10-29 01:47:12
         </div>
         <div class="cards" role="list">
           <div class="card" role="listitem"><span class="k">Room 1 · Overview <span class="status done">● built</span></span><h3>“Is anyone howling?”</h3><p>Exact counts, never the length of a list. Then the newest unresolved incidents, HTTP responses with deployments marked, and every signal (workers, Redis, database, backups, TLS, host) in one of five states that are never merged: missing, stale, unwatched, within its rules, firing. The same page serves each site, host and bench.</p></div>
-          <div class="card" role="listitem"><span class="k">Room 2 · Incident <span class="status done">● built</span></span><h3>“What happened?”</h3><p>The timeline above, scope first, with acknowledge, assign and resolve when the server allows them. Merge, split and the postmortem stay in Desk.</p></div>
+          <div class="card" role="listitem"><span class="k">Room 2 · Incident <span class="status done">● built</span></span><h3>“What happened?”</h3><p>The timeline above, scope first, with acknowledge, assign and resolve when the server allows them. Merge and split too, once the server has said what would move. The postmortem starts there and is written in Desk.</p></div>
           <div class="card" role="listitem"><span class="k">Room 3 · Rules <span class="status done">● built, in Desk</span></span><h3>“When should it wake me?”</h3><p>One form that reads like a sentence: <em>when</em> a metric or event, <em>is</em> an operator and threshold, <em>over</em> a window, <em>per</em> a group, <em>between</em> two hours, <em>tell</em> these channels.</p></div>
         </div>
         <div class="prose">
@@ -688,6 +688,9 @@ X-Wolf-Agent-Secret: ••••••••
           <li class="done"><time>2026-10-30 · Wolf UI</time><b>A frappe-ui app at <code>/wolf</code>.</b><p>The daily views move out of Desk (#19), on the Frappe session, with light and dark themes on the brand tokens. Exact counts use the reader's access rules. Then came the incident page, the overview and the site, host and bench dashboards, and the events, errors and metrics explorers. Every page says what it read.</p></li>
           <li class="done"><time>2026-11-01 · Wolf UI</time><b>Live updates, browser and accessibility tests.</b><p>Invalidations over Frappe's socket.io, in rooms guarded by the reader's permissions. Every view tested in Chromium with axe, in both themes. Log search waits for raw-line storage.</p></li>
           <li class="done"><time>2026-11-01 · Demo bench</time><b>Checked live, on real data.</b><p>The 2AM scenario walked in the Wolf UI only, live updates over the real socket.io server, a scoped user refused an incident outside its scope. Four faults found and fixed, among them an incident linked to a deployment made after it started.</p></li>
+          <li class="done"><time>2026-11-01 · Workflow</time><b>Merge and split in the Wolf UI.</b><p>The dialogs ask the server what would move (events, comments) and what each incident becomes, before anything does, with the same checks as the actions themselves. A refusal keeps what the reader chose. The postmortem starts from the incident page and is written in Desk.</p></li>
+          <li class="done"><time>2026-11-01 · States</time><b>Every state of every view.</b><p>A browser test walks each view through loading, empty, filtered-empty, error, forbidden, partial, stale and disconnected, and fails on any "nothing" said while a view reads. It found views that showed nothing while loading, Frappe's raw "Not permitted", and a timeline that said "Nothing recorded" under its own error.</p></li>
+          <li class="done"><time>2026-11-01 · Load test</time><b>100 hosts × 7 days, measured.</b><p>About 20 M rows on the demo bench. The push holds (p95 115 ms over HTTP). The Wolf UI's overview does not: its inventory and signals take 13 to 24 s. Rows named by random hash scatter a day of rollups over the whole table, the default 128 MB buffer pool holds none of it, and MariaDB picks an index that cannot use the time range.</p></li>
         </ol>
       </div>
     </div>
@@ -710,7 +713,7 @@ X-Wolf-Agent-Secret: ••••••••
         </div>
         <div class="prose" style="margin-top:32px">
           <h3>Next</h3>
-          <p>Log search once raw-line storage exists, which Wolf deliberately doesn't have yet. A run on a real Press server and a real Pilot host. And a load test at 100 hosts, to put numbers on the storage's promises.</p>
+          <p>Log search once raw-line storage exists, which Wolf deliberately doesn't have yet. A run on a real Press server and a real Pilot host. And the overview under 1 s at 100 hosts: the <a href="https://github.com/bthuner/frappe-wolf/blob/main/docs/load-test.md">load test</a> says where the time goes.</p>
         </div>
       </div>
     </div>

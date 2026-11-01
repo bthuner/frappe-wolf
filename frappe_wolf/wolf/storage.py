@@ -155,10 +155,36 @@ def clamp_sum(partial):
 	return True
 
 
+def _metric_part(metric):
+	"""Fixed-width stand-in for a metric name (any text up to 140 characters) in a row name."""
+	return hashlib.md5(str(metric).encode()).hexdigest()[:8]
+
+
+def _stamp(ts):
+	"""YYYYMMDDHHMMSS of a datetime or of its string form."""
+	return "".join(c for c in str(ts) if c.isdigit())[:14]
+
+
+# InnoDB stores a table's rows in primary key order, and Frappe's primary key is `name`. A random
+# name scatters one metric's hour over the whole table, so a read of a day of minute rollups
+# fetches each row from a different page. Names that start with resolution, metric and time keep
+# those rows together, so a time-range read of one metric reads neighbouring pages.
+
+
 def rollup_name(resolution, key):
-	"""Deterministic row name, so a bucket can never be stored twice."""
+	"""Deterministic row name, so a bucket can never be stored twice.
+
+	resolution, metric and bucket start come first, so the rows of one metric are stored in time
+	order; the hash of the whole key ends it.
+	"""
 	text = "|".join([str(resolution)] + ["\\0" if part is None else str(part) for part in key])
-	return hashlib.sha1(text.encode()).hexdigest()[:32]
+	digest = hashlib.sha1(text.encode()).hexdigest()[:32]
+	return f"{resolution:04d}-{_metric_part(key[0])}-{_stamp(key[5])}-{digest}"
+
+
+def sample_name(metric, timestamp, suffix):
+	"""Raw sample row name: metric and time first, for the same reason; `suffix` makes it unique."""
+	return f"{_metric_part(metric)}-{_stamp(timestamp)}-{suffix}"
 
 
 def finalize(partial, aggregation):

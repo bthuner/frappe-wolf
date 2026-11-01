@@ -6,7 +6,7 @@ import socket
 import frappe
 from frappe.utils import add_to_date, get_system_timezone, now_datetime
 
-from frappe_wolf.wolf import schema
+from frappe_wolf.wolf import schema, storage
 
 
 def system_tz():
@@ -33,7 +33,8 @@ def insert_metrics(rows, agent=None):
 	]  # fmt: skip
 	values = [
 		(
-			frappe.generate_hash(length=12), now, now, "Administrator", "Administrator", 0,
+			storage.sample_name(r["metric_name"], r["timestamp"], frappe.generate_hash(length=12)),
+			now, now, "Administrator", "Administrator", 0,
 			r["metric_name"], r["value"], r["timestamp"], r["host"], r["bench"], r["site"],
 			r["label_key"], r["labels"],
 		)  # fmt: skip

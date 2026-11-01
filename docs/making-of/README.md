@@ -86,7 +86,8 @@ the same session and permissions. Desk keeps configuration.
    merged: missing, stale, unwatched, within its rules, firing. The same page serves each site,
    host and bench. A bench is always addressed through its host.
 2. **Incident** (built): the timeline of chapter 05, scope first, with acknowledge, assign and
-   resolve when the server allows them. Merge, split and the postmortem stay in Desk.
+   resolve when the server allows them. Merge and split too, once the server has said what
+   would move. The postmortem starts there and is written in Desk.
 3. **Alert Rule** (built, in Desk): a form that reads like the brief's sentence, *when X > Y for
    Z minutes, send alert*. "For Z minutes" is the `min` aggregation over the window.
 
@@ -157,4 +158,5 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 
 - **Log search:** waits for raw-line storage, which Wolf deliberately doesn't have yet.
 - **A real Press server and Pilot host:** the integrations still need to run on one.
-- **A load test at 100 hosts:** it will put numbers on the storage's promises.
+- **The overview under 1 s at 100 hosts:** the load test ([`docs/load-test.md`](../load-test.md))
+  says where the time goes. It goes to the order rows are stored in, the cache and the index choice.

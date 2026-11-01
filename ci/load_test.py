@@ -123,7 +123,8 @@ class Loader:
 			t = ts.strftime("%Y-%m-%d %H:%M:%S")
 			for host in self.hosts:
 				for metric in self.metrics:
-					batch.append((self.name(), t, t, "Administrator", "Administrator", 0,
+					# named as events.insert_metrics names them: the row order is what reads pay for
+					batch.append((self.storage.sample_name(metric, t, self.name()), t, t, "Administrator", "Administrator", 0,
 					              metric, self.pooled(), t, host, None, None, None, None))
 			if len(batch) >= 50_000:
 				self.bulk("Wolf Metric Sample", fields, batch)
@@ -144,8 +145,9 @@ class Loader:
 				for host in self.hosts:
 					for metric in self.metrics:
 						lo, hi = sorted((self.pooled(), self.pooled()))
-						batch.append((self.name(), t, t, "Administrator", "Administrator", 0,
-						              metric, res, t, host, None, None, None,
+						# named as the rollup job names them (storage.rollup_name)
+						batch.append((storage.rollup_name(res, (metric, host, None, None, None, ts)), t, t,
+						              "Administrator", "Administrator", 0, metric, res, t, host, None, None, None,
 						              per_bucket, (lo + hi) / 2 * per_bucket, lo, hi, hi, last))
 				if len(batch) >= 50_000:
 					self.bulk("Wolf Metric Rollup", fields, batch)

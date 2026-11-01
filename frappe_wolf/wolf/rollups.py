@@ -313,17 +313,66 @@ def _segment_sql(res, start, end):
 	)
 
 
-def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, since, until):
+def _has_legacy_names():
+	"""Whether rollup rows named before #56 (by hash, in no useful order) are still stored. Asked
+	once per request: a primary key range scan that stops at the first row."""
+	if not hasattr(frappe.local, "wolf_legacy_rollup_names"):
+		frappe.local.wolf_legacy_rollup_names = bool(frappe.db.sql(
+			f"select 1 from `tab{ROLLUP_DOCTYPE}` where name < %(below)s limit 1",
+			{"below": storage.LEGACY_ROLLUP_NAMES_BELOW},
+		))  # fmt: skip
+	return frappe.local.wolf_legacy_rollup_names
+
+
+def forget_legacy_names():
+	"""Ask again on the next read (tests, after renaming rows)."""
+	if hasattr(frappe.local, "wolf_legacy_rollup_names"):
+		del frappe.local.wolf_legacy_rollup_names
+
+
+def name_passes(res, metrics, start, end):
+	"""[(condition, params)] that together read one rollup segment of these metrics.
+
+	MariaDB stores rows in name order and names start with resolution, metric and bucket
+	(storage.rollup_name), so a name range per metric reads a window from neighbouring pages
+	without a lookup per row: 2 to 3 times faster than through (resolution, metric_name,
+	bucket_start) at 144 k rows. Rows named before #56 sort below every new name; while some
+	remain, a second pass reads them the old way. Postgres does not store rows in key order:
+	one pass with no condition. The caller's own conditions stay; the ranges only narrow them.
+	"""
+	if res == RAW or not metrics or frappe.db.db_type == "postgres":
+		return [("", {})]
+	ranges, params = [], {}
+	for i, metric in enumerate(sorted(set(metrics))):
+		params[f"name_lo{i}"], params[f"name_hi{i}"] = storage.rollup_name_range(res, metric, start, end)
+		ranges.append(f"(`name` >= %(name_lo{i})s and `name` < %(name_hi{i})s)")
+	passes = [(f"({' or '.join(ranges)})", params)]
+	if _has_legacy_names():
+		# through a function, so it filters the rows the bucket indexes find: as a primary key range
+		# it could be read as one, over every row named before #56 (millions on an upgraded site)
+		passes.append(("left(`name`, 1) < %(legacy_below)s", {"legacy_below": storage.LEGACY_ROLLUP_NAMES_BELOW}))
+	return passes
+
+
+def _reads(resolution, since, until, metrics):
+	"""(res, table, time column, conditions, params) of every SQL read of [since, until]."""
+	for res, start, end in segments(resolution, since, until):
+		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+		for name_where, name_params in name_passes(res, metrics, start, end):
+			yield res, table, ts_col, [seg_where, *([name_where] if name_where else [])], {**seg_params, **name_params}
+
+
+def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, since, until, metrics=None):
 	"""Aggregate metric samples per group over [since, until], reading the given resolution.
 
 	`where` is a list of SQL conditions on columns shared by samples and rollups (metric_name,
 	host, bench, site, label_key). Returns frappe._dict rows like a SQL group-by would:
 	group columns, `<field>_hint` for each hint field, value, samples, first_at. For `last`,
 	also `label_key` of the latest sample when the groups do not split by label (which disk).
+	`metrics`: the metric names `where` restricts to, when the caller knows them (name_passes).
 	"""
 	merged = {}
-	for res, start, end in segments(resolution, since, until):
-		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+	for res, table, ts_col, seg_where, seg_params in _reads(resolution, since, until, metrics):
 		if res == RAW:
 			cols = "count(*) as c, sum(`value`) as s, min(`value`) as mn, max(`value`) as mx, max(`timestamp`) as lt"
 			value_col, last_col = "`value`", "`timestamp`"
@@ -334,7 +383,7 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 			value_col, last_col = "value_last", "last_ts"
 		select = [f"`{c}`" for c in group_cols] + [f"max(`{f}`) as {f}_hint" for f in hint_fields]
 		group = f"group by {', '.join(f'`{c}`' for c in group_cols)}" if group_cols else ""
-		conds = " and ".join([*where, seg_where])
+		conds = " and ".join([*where, *seg_where])
 		rows = frappe.db.sql(
 			f"select {', '.join([*select, cols, f'min({ts_col}) as first_at'])} from `{table}` where {conds} {group}",
 			{**params, **seg_params},
@@ -384,75 +433,109 @@ def aggregate(where, params, group_cols, hint_fields, aggregation, resolution, s
 	return out
 
 
-def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_last):
-	"""Value (and label) at the newest time of each group, picked in SQL: only the rows at each
-	group's own newest time come back, however long ago another group stopped."""
-	cols = ", ".join(f"`{c}`" for c in group_cols)
-	keys = ", ".join(f"coalesce(`{c}`, '') as g{i}" for i, c in enumerate(group_cols))
-	join = " and ".join([*(f"coalesce(a.`{c}`, '') = x.g{i}" for i, c in enumerate(group_cols)), "a.t = x.m"])
-	rows = frappe.db.sql(
-		f"""select {', '.join([*(f'a.`{c}`' for c in group_cols), 'a.v', 'a.t', 'a.l'])}
-		from (select {cols + ', ' if cols else ''}{value_col} as v, {last_col} as t, label_key as l
-			from `{table}` where {conds} and {last_col} >= %(oldest_last)s) a
-		join (select {keys + ', ' if keys else ''}max({last_col}) as m
-			from `{table}` where {conds} and {last_col} >= %(oldest_last)s {'group by ' + cols if cols else ''}) x
-		on {join}""",
-		{**params, "oldest_last": oldest_last},
+def _newest_rows(table, select, partition, newest, conds, params):
+	"""Rows holding the newest `newest` of each `partition`, in one pass over the rows read.
+
+	A self-join on the newest time (rows joined to a group-by of the same rows) lets MariaDB
+	merge the row side into a lookup per group, through the (resolution, metric_name) index:
+	each of the signals' 400 series then walked all of its metric's minute rollups, 233 s
+	instead of 0.1 s. A window function reads the rows once, and keeps exactly the group-by's
+	groups (NULL apart from '', unlike a join on coalesce).
+	"""
+	over = f"partition by {', '.join(partition)} " if partition else ""
+	return frappe.db.sql(
+		f"""select * from (select {', '.join(select)},
+			row_number() over ({over}order by {', '.join(f'{c} desc' for c in newest)}) as rn
+			from `{table}` where {conds}) z where rn = 1""",
+		params,
 		as_dict=True,
 	)
-	best = {}
-	for r in rows:
-		key = tuple(r.get(c) for c in group_cols)
-		cand = (get_datetime(r.t), float(r.v), r.l or "")
-		if key not in best or cand > best[key]:
-			best[key] = cand
-	return {key: (value, label or None) for key, (_, value, label) in best.items()}
 
 
-def series_rows(where, params, resolution, since, until):
+def _last_values(table, value_col, last_col, conds, params, group_cols, oldest_last):
+	"""Value (and label) at the newest time of each group, picked in SQL: only the newest row of
+	each group comes back, however long ago another group stopped. Ties go to the higher value,
+	then label, as storage.merge picks."""
+	cols = [f"`{c}`" for c in group_cols]
+	label = "coalesce(label_key, '')"
+	rows = _newest_rows(
+		table,
+		[*cols, f"{value_col} as v", f"{last_col} as t", f"{label} as l"],
+		cols,
+		[last_col, value_col, label],
+		f"{conds} and {last_col} >= %(oldest_last)s",
+		{**params, "oldest_last": oldest_last},
+	)
+	return {tuple(r.get(c) for c in group_cols): (float(r.v), r.l or None) for r in rows}
+
+
+def series_rows(where, params, resolution, since, until, metrics=None):
 	"""Rows for wolf.series.bucket_series: metric_name, label_key, timestamp, value, count."""
 	rows = []
-	for res, start, end in segments(resolution, since, until):
-		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+	for res, table, ts_col, seg_where, seg_params in _reads(resolution, since, until, metrics):
 		value, count = ("`value`", "1") if res == RAW else ("value_sum", "value_count")
 		rows += frappe.db.sql(
 			f"""select metric_name, label_key, {ts_col} as `timestamp`, {value} as `value`, {count} as `count`
-			from `{table}` where {' and '.join([*where, seg_where])}""",
+			from `{table}` where {' and '.join([*where, *seg_where])}""",
 			{**params, **seg_params},
 			as_dict=True,
 		)
 	return rows
 
 
-def bucket_rows(where, params, group_cols, resolution, since, until):
-	"""(group, time, partial) rows over [since, until), for storage.bucket_partials.
+def _bucket_index(col, seconds):
+	"""SQL for floor(`col` / seconds) counted from 1970-01-01 in wall-clock time, like
+	storage.floor: no time zone shift on either database."""
+	seconds = int(seconds)
+	if frappe.db.db_type == "postgres":
+		return f"floor(extract(epoch from ({col} - timestamp '1970-01-01')) / {seconds})"
+	return f"floor(timestampdiff(second, '1970-01-01', {col}) / {seconds})"
 
-	Raw samples become one-sample partials; rollup rows keep their count, sum, min, max and
-	last, so any aggregation of a chart bucket stays exact across the raw/rollup boundary.
+
+def _bucket_start(index, seconds):
+	return storage.EPOCH + timedelta(seconds=int(index) * int(seconds))
+
+
+def bucket_cells(where, params, group_cols, resolution, since, until, bucket_seconds, need_last, metrics=None):
+	"""{(group, bucket_start): partial} over [since, until), chart buckets of `bucket_seconds`.
+
+	Buckets are summed in SQL: one row per group and bucket comes back, not one per sample or
+	rollup row (144 k rows for a day of one metric on 100 hosts). Raw samples and rollup rows
+	keep count, sum, min and max, so any aggregation stays exact across the raw/rollup boundary.
+	The value at each bucket's newest time (`last`) costs a second read; only asked when needed.
 	"""
 	cols = [f"`{c}`" for c in group_cols]
-	out = []
-	for res, start, end in segments(resolution, since, until):
-		table, ts_col, seg_where, seg_params = _segment_sql(res, start, end)
+	cells = {}
+	for res, table, ts_col, seg_where, seg_params in _reads(resolution, since, until, metrics):
+		conds = [*where, *seg_where]
 		if res == RAW:
-			select = ", ".join([*cols, "`value` as v", "`timestamp` as t"])
+			conds.append("`timestamp` < %(cells_until)s")  # [since, until): the raw segment's end is inclusive
+			aggs = "count(*) as c, sum(`value`) as s, min(`value`) as mn, max(`value`) as mx, max(`timestamp`) as lt"
+			value_col, last_col = "`value`", "`timestamp`"
 		else:
-			select = ", ".join([*cols, "bucket_start as t", "value_count as c", "value_sum as s", "value_min as mn",
-								"value_max as mx", "value_last as l", "last_ts as lt"])  # fmt: skip
+			aggs = "sum(value_count) as c, sum(value_sum) as s, min(value_min) as mn, max(value_max) as mx, max(last_ts) as lt"
+			value_col, last_col = "value_last", "last_ts"
+		qparams = {**params, **seg_params, "cells_until": until}
+		idx = _bucket_index(ts_col, bucket_seconds)
+		where_sql = " and ".join(conds)
 		rows = frappe.db.sql(
-			f"select {select} from `{table}` where {' and '.join([*where, seg_where])}",
-			{**params, **seg_params},
+			f"select {', '.join([*cols, f'{idx} as b', aggs])} from `{table}` where {where_sql} group by {', '.join([*cols, idx])}",
+			qparams,
 			as_dict=True,
 		)
+		lasts = _bucket_lasts(table, value_col, last_col, idx, where_sql, qparams, group_cols, bucket_seconds) if need_last and rows else {}
 		for r in rows:
-			group = tuple(r.get(c) for c in group_cols)
-			at = get_datetime(r.t)
-			if res == RAW:
-				if at >= until:
-					continue  # [since, until): the raw segment's end is inclusive
-				part = storage.new_partial(float(r.v), at)
-			else:
-				part = {"count": int(r.c), "sum": float(r.s), "min": float(r.mn), "max": float(r.mx),
-						"last": float(r.l), "last_ts": get_datetime(r.lt)}  # fmt: skip
-			out.append((group, at, part))
-	return out
+			if not r.c:
+				continue
+			key = (tuple(r.get(c) for c in group_cols), _bucket_start(r.b, bucket_seconds))
+			part = {"count": int(r.c), "sum": float(r.s or 0), "min": float(r.mn), "max": float(r.mx),
+			        "last": lasts.get(key, 0.0), "last_ts": get_datetime(r.lt)}  # fmt: skip
+			cells[key] = storage.merge(cells.get(key), part)
+	return cells
+
+
+def _bucket_lasts(table, value_col, last_col, idx, where_sql, params, group_cols, bucket_seconds):
+	"""Value at the newest time of each group and bucket: {(group, bucket_start): value}."""
+	cols = [f"`{c}`" for c in group_cols]
+	rows = _newest_rows(table, [*cols, f"{idx} as b", f"{value_col} as v"], [*cols, idx], [last_col, value_col], where_sql, params)
+	return {(tuple(r.get(c) for c in group_cols), _bucket_start(r.b, bucket_seconds)): float(r.v) for r in rows}

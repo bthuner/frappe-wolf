@@ -555,6 +555,37 @@ def main():
 		assert truth["mount=/"]["max"] == 1000
 		return f"{sum(t['count'] for t in truth.values())} samples, 1m and 1h equal raw for {conditions.AGGREGATIONS}"
 
+	def legacy_names():
+		# rows written before #56 were named by a 32-hex hash, outside every name range
+		# (rollups.name_passes): while such rows remain, a second pass must read them
+		frappe.db.sql(
+			"update `tabWolf Metric Rollup` set name = md5(name) where host = %(rhost)s and metric_name = 'smoke_roll'",
+			roll_params,
+		)
+		frappe.db.commit()
+		rollups.forget_legacy_names()
+		truth = raw_truth(base, roll_end)
+		for res in (MINUTE, HOUR):
+			for agg in conditions.AGGREGATIONS:
+				rows = rollups.aggregate(roll_where, roll_params, ["label_key"], [], agg, res, base, roll_end, ["smoke_roll"])
+				compare(rows, truth, agg, f"legacy names {storage.LABELS[res]}")
+			cells = rollups.bucket_cells(roll_where, roll_params, ["label_key"], res, base, roll_end, HOUR, True, ["smoke_roll"])
+			for label, expected in truth.items():
+				got = sum(p["count"] for (group, _start), p in cells.items() if group == (label,))
+				assert got == expected["count"], f"legacy names, buckets {storage.LABELS[res]} {label}: {got} != {expected['count']}"
+		passes = rollups.name_passes(MINUTE, ["smoke_roll"], base, roll_end)
+		if frappe.db.db_type == "postgres":
+			assert passes == [("", {})], passes
+			return "Postgres reads without name ranges"
+		assert len(passes) == 2, passes
+		# without the second pass, the renamed rows would be missed: the pass is what reads them
+		frappe.local.wolf_legacy_rollup_names = False
+		try:
+			assert not rollups.aggregate(roll_where, roll_params, ["label_key"], [], "count", MINUTE, base, roll_end, ["smoke_roll"])
+		finally:
+			rollups.forget_legacy_names()
+		return f"{sum(t['count'] for t in truth.values())} samples read from hash-named rollups, 1m and 1h"
+
 	def resolution():
 		assert rollups.resolution_for(5 * 60) == RAW
 		assert rollups.resolution_for(24 * 3600) == MINUTE
@@ -1689,7 +1720,7 @@ def main():
 	                 ("channels", channels), ("purge", purge), ("auto-resolve", resolve),
 	                 ("assign+comment+activity", workflow), ("merge+split", merge_split), ("postmortem", postmortem),
 	                 ("metrics report", metrics), ("status page", status_page),
-	                 ("rollup", rollup), ("resolution", resolution), ("ingest modes", ingest_modes),
+	                 ("rollup", rollup), ("legacy names", legacy_names), ("resolution", resolution), ("ingest modes", ingest_modes),
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),

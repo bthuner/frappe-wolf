@@ -31,6 +31,9 @@ SERIES_KEY = ("metric_name", "host", "bench", "site", "label_key")
 MAX_STORED = 999_999_999_999
 
 
+EPOCH = datetime(1970, 1, 1)  # buckets count from here, in wall-clock time (no time zone)
+
+
 def floor(ts, seconds):
 	"""Floor a naive datetime to a multiple of `seconds` (wall-clock arithmetic, no tz shift)."""
 	epoch = ts.replace(tzinfo=timezone.utc).timestamp()
@@ -195,6 +198,23 @@ def rollup_name(resolution, key):
 	return f"{RESOLUTION_CODES[resolution]}{_metric_part(key[0])}{_stamp(key[5], '%y%m%d%H%M')}{digest}"
 
 
+NAMES_FROM = datetime(2000, 1, 1)  # names carry two-digit years, which sort right from here to 2100
+
+
+def rollup_name_range(resolution, metric, start, end):
+	"""[low, high) holding the names of `metric`'s rows at `resolution` with start <= bucket_start
+	< end. A read can then scan that stretch of the primary key instead of looking each row up
+	through a secondary index. A superset: other metrics may share the 6-character hash."""
+	prefix = f"{RESOLUTION_CODES[resolution]}{_metric_part(metric)}"
+	start = max(start, NAMES_FROM)  # two-digit years: a 1999 start would sort above the end
+	return prefix + _stamp(floor(start, 60), "%y%m%d%H%M"), prefix + _stamp(ceil(end, 60), "%y%m%d%H%M")
+
+
+# Rollup names before #56 were 32 hex digits: all of them sort below this, every newer name
+# (starting with a resolution letter) above it.
+LEGACY_ROLLUP_NAMES_BELOW = "g"
+
+
 def sample_name(metric, timestamp, suffix):
 	"""Raw sample row name: metric and time (to the second) first, for the same reason; `suffix`
 	makes it unique."""
@@ -240,19 +260,6 @@ def late_horizon(now, raw_hours):
 	"""
 	retention = timedelta(hours=raw_hours)
 	return now - retention + min(timedelta(hours=1), retention / 4)
-
-
-def bucket_partials(rows, bucket_seconds):
-	"""Merge rows into chart buckets per group: {(group, bucket_start): partial}.
-
-	rows: (group, time, partial) with a partial from new_partial (a raw sample) or a rollup row.
-	A bucket is a whole multiple of the rollups read, so a rollup row falls in one bucket.
-	"""
-	out = {}
-	for group, at, part in rows:
-		key = (group, floor(at, bucket_seconds))
-		out[key] = merge(out.get(key), part)
-	return out
 
 
 def whole_buckets(since, until, bucket_seconds):

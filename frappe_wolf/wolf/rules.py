@@ -172,7 +172,7 @@ def query_metric(rule, since):
 	cols = conditions.group_columns(rule.group_by)
 	hints = [f for f in SCOPE_FIELDS if f not in cols]
 	resolution = rollups.resolution_for((now_datetime() - since).total_seconds())
-	return rollups.aggregate(where, params, cols, hints, agg, resolution, since, until)
+	return rollups.aggregate(where, params, cols, hints, agg, resolution, since, until, [rule.metric_name])
 
 
 def _event_where(rule, since, params):

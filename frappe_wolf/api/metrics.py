@@ -102,24 +102,32 @@ def query_metric(metric, aggregation=None, group_by=None, label=None, range=None
 		params.update(allowed_params)
 	group_cols = list(conditions.group_columns(group_by))
 
-	# rank the groups in SQL over the whole window, then read bucket rows of the shown ones only
-	totals = rollups.aggregate(where, params, group_cols, [], aggregation, resolution, first, end)
+	# one read: every group's chart buckets, summed in SQL; a group's total over the window is the
+	# merge of its buckets (they cover [first, end) exactly), so ranking needs no second read
+	cells = rollups.bucket_cells(where, params, group_cols, resolution, first, end, bucket, aggregation == "last", [metric])
+	merged = {}
+	for (group, _start), part in cells.items():
+		merged[group] = storage.merge(merged.get(group), part)
+	totals = [
+		frappe._dict({**dict(zip(group_cols, group, strict=True)), "value": storage.finalize(part, aggregation),
+		              "samples": part["count"], "last_at": part["last_ts"]})
+		for group, part in merged.items()
+	]  # fmt: skip
 	reverse = aggregation != "min"  # the highest values first, the lowest for min
 	missing = float("-inf") if reverse else float("inf")
 	totals.sort(key=lambda r: (r.value if r.value is not None else missing, str([r.get(c) for c in group_cols])), reverse=reverse)
 	shown = totals[:MAX_GROUPS]
 	keys = [tuple(r.get(c) for c in group_cols) for r in shown]
 	only_shown = [*where, _group_condition(group_cols, keys, params)] if group_cols and keys else where
-	cells = {}
-	if keys:
-		cells = storage.bucket_partials(rollups.bucket_rows(only_shown, params, group_cols, resolution, first, end), bucket)
+	shown_keys = set(keys)
+	cells = {key: part for key, part in cells.items() if key[0] in shown_keys}  # only charted groups are kept
 
 	# freshness only means something when the window reaches now; it is read from the newest
 	# sample, not from the last whole bucket (which lags up to a bucket behind)
 	live = win.until >= now - timedelta(minutes=1)
 	newest = {}
 	if live and keys:
-		for r in rollups.aggregate(only_shown, params, group_cols, [], "last", storage.MINUTE, now - RECENT, now):
+		for r in rollups.aggregate(only_shown, params, group_cols, [], "last", storage.MINUTE, now - RECENT, now, [metric]):
 			newest[tuple(r.get(c) for c in group_cols)] = r.last_at
 
 	series = []

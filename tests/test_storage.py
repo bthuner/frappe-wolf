@@ -48,6 +48,32 @@ class TestBuckets(unittest.TestCase):
 		with self.assertRaises(TypeError):
 			storage.sample_name("cpu_usage", 1767225600, "x")
 
+	def test_name_range_holds_exactly_a_metric_window(self):
+		start, end = T0 + timedelta(minutes=10, seconds=30), T0 + timedelta(hours=2, seconds=1)
+		for res in (MINUTE, HOUR):
+			low, high = storage.rollup_name_range(res, "cpu_usage", start, end)
+			for m in range(-120, 300):
+				bucket = storage.floor(T0 + timedelta(minutes=m), res)
+				for metric in ("cpu_usage", "cpu_usage_x"):
+					name = storage.rollup_name(res, (metric, "h1", None, None, None, bucket))
+					inside = low <= name < high
+					if metric == "cpu_usage":
+						# every row of the window is in the range (the SQL keeps the exact bucket
+						# condition), and nothing outside the whole minutes around it
+						if start <= bucket < end:
+							self.assertTrue(inside, (res, bucket))
+						if inside:
+							self.assertTrue(storage.floor(start, 60) <= bucket < storage.ceil(end, 60), (res, bucket))
+					# every new name sorts above the names written before #56
+					self.assertGreater(name, storage.LEGACY_ROLLUP_NAMES_BELOW)
+		self.assertLess("f" * 32, storage.LEGACY_ROLLUP_NAMES_BELOW)
+
+	def test_name_range_of_a_window_from_before_2000(self):
+		# names carry two-digit years: a range from 1999 must still hold the rows from 2000 on
+		low, high = storage.rollup_name_range(MINUTE, "cpu_usage", datetime(1999, 12, 1), datetime(2000, 1, 10))
+		name = storage.rollup_name(MINUTE, ("cpu_usage", "h1", None, None, None, datetime(2000, 1, 5)))
+		self.assertTrue(low <= name < high)
+
 	def test_names_keep_a_metric_in_time_order(self):
 		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous
 		# and sorted by time, whatever the hosts and whatever the metric names
@@ -259,23 +285,6 @@ class TestLastLabel(unittest.TestCase):
 		self.assertEqual(storage.merge(a, b)["last_label"], "mount=/data")
 		self.assertEqual(storage.merge(b, a)["last_label"], "mount=/data")
 		self.assertNotIn("last_label", storage.merge(storage.new_partial(1.0, T0), storage.new_partial(2.0, T0)))
-
-
-class TestBucketPartials(unittest.TestCase):
-	def test_raw_and_rollup_rows_merge_exactly(self):
-		g = ("h1",)
-		raw = [(g, T0 + timedelta(minutes=5, seconds=s), storage.new_partial(v, T0 + timedelta(minutes=5, seconds=s)))
-			   for s, v in ((10, 4.0), (40, 8.0))]  # fmt: skip
-		rollup = [(g, T0, {"count": 2, "sum": 10.0, "min": 1.0, "max": 9.0, "last": 9.0, "last_ts": T0 + timedelta(seconds=50)})]
-		cells = storage.bucket_partials(raw + rollup, 600)
-		(key, part), = cells.items()
-		self.assertEqual(key, (g, T0))
-		self.assertEqual((part["count"], part["sum"], part["min"], part["max"], part["last"]), (4, 22.0, 1.0, 9.0, 8.0))
-
-	def test_groups_and_buckets_stay_apart(self):
-		rows = [(("a",), T0, storage.new_partial(1.0, T0)), (("b",), T0, storage.new_partial(2.0, T0)),
-				(("a",), T0 + timedelta(minutes=10), storage.new_partial(3.0, T0 + timedelta(minutes=10)))]  # fmt: skip
-		self.assertEqual(len(storage.bucket_partials(rows, 600)), 3)
 
 
 class TestWeightedSeries(unittest.TestCase):

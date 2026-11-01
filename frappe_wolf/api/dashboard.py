@@ -63,19 +63,24 @@ def get_signals(site=None, bench=None, host=None):
 	metrics = [m for m in catalog.CATALOG if m not in HTTP_METRICS]
 	where, params = _where(scope, metrics)
 
-	recent = rollups.aggregate(where, params, list(SERIES_KEY), [], "last", storage.MINUTE, now - RECENT, now)
+	recent = rollups.aggregate(where, params, list(SERIES_KEY), [], "last", storage.MINUTE, now - RECENT, now, metrics)
 	series = {
 		tuple(r.get(k) for k in SERIES_KEY): {**{k: r.get(k) for k in SERIES_KEY}, "value": r.value, "last_at": get_datetime(r.last_at), "recent": True}
 		for r in recent
 	}
 	# quieter series: when they were last seen, from the hourly rollups (no value: it is old)
-	older = frappe.db.sql(
-		f"""select metric_name, host, bench, site, label_key, max(last_ts) as last_at from `tabWolf Metric Rollup`
-		where resolution = 3600 and bucket_start >= %(since)s and {' and '.join(where)}
-		group by metric_name, host, bench, site, label_key""",
-		{**params, "since": now - timedelta(days=LOOKBACK_DAYS)},
-		as_dict=True,
-	)
+	since = now - timedelta(days=LOOKBACK_DAYS)
+	older = []
+	for name_where, name_params in rollups.name_passes(storage.HOUR, metrics, since, now + timedelta(hours=1)):
+		older += frappe.db.sql(
+			f"""select metric_name, host, bench, site, label_key, max(last_ts) as last_at from `tabWolf Metric Rollup`
+			where resolution = 3600 and bucket_start >= %(since)s and {' and '.join([*where, *([name_where] if name_where else [])])}
+			group by metric_name, host, bench, site, label_key""",
+			{**params, **name_params, "since": since},
+			as_dict=True,
+		)
+	# newest first: the first row of a series is kept, and one named both ways (#56) comes twice
+	older.sort(key=lambda r: get_datetime(r.last_at), reverse=True)
 	for r in older:
 		key = tuple(r.get(k) for k in SERIES_KEY)
 		if key not in series:
@@ -173,7 +178,7 @@ def get_http(range=None, since=None, until=None, site=None, bench=None, host=Non
 	where, params = _where(scope, HTTP_METRICS)
 	# whole buckets only: the newest data shows once its bucket closes (storage.whole_buckets)
 	first, end, buckets = storage.whole_buckets(win.since, win.until, bucket)
-	rows = [r for r in rollups.series_rows(where, params, resolution, first, end) if get_datetime(r["timestamp"]) < end]
+	rows = [r for r in rollups.series_rows(where, params, resolution, first, end, HTTP_METRICS) if get_datetime(r["timestamp"]) < end]
 
 	# interval counts: the sum per bucket, every label together. A bucket without samples is a
 	# gap (None), not a zero.

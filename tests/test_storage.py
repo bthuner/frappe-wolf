@@ -48,6 +48,26 @@ class TestBuckets(unittest.TestCase):
 		with self.assertRaises(TypeError):
 			storage.sample_name("cpu_usage", 1767225600, "x")
 
+	def test_name_range_holds_exactly_a_metric_window(self):
+		start, end = T0 + timedelta(minutes=10, seconds=30), T0 + timedelta(hours=2, seconds=1)
+		for res in (MINUTE, HOUR):
+			low, high = storage.rollup_name_range(res, "cpu_usage", start, end)
+			for m in range(-120, 300):
+				bucket = storage.floor(T0 + timedelta(minutes=m), res)
+				for metric in ("cpu_usage", "cpu_usage_x"):
+					name = storage.rollup_name(res, (metric, "h1", None, None, None, bucket))
+					inside = low <= name < high
+					if metric == "cpu_usage":
+						# every row of the window is in the range (the SQL keeps the exact bucket
+						# condition), and nothing outside the whole minutes around it
+						if start <= bucket < end:
+							self.assertTrue(inside, (res, bucket))
+						if inside:
+							self.assertTrue(storage.floor(start, 60) <= bucket < storage.ceil(end, 60), (res, bucket))
+					# every new name sorts above the names written before #56
+					self.assertGreater(name, storage.LEGACY_ROLLUP_NAMES_BELOW)
+		self.assertLess("f" * 32, storage.LEGACY_ROLLUP_NAMES_BELOW)
+
 	def test_names_keep_a_metric_in_time_order(self):
 		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous
 		# and sorted by time, whatever the hosts and whatever the metric names

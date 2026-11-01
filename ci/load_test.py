@@ -235,8 +235,8 @@ def main():
 		if age is None or age > timedelta(hours=2):
 			sys.exit(f"--reads-only: the newest loaded rollup is {age or 'missing'} old; load again (over 2 h, "
 			         "the 1 h, 6 h and rule windows would be compared on less data)")  # fmt: skip
-		results["data age (minutes)"] = round(age.total_seconds() / 60)
-		print(f"  reads on data loaded {results['data age (minutes)']} min ago", flush=True)
+		results["data age"] = {"minutes": round(age.total_seconds() / 60)}
+		print(f"  reads on data loaded {results['data age']['minutes']} min ago", flush=True)
 	else:
 		loader.clean()
 		for step in ("synthetic_rollups", "raw", "events"):

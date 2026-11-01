@@ -31,6 +31,9 @@ SERIES_KEY = ("metric_name", "host", "bench", "site", "label_key")
 MAX_STORED = 999_999_999_999
 
 
+EPOCH = datetime(1970, 1, 1)  # buckets count from here, in wall-clock time (no time zone)
+
+
 def floor(ts, seconds):
 	"""Floor a naive datetime to a multiple of `seconds` (wall-clock arithmetic, no tz shift)."""
 	epoch = ts.replace(tzinfo=timezone.utc).timestamp()
@@ -193,6 +196,19 @@ def rollup_name(resolution, key):
 	digest = hashlib.sha1(text.encode()).hexdigest()[:16]
 	# a resolution without a code fails here rather than naming rows out of order
 	return f"{RESOLUTION_CODES[resolution]}{_metric_part(key[0])}{_stamp(key[5], '%y%m%d%H%M')}{digest}"
+
+
+def rollup_name_range(resolution, metric, start, end):
+	"""[low, high) holding the names of `metric`'s rows at `resolution` with start <= bucket_start
+	< end. A read can then scan that stretch of the primary key instead of looking each row up
+	through a secondary index. A superset: other metrics may share the 6-character hash."""
+	prefix = f"{RESOLUTION_CODES[resolution]}{_metric_part(metric)}"
+	return prefix + _stamp(floor(start, 60), "%y%m%d%H%M"), prefix + _stamp(ceil(end, 60), "%y%m%d%H%M")
+
+
+# Rollup names before #56 were 32 hex digits: all of them sort below this, every newer name
+# (starting with a resolution letter) above it.
+LEGACY_ROLLUP_NAMES_BELOW = "g"
 
 
 def sample_name(metric, timestamp, suffix):

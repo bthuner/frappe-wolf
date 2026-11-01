@@ -54,6 +54,19 @@ doc_events = {
 	"Error Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_error_log"},
 	"Activity Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_activity_log"},
 	"User": {"on_update": "frappe_wolf.wolf.local_signals.on_user_update"},
+	# live updates for the Wolf UI (wolf/live.py): invalidations only, never telemetry
+	"Wolf Incident": {
+		"after_insert": "frappe_wolf.wolf.live.on_incident",
+		"on_update": "frappe_wolf.wolf.live.on_incident",
+		"on_trash": "frappe_wolf.wolf.live.on_incident",
+	},
+	"Wolf Event": {"after_insert": "frappe_wolf.wolf.live.on_event"},
+	"Wolf Delivery": {"after_insert": "frappe_wolf.wolf.live.on_delivery"},
+	"Comment": {
+		"after_insert": "frappe_wolf.wolf.live.on_comment",
+		"on_update": "frappe_wolf.wolf.live.on_comment",
+		"on_trash": "frappe_wolf.wolf.live.on_comment",
+	},
 }
 
 scheduler_events = {
@@ -63,6 +76,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.check_incidents",
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
+			"frappe_wolf.tasks.flush_live_updates",
 		],
 		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
 		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],

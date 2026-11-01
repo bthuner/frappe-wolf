@@ -42,7 +42,25 @@ def permissions(user, roles):
 	}
 
 
-def capabilities(is_satellite, restricted):
+def realtime(socketio):
+	"""How the UI reaches Frappe's socket.io server (wolf/live.py), or why it cannot.
+
+	`socketio` is `{"site", "port", "dev_server"}`, or None when it is not known. A socket that
+	fails to connect is handled by the UI, which falls back to polling.
+	"""
+	if not socketio or not socketio.get("site"):
+		return {"available": False, "reason": "Live updates need Frappe's socket.io server; views refresh on demand."}
+	return {
+		"available": True,
+		# behind nginx /socket.io is proxied on the site's own origin; `bench start` serves it on its port
+		"namespace": f"/{socketio['site']}",
+		"port": int(socketio.get("port") or 9000),
+		"dev_server": bool(socketio.get("dev_server")),
+		"poll_seconds": 60,
+	}
+
+
+def capabilities(is_satellite, restricted, socketio=None):
 	"""Which views have a backend. Raw-log search has none yet: logs are parsed into events."""
 	return {
 		"logs": {
@@ -51,17 +69,17 @@ def capabilities(is_satellite, restricted):
 		},
 		"metrics": {"available": True, "resolutions": ["raw", "1m", "1h"]},
 		"incidents": {"available": not is_satellite},
-		"realtime": {"available": False, "reason": "Live updates are not wired yet; views refresh on demand."},
+		"realtime": realtime(socketio),
 		# a restricted user (Wolf User Scope rows) only sees granted sites, benches and hosts
 		"restricted_scope": restricted,
 	}
 
 
-def boot(user, full_name, roles, time_zone, server_version, is_satellite, restricted, desk_url="/app"):
+def boot(user, full_name, roles, time_zone, server_version, is_satellite, restricted, desk_url="/app", socketio=None):
 	return {
 		"user": {"name": user, "full_name": full_name or user},
 		"can": permissions(user, roles),
-		"capabilities": capabilities(is_satellite, restricted),
+		"capabilities": capabilities(is_satellite, restricted, socketio),
 		"time_zone": time_zone,
 		"server_version": server_version,
 		"satellite": bool(is_satellite),

@@ -3,7 +3,9 @@ import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import LiveStatus from '@/components/LiveStatus.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
+import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
 import CountTiles from '@/components/dash/CountTiles.vue'
 import HttpChart from '@/components/dash/HttpChart.vue'
@@ -80,6 +82,19 @@ watch(scope, () => {
   errors.value = {}
 })
 watch([scope, range], load, { immediate: true })
+
+// incidents and events are announced; metrics are not (they arrive every 30 s), so the
+// dashboard also refreshes on the polling timer while live. Its windows are relative: they move.
+const hub = inject('live', null)
+const live = useLive(hub, {
+  room: () => [{ doctype: 'Wolf Incident' }, { doctype: 'Wolf Event' }],
+  matches: (m) => m.kind === 'incidents' || m.kind === 'events',
+  refresh: async () => {
+    await load()
+    return true
+  },
+  pollAlways: true,
+})
 </script>
 
 <template>
@@ -87,6 +102,7 @@ watch([scope, range], load, { immediate: true })
     <PageHeaderTitle :title="title" />
     <div class="flex items-center gap-2">
       <TabButtons v-model="range" :options="RANGES" />
+      <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />
       <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="load" />
     </div>
   </PageHeader>

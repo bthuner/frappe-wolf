@@ -162,3 +162,19 @@ a.wolf-link {
   max-height: 24rem;
   overflow: auto;
 }
+
+/* live status: text first, the dot only repeats it (never colour alone) */
+.wolf-live::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.375rem;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
+.wolf-live[data-state='live']::before {
+  background: var(--wolf-brand, #035aec);
+  border-color: var(--wolf-brand, #035aec);
+}

@@ -3,8 +3,10 @@ import { Button, PageHeader, PageHeaderTitle, TabButtons, Textarea, TextInput } 
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import LiveStatus from '@/components/LiveStatus.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
+import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { useTimeline } from '@/composables/useTimeline'
 import { call } from '@/services/api'
@@ -94,6 +96,34 @@ async function refresh() {
   if (incident.value) await timeline.load(families.value, timeline.rows.value.length)
 }
 
+// Live: the header follows at once; new timeline rows are added below without scrolling, and
+// a button says how many arrived and takes the reader to the first one.
+const fresh = ref([])
+const hub = inject('live', null)
+const live = useLive(hub, {
+  room: () => ({ doc: ['Wolf Incident', name.value] }),
+  matches: (m) => m.kind === 'incident' && m.incident === name.value,
+  refresh: async (reason) => {
+    const before = new Set(timeline.rows.value.map((r) => r.id))
+    await refresh()
+    if (reason === 'manual' || !before.size) return true
+    const added = timeline.rows.value.filter((r) => !before.has(r.id)).map((r) => r.id)
+    if (added.length) fresh.value = [...new Set([...fresh.value, ...added])]
+    return true
+  },
+})
+const freshVisible = computed(() => fresh.value.filter((id) => timeline.rows.value.some((r) => r.id === id)))
+
+async function showFresh() {
+  const row = timeline.rows.value.find((r) => r.id === freshVisible.value[0])
+  fresh.value = []
+  if (!row) return
+  await nextTick()
+  const el = document.getElementById(anchor(row))
+  el?.scrollIntoView({ block: 'center' })
+  el?.focus?.()
+}
+
 async function act(action) {
   acting.value = action
   actionError.value = null
@@ -141,13 +171,19 @@ onMounted(async () => {
   await revealHash()
 })
 watch(families, () => timeline.load(families.value))
-watch(name, refresh)
+watch(name, () => {
+  fresh.value = []
+  refresh()
+})
 </script>
 
 <template>
   <PageHeader>
     <PageHeaderTitle :title="`Incident ${name}`" />
-    <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="timeline.loading.value" @click="refresh" />
+    <div class="flex items-center gap-2">
+      <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="timeline.loading.value" @click="refresh" />
+    </div>
   </PageHeader>
 
   <section v-if="loadError" class="max-w-2xl p-5 text-base text-ink-gray-8">
@@ -244,6 +280,12 @@ watch(name, refresh)
       <p v-if="!timeline.loading.value && !visible.length" class="text-sm text-ink-gray-6">
         {{ filtered ? 'No rows match this filter.' : 'Nothing recorded in this window.' }}
       </p>
+      <Button
+        v-if="freshVisible.length"
+        variant="subtle"
+        :label="`${freshVisible.length} new ${freshVisible.length === 1 ? 'row' : 'rows'}: show`"
+        @click="showFresh"
+      />
       <Button v-if="timeline.paging.value.has_more" label="Load more" :loading="timeline.loading.value" @click="timeline.more(families)" />
     </section>
 

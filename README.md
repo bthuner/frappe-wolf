@@ -85,7 +85,8 @@ process down · Email queue backlog · Email sending errors · Admin login from 
 SSH login after brute force · Repeated sudo failures · New system account · User added to admin
 group · Web attack scan · Sensitive file served · Server Script can run new code · Client Script can
 run new code · System Console used · Security settings weakened · Permission rules changed · API key
-generated · Webhook to a new host.
+generated · Webhook to a new host · Security score low · Bench service exposed · Development
+settings in production.
 
 | Preset | Signal (source) | Fires when |
 |---|---|---|
@@ -114,6 +115,9 @@ generated · Webhook to a new host.
 | Permission rules changed | `security` / `permission_change` (site) | Role Permission Manager add/update/remove/reset, or a Role Profile that grants more roles |
 | API key generated | `security` / `api_key_generated` (site) | a new API secret written for a user (the event is critical for privileged users) |
 | Webhook to a new host | `security` / `webhook_external` (site) | a Webhook created, enabled or pointed at another host |
+| Security score low | `security_score` (app, hourly) | a site's score below 60 (see **Wolf → Security**) |
+| Bench service exposed | `exposed_services` (agent) | MariaDB, a bench Redis, socket.io or gunicorn listening beyond loopback (critical) |
+| Development settings in production | `site_config_risks` (agent) | `developer_mode`, `allow_tests`, plain-HTTP `host_name` or `allow_cors: "*"` |
 
 Presets have no channels: they open incidents but notify nobody until you add a channel.
 

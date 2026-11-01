@@ -77,7 +77,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.forward_outbox",
 			"frappe_wolf.tasks.rollup_metrics",
 		],
-		"0 * * * *": ["frappe_wolf.tasks.send_digests"],
+		"0 * * * *": ["frappe_wolf.tasks.send_digests", "frappe_wolf.api.security.record_security_scores"],
 		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],
 		"*/5 * * * *": ["frappe_wolf.tasks.check_agents", "frappe_wolf.tasks.check_email_queue"],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],

@@ -354,6 +354,31 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	# --- cyber: posture (hourly score, api/security.py) ---
+	{
+		"rule_name": "Security score low",
+		"description": "A site's security score (checks Wolf could prove passed, out of 100) is below 60. "
+		"Open Wolf → Security for the failing checks and their fixes.",
+		"signal_type": "metric", "metric_name": "security_score", "aggregation": "last",
+		"operator": "<", "threshold": 60, "window_minutes": 180, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Bench service exposed",
+		"description": "MariaDB, a bench Redis, socket.io or gunicorn listens beyond loopback on a host "
+		"(exposed_services). Redis has no password by default.",
+		"signal_type": "metric", "metric_name": "exposed_services", "aggregation": "last",
+		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "host",
+		"severity": "critical", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
+	{
+		"rule_name": "Development settings in production",
+		"description": "developer_mode, allow_tests, a plain-HTTP host_name or allow_cors * in a site's "
+		"site_config.json (site_config_risks).",
+		"signal_type": "metric", "metric_name": "site_config_risks", "aggregation": "last",
+		"operator": ">", "threshold": 0, "window_minutes": 30, "group_by": "site",
+		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 0,
+	},
 ]  # fmt: skip
 
 

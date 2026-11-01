@@ -48,17 +48,22 @@ _SPEC = [
 	("load_5m", "host", "Load (5 min)", "gauge", "", "host", PUSH_SECONDS),
 	("load_15m", "host", "Load (15 min)", "gauge", "", "host", PUSH_SECONDS),
 	("swap_used_percent", "host", "Swap used", "gauge", "%", "host", PUSH_SECONDS),
+	("exposed_services", "security", "Bench services listening beyond loopback", "gauge", "services", "host", 600),
+	("site_config_risks", "security", "Risky site_config settings", "gauge", "settings", "site", 600),
+	("security_score", "security", "Security score", "gauge", "/ 100", "site", 3600),
 ]
 CATALOG = {
 	m: {"metric": m, "group": g, "label": label, "kind": kind, "unit": unit, "level": level, "cadence_seconds": cadence}
 	for m, g, label, kind, unit, level, cadence in _SPEC
 }
-GROUPS = ("workers", "processes", "redis", "database", "backups", "tls", "host")
+GROUPS = ("workers", "processes", "redis", "database", "backups", "tls", "security", "host")
 
 # what a gauge means for the reader, said once: backup age is not proof a restore works
 CAVEATS = {
 	"backup_age_hours": "Age of the newest backup file; it does not prove the backup restores.",
 	"tls_days_left": "Days until the certificate served on port 443 expires; not a full validity check.",
+	"exposed_services": "A listening socket, not proof of reachability: a firewall may still block it.",
+	"security_score": "Share of the checks Wolf could prove passed; a check it cannot read counts as not passed.",
 }
 
 

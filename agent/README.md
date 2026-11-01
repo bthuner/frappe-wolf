@@ -94,6 +94,13 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   never had a backup sends nothing, so "No backup for 26 h" cannot fire for it. Press benches are
   skipped (`backups.press`), since Press uploads backups offsite and its local copies are not a
   reliable signal. Offsite-only setups can point `backups.dirs` at a mounted directory per site.
+- **Exposure** (every `exposure.interval`, 10 min): `exposed_services` per host counts bench
+  ports listening on all interfaces or a public address in `/proc/net/tcp{,6}` (MariaDB 3306,
+  Postgres 5432, Redis 6379/11000/12000/13000 or the bench's own `redis_*` ports, socket.io 9000,
+  gunicorn 8000 or `webserver_port`; add more with `exposure.ports`). A LAN address is not
+  counted, and a firewall may still block what is counted. `site_config_risks` per site counts
+  `developer_mode`, `allow_tests`, a plain-HTTP `host_name` and `allow_cors: "*"`. Events
+  `service_exposed` and `insecure_site_config` are sent only when the set changes.
 - **TLS**: `tls_days_left` for every public site name and custom domain (`site_config.json`
   `domains`), every `tls.interval` (1 h), in a background thread. The agent connects to
   `<domain>:443` with SNI (or to `tls.connect_host`, e.g. `127.0.0.1`, to check the local nginx),

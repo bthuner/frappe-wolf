@@ -17,6 +17,7 @@ describe('routes', () => {
     ['/sites/a.example.com', 'site'],
     ['/hosts/bench-01', 'host'],
     ['/monitoring', 'monitoring'],
+    ['/security', 'security'],
   ])('%s is %s', (path, name) => {
     expect(router.resolve(path).name).toBe(name)
   })

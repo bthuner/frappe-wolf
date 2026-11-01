@@ -407,6 +407,11 @@ added one by one, and a view that is not built says so and links to Desk. It reu
 session: guests are sent to the login page, users without the Wolf User or Wolf Manager role get a
 403.
 
+![The Wolf UI overview on the demo bench, light theme](docs/screenshots/overview-light.jpg)
+
+More in [`docs/screenshots`](docs/screenshots/README.md), light and dark, all taken on the demo
+bench after its 2AM scenario.
+
 ```bash
 cd frontend
 yarn install

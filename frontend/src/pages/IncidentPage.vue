@@ -97,6 +97,7 @@ async function refresh() {
   if (incident.value) await timeline.load(families.value, timeline.rows.value.length)
 }
 
+const TIMELINE_RELOAD_LIMIT = 500 // useTimeline reloads at most this many rows in one call
 // Live: the header follows at once; new timeline rows are added below without scrolling, and
 // a button says how many arrived and takes the reader to the first one.
 const fresh = ref([])
@@ -105,6 +106,11 @@ const live = useLive(hub, {
   room: () => ({ doc: ['Wolf Incident', name.value] }),
   matches: (m) => m.kind === 'incident' && m.incident === name.value,
   refresh: async (reason) => {
+    if (reason !== 'manual' && timeline.rows.value.length > TIMELINE_RELOAD_LIMIT) {
+      // a reload would cut the rows paged in past the limit: the header follows, rows wait
+      await loadIncident()
+      return false
+    }
     const before = new Set(timeline.rows.value.map((r) => r.id))
     await refresh()
     if (reason === 'manual' || !before.size) return true
@@ -205,7 +211,7 @@ watch(name, () => {
     <PageHeaderTitle :title="`Incident ${name}`" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />
-      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="timeline.loading.value" @click="refresh" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="timeline.loading.value" @click="live.apply()" />
     </div>
   </PageHeader>
 

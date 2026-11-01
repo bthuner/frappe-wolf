@@ -1212,7 +1212,7 @@ def main():
 		for kind in live.LIST_DOCTYPES:
 			cache.delete_value(live._THROTTLE_KEY + kind)
 			cache.delete_value(live._DIRTY_KEY + kind)
-		frappe.flags.wolf_live_sent = None
+		frappe.db.commit()  # start from a fresh transaction: the bookkeeping is per transaction
 		inc = None
 		try:
 			inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke live", "severity": "warning"})
@@ -1223,19 +1223,29 @@ def main():
 			assert all(m.get("incident") in (None, inc.name) for _, m, _ in sent), "a list message names an incident"
 			n = len(sent)
 			inc.add_comment("Comment", "live smoke")
-			assert len(sent) == n, f"second message to a room in one request: {sent[n:]}"
+			assert len(sent) == n, f"second message to a room in one transaction: {sent[n:]}"
 
-			frappe.flags.wolf_live_sent = None  # a new request, within the throttle window
+			frappe.db.commit()  # the next transaction, within the throttle window
 			sent.clear()
 			inc.add_comment("Comment", "live smoke 2")
 			assert [r for _, _, r in sent] == [room], sent
+			assert not cache.get_value(live._DIRTY_KEY + "incidents"), "marked dirty before the commit"
+			frappe.db.commit()
 			assert cache.get_value(live._DIRTY_KEY + "incidents"), "a throttled list message was dropped"
 
-			frappe.flags.wolf_live_sent = None
 			sent.clear()
 			live.flush()
 			assert [m for _, m, _ in sent] == [{"kind": "incidents"}], sent
 			assert not cache.get_value(live._DIRTY_KEY + "incidents")
+			frappe.db.commit()
+
+			sent.clear()
+			inc.add_comment("Comment", "live smoke 3 (rolled back)")
+			frappe.db.rollback()
+			assert not cache.get_value(live._DIRTY_KEY + "incidents"), "a rolled-back change was marked dirty"
+			inc.reload()
+			inc.add_comment("Comment", "live smoke 4")  # the room is announced again after a rollback
+			assert [r for _, _, r in sent].count(room) == 2, sent
 		finally:
 			frappe.publish_realtime = original
 			frappe.flags.wolf_live_sent = None
@@ -1244,7 +1254,7 @@ def main():
 				# the next incident would inherit them
 				frappe.db.delete("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name})
 				frappe.delete_doc("Wolf Incident", inc.name, force=True, ignore_permissions=True)
-		return "doc and DocType rooms, one message per room and request, held list message flushed"
+		return "doc and DocType rooms, one message per room and transaction, dirty only after commit, flushed"
 
 	def app_security():
 		from types import SimpleNamespace

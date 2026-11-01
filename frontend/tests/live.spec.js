@@ -70,14 +70,14 @@ describe('createLive', () => {
     socket.connect()
     expect(socket.emitted).toEqual([['doc_subscribe', 'Wolf Incident', 'WINC-1']])
     expect(live.state.value).toBe('live')
-    expect(heard).toEqual([]) // the first connect is not a change
+    expect(heard).toEqual([{ kind: 'connect' }]) // the gap since the page's first fetch is unknown
 
     socket.fire(EVENT, { kind: 'incident', incident: 'WINC-1' })
     socket.drop()
     expect(live.state.value).toBe('polling')
     socket.connect()
     expect(socket.emitted.at(-1)).toEqual(['doc_subscribe', 'Wolf Incident', 'WINC-1'])
-    expect(heard).toEqual([{ kind: 'incident', incident: 'WINC-1' }, { kind: 'reconnect' }])
+    expect(heard).toEqual([{ kind: 'connect' }, { kind: 'incident', incident: 'WINC-1' }, { kind: 'reconnect' }])
   })
 
   it('counts room users and leaves a room with its last one', async () => {
@@ -141,7 +141,7 @@ describe('useLive', () => {
     expect(refresh).not.toHaveBeenCalled()
     expect(api().pending.value).toBe(true)
     api().toggle()
-    await flushPromises()
+    await vi.advanceTimersByTimeAsync(0) // the reader's refresh goes through the same queue
     expect(refresh).toHaveBeenCalledWith('manual')
     expect(api().pending.value).toBe(false)
   })
@@ -166,7 +166,9 @@ describe('useLive', () => {
     socket.fire(EVENT, { kind: 'incidents' })
     await vi.advanceTimersByTimeAsync(1000)
     expect(api().pending.value).toBe(true)
-    await api().apply()
+    const applied = api().apply()
+    await vi.advanceTimersByTimeAsync(0)
+    await applied
     expect(refresh).toHaveBeenLastCalledWith('manual')
     expect(api().pending.value).toBe(false)
   })
@@ -181,7 +183,8 @@ describe('useLive', () => {
     await flushPromises()
     socket.connect()
     await vi.advanceTimersByTimeAsync(61000)
-    expect(refresh).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalledWith('poll')
+    expect(refresh).toHaveBeenCalledWith('connect') // once, to cover the gap before joining
     expect(always).toHaveBeenCalledWith('poll')
   })
 
@@ -199,6 +202,55 @@ describe('useLive', () => {
     const { api } = harness(null, refresh)
     expect(api().state.value).toBe('off')
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('useLive queue and reconnects', () => {
+  it('never runs the reader\'s refresh alongside an automatic one', async () => {
+    vi.useFakeTimers()
+    const { live, socket } = hub()
+    let inFlight = 0
+    let most = 0
+    const refresh = vi.fn(async () => {
+      most = Math.max(most, ++inFlight)
+      await new Promise((r) => setTimeout(r, 500))
+      inFlight--
+      return true
+    })
+    const { api } = harness(live, refresh)
+    await flushPromises()
+    socket.connect()
+    socket.fire(EVENT, { kind: 'incidents' })
+    await vi.advanceTimersByTimeAsync(1100) // the automatic refresh is running
+    const applied = api().apply()
+    await vi.advanceTimersByTimeAsync(2000)
+    await applied
+    expect(most).toBe(1)
+    expect(refresh).toHaveBeenLastCalledWith('manual')
+  })
+
+  it('says changes may have been missed after a reconnect on views that do not reload by themselves', async () => {
+    vi.useFakeTimers()
+    const { live, socket } = hub()
+    const { api } = harness(live, async (reason) => reason === 'manual')
+    await flushPromises()
+    socket.connect()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(api().pending.value).toBe(false) // the first connect claims nothing
+    socket.drop()
+    socket.connect()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect([api().pending.value, api().pendingReason.value]).toEqual([true, 'reconnect'])
+  })
+
+  it('does not poll a view that would not apply it, and says so', async () => {
+    vi.useFakeTimers()
+    const { live } = hub({ capabilities: { realtime: { available: false } } })
+    const refresh = vi.fn(async () => false)
+    const { api } = harness(live, refresh, { polls: false })
+    await vi.advanceTimersByTimeAsync(130000)
+    expect(refresh).not.toHaveBeenCalled()
+    expect(api().polls).toBe(false)
   })
 })
 

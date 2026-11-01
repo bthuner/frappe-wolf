@@ -61,7 +61,9 @@ export function createLive(boot, { connect = null, win = window } = {}) {
       socket.on('connect', () => {
         for (const { room } of rooms.values()) join(socket, room)
         state.value = 'live'
-        if (wasConnected) emitAll({ kind: 'reconnect' }) // what changed while offline is unknown
+        // what changed while offline is unknown; on the first connect, what changed between the
+        // page's first fetch and joining its rooms is unknown too
+        emitAll({ kind: wasConnected ? 'reconnect' : 'connect' })
         wasConnected = true
       })
       socket.on('disconnect', () => {

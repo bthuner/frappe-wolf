@@ -72,7 +72,7 @@ const live = useLive(hub, {
     <PageHeaderTitle title="Incidents" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="Incidents changed" />
-      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="load()" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="live.apply()" />
     </div>
   </PageHeader>
   <div class="mx-auto max-w-5xl space-y-3 p-5">

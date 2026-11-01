@@ -20,6 +20,7 @@ import frappe
 from frappe.utils import cint, now_datetime
 
 from frappe_wolf.wolf import events, reputation, schema
+from frappe_wolf.wolf.spa import MANAGER_ROLES
 
 MAX_DOWNLOAD = 20 * 1024 * 1024
 _cache = {"key": None, "index": None}
@@ -123,7 +124,7 @@ def enrich(data):
 
 @frappe.whitelist()
 def get_reputation_status():
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	data = _read_store()
 	return {"enabled": bool(cint(_settings().get("ip_reputation_enabled"))), "refreshed_at": data.get("refreshed_at"),
 	        "lists": data.get("lists") or {}}  # fmt: skip
@@ -131,7 +132,7 @@ def get_reputation_status():
 
 @frappe.whitelist(methods=["POST"])
 def refresh_now():
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	return refresh_reputation(force=True)
 
 

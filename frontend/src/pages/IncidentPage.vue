@@ -161,7 +161,12 @@ onMounted(async () => {
   await revealHash()
 })
 watch(families, () => timeline.load(families.value))
-watch(name, refresh)
+watch(name, () => {
+  // another incident: never show the previous one's report draft
+  report.value = null
+  reportError.value = null
+  refresh()
+})
 </script>
 
 <template>

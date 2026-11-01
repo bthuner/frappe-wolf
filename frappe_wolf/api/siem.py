@@ -5,7 +5,12 @@ at or above the minimum severity, and, when enabled, every signed journal entry.
 RFC 5424 syslog carrying CEF or OCSF JSON, over UDP, TCP or TLS (octet-counted frames on TCP
 and TLS). The cursor only moves after a batch was sent, so a collector that is down delays the
 export without losing anything (at-least-once: a collector may see a message twice after a
-failure mid-batch). The cursor and the last error live in Wolf Settings (`siem_cursor`).
+failure mid-batch).
+
+The cursor follows `creation`, which is set at insert, not at commit: events newer than `LAG`
+are left for the next run, so a transaction that commits a little later is not jumped over.
+The cursor and the last error are a global default (`wolf_siem_cursor`), not a Wolf Settings
+field: writing it every minute must not touch the settings form.
 """
 
 import json
@@ -14,14 +19,17 @@ import ssl
 from zoneinfo import ZoneInfo
 
 import frappe
-from frappe.utils import cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime
 
 from frappe_wolf import __version__
 from frappe_wolf.wolf import events, siem
 from frappe_wolf.wolf.schema import SEVERITY_RANK
+from frappe_wolf.wolf.spa import MANAGER_ROLES
 
 BATCH = 500
 TIMEOUT = 10
+LAG_SECONDS = 120
+CURSOR_KEY = "wolf_siem_cursor"
 
 
 def _settings():
@@ -30,14 +38,13 @@ def _settings():
 
 def _cursor():
 	try:
-		return json.loads(frappe.db.get_single_value("Wolf Settings", "siem_cursor") or "{}")
+		return json.loads(frappe.db.get_global(CURSOR_KEY) or "{}")
 	except ValueError:
 		return {}
 
 
 def _save_cursor(cursor):
-	# a direct write: no doc event, so the journal does not record every minute's cursor
-	frappe.db.set_single_value("Wolf Settings", "siem_cursor", json.dumps(cursor, default=str))
+	frappe.db.set_global(CURSOR_KEY, json.dumps(cursor, default=str))
 
 
 def _utc(dt, tz):
@@ -77,14 +84,15 @@ def _sender(settings):
 	              bool(cint(settings.siem_verify_tls)))  # fmt: skip
 
 
-def _event_rows(cursor, types, min_rank):
+def _event_rows(cursor, types, min_rank, until):
 	since, after = cursor.get("event_creation") or "1970-01-01", cursor.get("event_name") or ""
 	rows = frappe.db.sql(
 		"""select name, creation, event_type, category, severity, title, source, `timestamp`, `count`, host, bench, site,
 			incident, payload from `tabWolf Event`
-		where event_type in %(types)s and (creation > %(since)s or (creation = %(since)s and name > %(after)s))
+		where event_type in %(types)s and creation <= %(until)s
+			and (creation > %(since)s or (creation = %(since)s and name > %(after)s))
 		order by creation asc, name asc limit %(limit)s""",
-		{"types": tuple(types), "since": since, "after": after, "limit": BATCH},
+		{"types": tuple(types), "since": since, "after": after, "until": until, "limit": BATCH},
 		as_dict=True,
 	)
 	keep = []
@@ -107,7 +115,7 @@ def _journal_rows(cursor):
 	)
 
 
-def export_siem():
+def export_siem(lag_seconds=LAG_SECONDS):
 	"""Scheduler (every minute). Returns the number of messages sent."""
 	settings = _settings()
 	if not cint(settings.get("siem_enabled")) or not settings.get("siem_host"):
@@ -119,10 +127,11 @@ def export_siem():
 	min_rank = SEVERITY_RANK.get(settings.get("siem_min_severity") or "warning", 1)
 	cursor = _cursor()
 	sender = _sender(settings)
+	until = add_to_date(now_datetime(), seconds=-lag_seconds)
 	sent = 0
 	try:
 		while True:
-			scanned, rows = _event_rows(cursor, types, min_rank)
+			scanned, rows = _event_rows(cursor, types, min_rank, until)
 			if not scanned:
 				break
 			messages = []
@@ -159,7 +168,7 @@ def export_siem():
 
 @frappe.whitelist()
 def get_status():
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	settings = _settings()
 	return {"enabled": bool(cint(settings.get("siem_enabled"))), "host": settings.get("siem_host"), **_cursor()}
 
@@ -167,7 +176,7 @@ def get_status():
 @frappe.whitelist(methods=["POST"])
 def send_test():
 	"""One test message to the configured collector, whatever `siem_enabled` says."""
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	settings = _settings()
 	if not settings.get("siem_host"):
 		frappe.throw(frappe._("Set the SIEM host first."))

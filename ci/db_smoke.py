@@ -1491,11 +1491,11 @@ def main():
 		threading.Thread(target=server.serve_forever, daemon=True).start()
 		port = server.server_address[1]
 		values = {"siem_enabled": 1, "siem_host": "127.0.0.1", "siem_port": port, "siem_transport": "tcp",
-		          "siem_format": "ocsf", "siem_min_severity": "warning", "siem_event_types": "security", "siem_journal": 1,
-		          "siem_cursor": None}  # fmt: skip
+		          "siem_format": "ocsf", "siem_min_severity": "warning", "siem_event_types": "security", "siem_journal": 1}  # fmt: skip
 		for k, v in values.items():
 			frappe.db.set_single_value("Wolf Settings", k, v)
 		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		frappe.db.set_global(siem_api.CURSOR_KEY, None)
 		try:
 			ev = events.insert_event(schema.normalize_event(
 				{"type": "security", "category": "web_attack_probe", "severity": "critical", "host": HOST,
@@ -1505,12 +1505,19 @@ def main():
 				 "title": "SIEM smoke below the minimum"}, tz, now_datetime()))  # fmt: skip
 			while journal_api.chain_journal():
 				pass
-			sent = siem_api.export_siem()
 			import time
 
-			deadline = time.monotonic() + 10
-			while len(received) < sent and time.monotonic() < deadline:  # the collector reads in its thread
-				time.sleep(0.05)
+			def settle(count):
+				deadline = time.monotonic() + 10
+				while len(received) < count and time.monotonic() < deadline:  # the collector reads in its thread
+					time.sleep(0.05)
+
+			sent = siem_api.export_siem()  # default lag: events created just now wait for the next run
+			settle(sent)
+			# (the journal entries may name it: only a finding for it would be wrong)
+			assert not any(f'"uid": "{ev}"' in m for m in received), "an event younger than the lag was exported"
+			sent += siem_api.export_siem(lag_seconds=0)
+			settle(sent)
 			server.shutdown()
 			bodies = [m.split(" - ", 2)[2] for m in received]
 			findings = [json.loads(b) for b in bodies if b.startswith("{") and "class_uid" in b]
@@ -1527,7 +1534,7 @@ def main():
 			events.insert_event(schema.normalize_event(
 				{"type": "security", "category": "ssh_failed_login", "severity": "warning", "host": HOST,
 				 "title": "SIEM smoke while down"}, tz, now_datetime()))  # fmt: skip
-			assert siem_api.export_siem() == 0
+			assert siem_api.export_siem(lag_seconds=0) == 0
 			down = siem_api.get_status()
 			assert down["last_error"] and down["event_name"] == cursor["event_name"], down  # nothing skipped
 		finally:

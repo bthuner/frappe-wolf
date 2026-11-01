@@ -224,7 +224,9 @@ result; read-only for everyone) and a comment on the incident.
 - **Disable user / log out all sessions / revoke API keys**: proposed for the users named by
   the site's own security events (failed logins, new IP or country, role granted, API key
   generated), applied at once on the Wolf site. Administrator, Guest and the approver's own
-  account are refused.
+  account are refused, and only a System Manager can act on a System Manager.
+- Only what Wolf proposed from the incident's own events can be approved: the API refuses any
+  other action, target or agent.
 - Blocks are marked *Expired* once their time is over (hourly).
 - Not built: approving from the signed links in alert messages, fail2ban instead of nftables,
   and user actions on other sites than the Wolf site.
@@ -275,7 +277,10 @@ result; read-only for everyone) and a comment on the incident.
   in `cs4`, reputation lists in `cs5`), over TCP, TLS (octet-counted frames, RFC 6587) or UDP.
   UniSOC, Wazuh, Graylog or any SIEM ingests it with no custom connector.
   - A cursor moves only after a batch is sent: a collector that is down delays the export,
-    nothing is skipped. A failure mid-batch can send a message twice (at least once).
+    nothing is skipped. A failure mid-batch can send a message twice (at least once). Events
+    younger than 2 minutes wait for the next run, so a transaction that commits a little after
+    it inserted is not jumped over. The cursor is a global default (`wolf_siem_cursor`), not a
+    settings field, so the settings form is never touched by the export.
   - The journal entries (seq, digest, prev_mac, mac) give the SIEM an external copy of the chain:
     the anchor Wolf cannot rewrite.
   - Payloads go out as they are stored (already scrubbed by the agent), cut at 4 KB. The OCSF

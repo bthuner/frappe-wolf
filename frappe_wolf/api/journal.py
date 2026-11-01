@@ -20,6 +20,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from frappe_wolf.wolf import journal
+from frappe_wolf.wolf.spa import MANAGER_ROLES
 
 DOCTYPE = "Wolf Journal Entry"
 KEY_CONF = "wolf_journal_key"
@@ -38,22 +39,37 @@ def journal_key(create=True):
 	return key
 
 
+SAVEPOINT = "wolf_journal"
+
+
 def capture(kind, ref_doctype, ref_name, content, summary):
-	"""Record an unsigned entry in the current transaction. Never fails the caller."""
+	"""Record an unsigned entry in the current transaction. Never fails the caller.
+
+	The insert runs inside a savepoint: on Postgres a failed statement aborts the whole
+	transaction, so a journal error is rolled back to the savepoint instead of breaking the
+	write that triggered it.
+	"""
+	if frappe.flags.in_install or frappe.flags.in_migrate:
+		return None
 	try:
-		if frappe.flags.in_install or frappe.flags.in_migrate:
-			return None
-		text = journal.canonical({"kind": kind, "ref_doctype": ref_doctype, "ref_name": ref_name, **content})
+		text = journal.canonical({"kind": kind, "ref_doctype": ref_doctype, "ref_name": str(ref_name), **content})
+	except (TypeError, ValueError):
+		frappe.logger("frappe_wolf").exception("journal content is not serialisable")
+		return None
+	frappe.db.savepoint(SAVEPOINT)
+	try:
 		doc = frappe.get_doc({
-			"doctype": DOCTYPE, "at": now_datetime(), "kind": kind, "ref_doctype": ref_doctype, "ref_name": ref_name,
+			"doctype": DOCTYPE, "at": now_datetime(), "kind": kind, "ref_doctype": ref_doctype, "ref_name": str(ref_name)[:140],
 			"user": frappe.session.user, "summary": str(summary or "")[:255], "content": text, "digest": journal.digest(text),
 		})  # fmt: skip
 		doc.flags.ignore_permissions = True
 		doc.insert()
-		return doc.name
 	except Exception:
+		frappe.db.rollback(save_point=SAVEPOINT)
 		frappe.logger("frappe_wolf").exception("could not write a journal entry")
 		return None
+	frappe.db.release_savepoint(SAVEPOINT)
+	return doc.name
 
 
 # --- doc events (hooks.py) -------------------------------------------------------------------
@@ -183,7 +199,7 @@ def verify_journal(anchor=None):
 
 @frappe.whitelist()
 def get_status():
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	last_seq, last_mac = _last()
 	return {
 		"entries": last_seq,
@@ -195,5 +211,5 @@ def get_status():
 
 @frappe.whitelist(methods=["POST"])
 def verify(anchor=None):
-	frappe.only_for(("System Manager", "Wolf Manager"))
+	frappe.only_for(MANAGER_ROLES)
 	return verify_journal(anchor)

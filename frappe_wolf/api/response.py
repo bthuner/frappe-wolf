@@ -17,7 +17,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, now_datetime
 
-from frappe_wolf.wolf import response
+from frappe_wolf.wolf import events, response
 from frappe_wolf.wolf.spa import MANAGER_ROLES
 
 EVENT_LIMIT = 500
@@ -61,11 +61,13 @@ def _is_manager():
 	return frappe.session.user == "Administrator" or bool(set(frappe.get_roles()) & set(MANAGER_ROLES))
 
 
-@frappe.whitelist()
-def get_response(incident):
-	doc = _incident(incident)
-	taken = {(a.action, a.target, a.agent if a.action == "block_ip" else None) for a in _actions(doc.name)
-	         if a.status in ("Approved", "Applied")}  # fmt: skip
+def _key(action, target, agent):
+	return (action, str(target), agent if action == "block_ip" else None)
+
+
+def _proposals(doc):
+	"""What Wolf proposes for this incident now (approve() only accepts one of these)."""
+	taken = {_key(a.action, a.target, a.agent) for a in _actions(doc.name) if a.status in ("Approved", "Applied")}
 	proposals = []
 	for p in response.suggest(_events(doc.name)):
 		key = (p["action"], p["target"], p["agent"] if p["action"] == "block_ip" else None)
@@ -75,9 +77,30 @@ def get_response(incident):
 			continue  # a failed login for an unknown name: nothing to disable
 		p["label"] = response.label(p["action"], p["target"], response.DEFAULT_HOURS, p["host"])
 		proposals.append(p)
+	return proposals
+
+
+def _protected_user(user):
+	"""A System Manager can only be acted on by another System Manager (or Administrator)."""
+	if "System Manager" not in frappe.get_roles(user):
+		return False
+	return frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles()
+
+
+@frappe.whitelist()
+def get_response(incident):
+	doc = _incident(incident)
+	from frappe_wolf.wolf import window
+
+	tz = events.system_tz()
+	actions = []
+	for a in _actions(doc.name):
+		for field in ("approved_at", "applied_at", "expires_at"):
+			a[field] = window.to_utc(a[field], tz) if a[field] else None  # the UI reads UTC ISO strings
+		actions.append(a)
 	return {
-		"proposals": proposals,
-		"actions": _actions(doc.name),
+		"proposals": _proposals(doc),
+		"actions": actions,
 		"can_approve": _is_manager(),
 		"default_hours": response.DEFAULT_HOURS,
 		"max_hours": response.MAX_HOURS,
@@ -116,6 +139,13 @@ def approve(incident, action, target, agent=None, duration_hours=None, reason=No
 	refused = response.check(action, target, frappe.session.user, hours)
 	if refused:
 		frappe.throw(refused, frappe.ValidationError)
+	# only what Wolf proposed from this incident's own events: no free-form action on any user or host
+	if _key(action, target, agent) not in {_key(p["action"], p["target"], p["agent"]) for p in _proposals(doc)}:
+		frappe.throw(_("Wolf did not propose this action for this incident (or it was already approved)."),
+		             frappe.ValidationError)  # fmt: skip
+	if action in response.USER_ACTIONS and _protected_user(target):
+		frappe.throw(_("{0} is a System Manager: only a System Manager can approve this.").format(target),
+		             frappe.PermissionError)  # fmt: skip
 	scope = {"host": doc.host, "bench": doc.bench, "site": doc.site}
 	if action == "block_ip":
 		if not agent or not frappe.db.exists("Wolf Agent", agent):
@@ -161,8 +191,8 @@ def pending_for_agent(agent, now=None):
 def record_results(agent, results):
 	"""`[{id, ok, detail}]` sent by an agent about its actions (protocol §2)."""
 	for item in results or []:
-		if not isinstance(item, dict) or not item.get("id"):
-			continue
+		if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]:
+			continue  # a string id only: anything else would act as a filter
 		row = frappe.db.get_value("Wolf Response Action", item["id"], ["agent", "status", "incident"], as_dict=True)
 		if not row or row.agent != agent or row.status != "Approved":
 			continue  # only the agent it was given to, once

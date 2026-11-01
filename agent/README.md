@@ -75,8 +75,10 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   rules hit, statuses, targets and MITRE ATT&CK technique IDs. A secret-bearing file answered
   with a 2xx is a separate critical `web_sensitive_file_exposed` event. Attachments
   (`/files`, `/private/files`) and authorized backup downloads (`/backups`) are not probes.
-  The client is `$remote_addr`, or the first `X-Forwarded-For` address logged after it when
-  `$remote_addr` is a loopback/private proxy.
+  The client is `$remote_addr`, or, when `$remote_addr` is a loopback/private proxy, the
+  right-most public address of the `X-Forwarded-For` list logged after it (the one your proxy
+  appended; the left-most entries are written by the client). A 2xx under a route that answers
+  any sub-path with a page (`/app/`, `/wolf/`, `/api/`...) is not counted as a served file.
 - **Auth log** (`/var/log/auth.log`, `/var/log/secure`, or `journalctl -o short-iso -t sshd
   -t sshd-session -t sudo -t useradd -t usermod -t gpasswd`): failed SSH logins aggregated per
   source IP, root logins, a successful login from an address that failed 5+ times in the hour

@@ -67,16 +67,25 @@ def _ip(value):
 
 
 def client_address(parsed):
-	"""The client of a request: `$remote_addr`, or the first X-Forwarded-For address logged
-	after it when `$remote_addr` is a loopback/private proxy. A public `$remote_addr` is never
-	replaced: the header is set by the client and could be forged."""
+	"""The client of a request: `$remote_addr`, or, when `$remote_addr` is a loopback/private
+	proxy, the right-most public address of the X-Forwarded-For list logged after it.
+
+	Each proxy appends the address it received the request from, so the right-most entries
+	come from your proxies and the left-most from the client, who can write anything there.
+	Walking from the right and skipping private hops gives the first address no client could
+	forge. A public `$remote_addr` is never replaced."""
 	remote = parsed["remote_addr"]
 	addr = _ip(remote)
-	if addr is not None and (addr.is_loopback or addr.is_private):
-		for value in parsed["extra"]:
-			forwarded = _ip(value.split(",", 1)[0])
-			if forwarded is not None and not (forwarded.is_loopback or forwarded.is_unspecified):
-				return str(forwarded)
+	if addr is None or not (addr.is_loopback or addr.is_private):
+		return remote
+	for value in parsed["extra"]:
+		hops = [_ip(h) for h in value.split(",")]
+		if not hops or any(h is None for h in hops):
+			continue  # not an address list (a referer, a host name)
+		for hop in reversed(hops):
+			if not (hop.is_loopback or hop.is_unspecified or hop.is_private or hop.is_link_local):
+				return str(hop)
+		return remote  # only private hops: an internal client
 	return remote
 
 
@@ -160,7 +169,7 @@ class NginxParser:
 		if not rules:
 			return
 		client = client_address(parsed)
-		key = (site, client, web_attacks.exposed(rules, parsed["status"]))
+		key = (site, client, web_attacks.exposed(rules, parsed["status"], parsed["target"]))
 		g = self.probes.get(key)
 		if g is None:
 			if len(self.probes) >= MAX_PROBE_GROUPS:

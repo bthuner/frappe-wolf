@@ -1283,6 +1283,29 @@ def main():
 				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 		return seen
 
+	def posture_score():
+		from frappe_wolf.api import security
+
+		host = events.local_scope()["host"]
+		now = now_datetime()
+		samples = [
+			schema.normalize_metric({"metric_name": "exposed_services", "value": 1, "host": host}, tz, now),
+			schema.normalize_metric({"metric_name": "site_config_risks", "value": 0, "host": host, "site": SITE}, tz, now),
+			schema.normalize_metric({"metric_name": "backup_age_hours", "value": 2, "host": host, "site": SITE}, tz, now),
+		]
+		events.insert_metrics(samples)
+		result = security.get_posture(SITE)
+		status = {c["id"]: c["status"] for c in result["checks"]}
+		assert result["local"] and status["two_factor"] in ("pass", "fail"), status  # read on the site itself
+		assert status["exposure"] == "fail" and status["backup"] == "pass", status
+		assert status["tls"] == "unknown", status  # no sample: never counted as passed
+		assert 0 <= result["score"] < 100 and result["coverage"] < 100, result
+		before = frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE})
+		security.record_security_scores()
+		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 1
+		assert SITE in security.list_sites()
+		return f"score {result['score']} (coverage {result['coverage']}%), {status}"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1294,7 +1317,7 @@ def main():
 	                 ("purge metrics", purge_metrics), ("ui counts+inventory", ui_counts),
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
-	                 ("app security", app_security)]:
+	                 ("app security", app_security), ("posture score", posture_score)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

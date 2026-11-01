@@ -56,6 +56,9 @@ DEFAULTS = {
 	},
 	# bench process states: "auto" (supervisor, else systemd), "supervisor" or "systemd"
 	"processes": {"enabled": True, "manager": "auto"},
+	# services listening beyond loopback and risky site_config settings (exposure.py);
+	# `ports` adds {port: "service name"} to watch
+	"exposure": {"enabled": True, "interval": 600, "ports": {}},
 	# alerts when the Wolf site itself stops working, sent without going through it
 	# smtp: {"host", "port", "from", "to", "starttls", "ssl", "user", "password", "verify_tls"}
 	# PII/secret scrubbing of event titles and payloads before they are shipped (scrub.py).

@@ -366,7 +366,7 @@ class TestInfraChecks(unittest.TestCase):
 		self.tmp.cleanup()
 
 	def infra(self, sync, **cfg):
-		base = {"mariadb": False, "processes": False, "backups": {"interval": 600}, "tls": {"interval": 3600}}
+		base = {"mariadb": False, "processes": False, "exposure": False, "backups": {"interval": 600}, "tls": {"interval": 3600}}
 		base.update(cfg)
 		return collector.InfraChecks(base, "h1", clock=lambda: self.ticks[0], sync=sync)
 

@@ -58,6 +58,9 @@ CATEGORIES = {
 	"security_settings_weakened": ["T1562.001"],
 	"api_key_generated": ["T1098.001"],
 	"webhook_external": ["T1567"],
+	# exposure (agent): weaknesses, mapped to what they open the door to
+	"service_exposed": ["T1190"],
+	"insecure_site_config": ["T1190"],
 }
 
 _ID_RE = re.compile(r"^T\d{4}(?:\.\d{3})?$")

@@ -292,3 +292,19 @@ has:
 aggregation, highest first (lowest for `min`). `retention.clipped` is true when the window
 starts before the data kept at this resolution (`kept_from`, the cutoff purge applies): those
 buckets are gaps.
+
+## Security
+
+### `frappe_wolf.api.security.list_sites`
+
+Sites with a recent `site_config_risks` or `backup_age_hours` sample, plus the Wolf site itself
+(not on a satellite), filtered by the caller's access.
+
+### `frappe_wolf.api.security.get_posture`
+
+Argument: `site` (default: the Wolf site). Returns `site`, `local` (the Wolf site: System Settings
+are readable), `hosts`, `recent_hours`, `score`, `coverage`, `passed`, `failed`, `unknown` and
+`checks`: `{id, label, weight, status, evidence, fix}` with `status` `pass`, `fail` or `unknown`.
+The score is the weight passed over the total weight; an unknown check counts as not passed.
+Agent samples older than `recent_hours` (3) are not used. A site the caller may not see is a 403.
+The hourly `record_security_scores` job stores the score as the `security_score` metric.

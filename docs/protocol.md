@@ -113,7 +113,7 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 | `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed`, `backup_failed`, `email_queue_backlog`, `email_queue_error` |
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`, `process_down`       |
-| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `server_script_change`, `client_script_change`, `console_execution`, `permission_change`, `security_settings_weakened`, `api_key_generated`, `webhook_external`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
+| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `server_script_change`, `client_script_change`, `console_execution`, `permission_change`, `security_settings_weakened`, `api_key_generated`, `webhook_external`, `service_exposed`, `insecure_site_config`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
 | `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
@@ -140,6 +140,8 @@ Categories added with the infrastructure signals:
 | `permission_change` | site (Role Permission Manager request, Role Profile) | a permission rule added, changed, removed or reset; a Role Profile created or granting more roles | `doctype`, `role`, `action`, `ptype`, `value` / `role_profile`, `roles`, `added` |
 | `security_settings_weakened` | site (System Settings) | a save that lowers a defence; `critical` | `changes` (`field`, `label`, `old`, `new`), `by` |
 | `api_key_generated` | site (User) | a new API secret; `critical` for privileged users | `user`, `api_key`, `privileged`, `by` |
+| `service_exposed` | agent (`source`: `exposure`) | a bench port starts listening beyond loopback (or its addresses change); `critical` for Redis | `port`, `service`, `addresses`, `note` |
+| `insecure_site_config` | agent (`source`: `exposure`) | a site's risky settings change and are not empty; `critical` with `developer_mode` | `findings` (`setting`, `value`, `why`) |
 | `webhook_external` | site (Webhook) | a Webhook created, enabled or pointed at another host | `webhook`, `doctype`, `event`, `domain`, `previous_domain` |
 | `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 
@@ -165,6 +167,9 @@ Categories added with the infrastructure signals:
 | `redis_evicted_keys` | keys per push interval | host, bench: increase of `evicted_keys` in the queue Redis |
 | `backup_age_hours`   | hours    | host, bench, site: age of the newest `sites/<site>/private/backups/*-database.sql*`; every 10 min; sites without any backup send nothing |
 | `tls_days_left`      | days (negative = expired) | host, bench, site, `labels.domain`: certificate `notAfter` of each public site name / custom domain, hourly |
+| `exposed_services`   | count    | host: bench ports (MariaDB/Postgres, bench Redis, socket.io, gunicorn) listening on all interfaces or a public address, from `/proc/net/tcp{,6}`; every 10 min |
+| `site_config_risks`  | count    | host, bench, site: `developer_mode`, `allow_tests`, a plain-HTTP `host_name`, `allow_cors: "*"` in the merged site config; every 10 min |
+| `security_score`     | 0–100    | site: written by the app (hourly), not the agent; see [cyber.md](cyber.md#step-3-posture-score-and-exposure-built) |
 | `db_threads_connected` | connections | host, bench (when one bench uses the server), `labels.db` (`host:port`) |
 | `db_connections_used_percent` | % | same: `Threads_connected` / `max_connections` |
 | `db_slow_queries`    | queries per push interval | same: increase of `Slow_queries` |

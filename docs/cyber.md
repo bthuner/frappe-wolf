@@ -157,22 +157,34 @@ from an IP never seen for it also needs request logs Wolf does not keep yet.
 Limits: permission rules changed outside the Role Permission Manager (Data Import, the REST API
 on Custom DocPerm) are not seen. Script events keep the first 300 characters of the code.
 
-### Step 3: posture score and exposure
+### Step 3: posture score and exposure (built)
 
-Each Wolf site gets a **security score**: a weighted list of checks, each pass/fail with the
-evidence and the fix. Checks:
+**Wolf → Security** (`/wolf/security`) shows a score out of 100 per site, with every check,
+what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
 
-- 2FA enforced for System Managers; the Administrator login disabled or restricted.
-- `developer_mode` off; `allow_tests` off.
-- Bench Redis and MariaDB not listening on public interfaces. The agent reads the listening
-  sockets in `/proc/net/tcp*`.
-- TLS validity, which Wolf already samples; HSTS present.
-- A backup newer than 26 h, which Wolf already samples.
-- SPF/DMARC published for the outgoing mail domain.
-- Frappe/ERPNext versions not affected by known advisories (GitHub Security Advisories for
-  `frappe/*`).
+| Check | Weight | Read from |
+|---|---|---|
+| Two-factor authentication for System Managers (global switch and the role) | 3 | System Settings, Role (Wolf site only) |
+| Password policy, minimum score 3 | 2 | System Settings (Wolf site only) |
+| Lockout after 1–10 failed logins | 1 | System Settings (Wolf site only) |
+| Guests cannot upload files | 1 | System Settings (Wolf site only) |
+| No development settings in site_config.json | 3 | the site config on the Wolf site, else the agent's `site_config_risks` |
+| Bench services not listening beyond loopback | 3 | the agent's `exposed_services` on the site's hosts |
+| A backup newer than 26 h | 2 | `backup_age_hours` |
+| TLS certificates valid for 14 days or more | 2 | `tls_days_left` |
 
-The score is shown on the overview and tracked as a metric, so a rule can alert when it drops.
+- A check Wolf cannot read is **unknown** and counts as not passed; `coverage` says how much of
+  the weight Wolf could read. Agent samples older than 3 h are not used.
+- The agent's exposure collector (`agent/wolf_agent/exposure.py`, every 10 min) reads
+  `/proc/net/tcp{,6}` and each site's config. It sends `service_exposed` and
+  `insecure_site_config` events when what it finds changes.
+- The score is stored hourly as `security_score`. Three presets: Security score low (< 60),
+  Bench service exposed, Development settings in production.
+
+Not built yet: HSTS, SPF/DMARC of the mail domain, Frappe/ERPNext versions against GitHub
+Security Advisories, and the System Settings checks of sites other than the Wolf site (they
+need Wolf installed there; satellites forward events, not settings). A listening socket is not
+proof of reachability: a firewall may block it.
 
 ### Step 4: deception and threat intelligence
 

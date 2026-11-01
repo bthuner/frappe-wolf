@@ -68,6 +68,8 @@ doc_events = {
 
 # Role Permission Manager changes bypass doc events (raw SQL): read from the request
 after_request = ["frappe_wolf.wolf.local_signals.after_request"]
+# decoy API keys and paths, checked before Frappe validates the token (api/threat.py)
+before_request = ["frappe_wolf.api.threat.before_request"]
 
 scheduler_events = {
 	"cron": {
@@ -85,5 +87,6 @@ scheduler_events = {
 			"frappe_wolf.api.compliance.check_deadlines",
 		],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
+		"41 4 * * *": ["frappe_wolf.api.threat.refresh_reputation"],
 	},
 }

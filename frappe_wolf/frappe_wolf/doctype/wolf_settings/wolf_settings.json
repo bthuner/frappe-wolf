@@ -44,6 +44,13 @@
   "cb_signals",
   "capture_admin_countries",
   "geoip_database",
+  "threat_section",
+  "ip_reputation_enabled",
+  "ip_reputation_sources",
+  "cb_threat",
+  "honeytoken_users",
+  "honeytoken_api_keys",
+  "honeytoken_paths",
   "retention_section",
   "raw_retention_hours",
   "minute_retention_days",
@@ -313,6 +320,49 @@
    "label": "GeoIP Database"
   },
   {
+   "collapsible": 1,
+   "fieldname": "threat_section",
+   "fieldtype": "Section Break",
+   "label": "Threat intelligence and deception"
+  },
+  {
+   "default": "0",
+   "description": "Download the lists below once a day and tag security events whose IP is on one (one severity step more). Only the lists are downloaded; nothing is sent.",
+   "fieldname": "ip_reputation_enabled",
+   "fieldtype": "Check",
+   "label": "Use IP reputation lists"
+  },
+  {
+   "default": "firehol_level1 https://iplists.firehol.org/files/firehol_level1.netset\nspamhaus_drop https://www.spamhaus.org/drop/drop.txt",
+   "depends_on": "eval:doc.ip_reputation_enabled",
+   "description": "One list per line: a name, then a URL or a file path (relative to the site). One address or CIDR per line in each list.",
+   "fieldname": "ip_reputation_sources",
+   "fieldtype": "Small Text",
+   "label": "IP reputation lists"
+  },
+  {
+   "fieldname": "cb_threat",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Decoy accounts nobody uses (one email per line): any login attempt on them is critical.",
+   "fieldname": "honeytoken_users",
+   "fieldtype": "Small Text",
+   "label": "Decoy users"
+  },
+  {
+   "description": "Decoy API keys (one per line), e.g. left in an old backup or a repository: any request using one is critical. Do not create them on a real user.",
+   "fieldname": "honeytoken_api_keys",
+   "fieldtype": "Small Text",
+   "label": "Decoy API keys"
+  },
+  {
+   "description": "Paths linked from nowhere (one per line, e.g. /app/backup-admin): any request for one is critical.",
+   "fieldname": "honeytoken_paths",
+   "fieldtype": "Small Text",
+   "label": "Decoy paths"
+  },
+  {
    "fieldname": "retention_section",
    "fieldtype": "Section Break",
    "label": "Retention"
@@ -374,7 +424,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 10:00:00.000000",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

@@ -6,6 +6,7 @@ import frappe
 from frappe.utils import cint
 
 from frappe_wolf.wolf import app_security, events, geoip
+from frappe_wolf.wolf.reputation import lines as setting_lines
 from frappe_wolf.wolf.schema import fingerprint
 
 
@@ -87,6 +88,11 @@ def on_activity_log(doc):
 	if doc.operation != "Login":
 		return
 	settings = _settings()
+	if (doc.user or "").lower() in decoy_users(settings):
+		from frappe_wolf.api import threat
+
+		threat.touched("user", doc.user, {"status": doc.status, "activity_log": doc.name})
+		return  # a decoy account: the honeytoken event says it all
 	if doc.status == "Failed" and cint(settings.capture_login_failures):
 		events.emit(
 			"security",
@@ -358,6 +364,10 @@ def after_migrate_marker():
 		events.emit("deployment", f"bench migrate on {frappe.local.site}", severity="info", category="migrate", source="frappe")
 	except Exception:
 		frappe.logger("frappe_wolf").exception("could not record migrate deployment")
+
+
+def decoy_users(settings):
+	return {u.lower() for u in setting_lines(settings.get("honeytoken_users"))}
 
 
 def privileged_roles(settings):

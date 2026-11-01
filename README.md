@@ -219,6 +219,12 @@ the **Regulatory deadline** preset alerts 6 h before each one and when it passes
 it does not decide what is reportable and sends nothing to an authority. See
 [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
 
+**Deception and IP reputation** (Wolf Settings → Threat intelligence and deception): decoy users,
+API keys and paths raise a critical `honeytoken_triggered` event on any use (preset *Honeytoken
+touched*). With **Use IP reputation lists** on, blocklists (FireHOL level 1 and Spamhaus DROP
+prefilled) are downloaded daily and security events from a listed IP are tagged and raised one
+severity step. See [`docs/cyber.md`](docs/cyber.md#step-4-deception-and-threat-intelligence-built-except-crowdsec).
+
 **Public status pages** (opt-in): a **Wolf Status Page** (title, slug, site, optional bench,
 history days, minimum severity) is served to guests at `/wolf-status/<slug>` once **Enabled** is
 ticked; otherwise the address answers 404. It shows an overall banner, open incidents and the

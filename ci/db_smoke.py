@@ -8,6 +8,7 @@ CI runs it from ci/integration.sh.
 """
 
 import json
+import os
 import sys
 import threading
 from datetime import timedelta
@@ -1330,6 +1331,56 @@ def main():
 		assert "| Incident notification (72 h) |" in report and "OVERDUE" in report, report
 		return f"{len(first)} reminders on {inc.name}, report {len(report)} chars"
 
+	def threat_intel():
+		from types import SimpleNamespace
+
+		from frappe_wolf.api import threat
+
+		path = frappe.get_site_path("private", "files", "wolf_smoke_list.txt")
+		with open(path, "w") as f:
+			f.write("# smoke\n203.0.113.0/24\n")
+		values = {"ip_reputation_enabled": 1, "ip_reputation_sources": "smoke private/files/wolf_smoke_list.txt",
+		          "honeytoken_users": "decoy@example.com", "honeytoken_api_keys": "decoykey123",
+		          "honeytoken_paths": "/app/backup-admin"}  # fmt: skip
+		for k, v in values.items():
+			frappe.db.set_single_value("Wolf Settings", k, v)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		saved_request = getattr(frappe.local, "request", None)
+		try:
+			status = threat.refresh_reputation()
+			assert status["lists"]["smoke"] == {"entries": 1, "ok": True}, status
+			name = events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "ssh_failed_login", "severity": "warning", "host": HOST,
+				 "payload": {"ip": "203.0.113.9", "count": 3}}, tz, now_datetime()))  # fmt: skip
+			ev = frappe.db.get_value("Wolf Event", name, ["severity", "payload"], as_dict=True)
+			assert ev.severity == "critical", ev
+			assert json.loads(ev.payload)["reputation"] == {"listed": True, "lists": ["smoke"]}, ev.payload
+
+			log = frappe.get_doc({"doctype": "Activity Log", "operation": "Login", "status": "Failed",
+			                      "user": "decoy@example.com", "ip_address": "198.51.100.20", "subject": "x"})  # fmt: skip
+			log.flags.ignore_links = True
+			log.insert(ignore_permissions=True)
+			kinds = []
+			for kind, request in (
+				("api_key", SimpleNamespace(path="/api/method/frappe.auth.get_logged_user",
+				                            headers={"Authorization": "token decoykey123:whatever"})),
+				("path", SimpleNamespace(path="/app/backup-admin/", headers={})),
+			):  # fmt: skip
+				frappe.local.request = request
+				threat.before_request()
+				kinds.append(kind)
+			rows = frappe.get_all("Wolf Event", filters={"category": "honeytoken_triggered"}, fields=["severity", "payload"])
+			seen = sorted(json.loads(r.payload)["kind"] for r in rows)
+			assert seen == ["api_key", "path", "user"], seen
+			assert all(r.severity == "critical" for r in rows)
+		finally:
+			frappe.local.request = saved_request
+			for k in values:
+				frappe.db.set_single_value("Wolf Settings", k, 0 if k == "ip_reputation_enabled" else None)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			os.remove(path)
+		return f"reputation tagged {name} critical; honeytokens {seen}"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
@@ -1342,7 +1393,7 @@ def main():
 	                 ("incident view", incident_view), ("dashboards", dashboards),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("app security", app_security), ("posture score", posture_score),
-	                 ("regulatory deadlines", regulatory_deadlines)]:
+	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

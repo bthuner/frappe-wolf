@@ -14,6 +14,7 @@ TECHNIQUES = {
 	"T1078": ("Valid Accounts", "initial-access"),
 	"T1078.003": ("Valid Accounts: Local Accounts", "privilege-escalation"),
 	"T1078.004": ("Valid Accounts: Cloud Accounts", "initial-access"),
+	"T1083": ("File and Directory Discovery", "discovery"),
 	"T1059.006": ("Command and Scripting Interpreter: Python", "execution"),
 	"T1059.007": ("Command and Scripting Interpreter: JavaScript", "execution"),
 	"T1098": ("Account Manipulation", "persistence"),
@@ -25,6 +26,7 @@ TECHNIQUES = {
 	"T1213": ("Data from Information Repositories", "collection"),
 	"T1530": ("Data from Cloud Storage", "collection"),
 	"T1548.003": ("Abuse Elevation Control Mechanism: Sudo and Sudo Caching", "privilege-escalation"),
+	"T1552": ("Unsecured Credentials", "credential-access"),
 	"T1552.001": ("Unsecured Credentials: Credentials In Files", "credential-access"),
 	"T1552.004": ("Unsecured Credentials: Private Keys", "credential-access"),
 	"T1562.001": ("Impair Defenses: Disable or Modify Tools", "defense-evasion"),
@@ -61,6 +63,8 @@ CATEGORIES = {
 	# exposure (agent): weaknesses, mapped to what they open the door to
 	"service_exposed": ["T1190"],
 	"insecure_site_config": ["T1190"],
+	# deception (api/threat.py): the payload adds the technique of the decoy kind
+	"honeytoken_triggered": [],
 	# compliance reminders (api/compliance.py): no attack technique
 	"regulatory_deadline": [],
 }

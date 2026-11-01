@@ -1,9 +1,10 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, Select, TabButtons } from 'frappe-ui'
+import { Button, PageHeader, Select, TabButtons } from 'frappe-ui'
 import { LineChart } from 'frappe-ui/charts'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import PageTitle from '@/components/PageTitle.vue'
 import ScopeInputs from '@/components/ScopeInputs.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
@@ -157,7 +158,7 @@ watch([metric, site, host, bench], loadLabels)
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Metrics" />
+    <PageTitle title="Metrics" />
     <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="query" />
   </PageHeader>
   <div class="mx-auto max-w-6xl space-y-4 p-5">

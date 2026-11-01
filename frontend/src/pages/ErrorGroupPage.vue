@@ -1,8 +1,9 @@
 <script setup>
-import { PageHeader, PageHeaderTitle } from 'frappe-ui'
+import { PageHeader } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { call } from '@/services/api'
 import { clock, day, full } from '@/services/time'
@@ -35,7 +36,7 @@ const where = (s) => [s.site, s.bench, s.host].filter(Boolean).join(' · ')
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Error group" />
+    <PageTitle title="Error group" />
   </PageHeader>
   <section v-if="error" class="max-w-2xl p-5 text-base text-ink-gray-8">
     <p>{{ error }}</p>

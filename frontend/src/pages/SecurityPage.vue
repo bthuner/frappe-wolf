@@ -1,7 +1,8 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, Select } from 'frappe-ui'
+import { Button, PageHeader, Select } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 
+import PageTitle from '@/components/PageTitle.vue'
 import { useQueryParam } from '@/composables/useQueryParam'
 import { call } from '@/services/api'
 
@@ -80,7 +81,7 @@ watch(site, load, { immediate: true })
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Security" />
+    <PageTitle title="Security" />
     <div class="flex items-center gap-2">
       <Select
         v-if="siteOptions.length > 1"

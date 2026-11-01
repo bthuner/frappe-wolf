@@ -1,8 +1,9 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, TabButtons } from 'frappe-ui'
+import { Button, PageHeader, TabButtons } from 'frappe-ui'
 import { inject, ref, watch } from 'vue'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
@@ -69,7 +70,7 @@ const live = useLive(hub, {
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Incidents" />
+    <PageTitle title="Incidents" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="Incidents changed" />
       <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="live.apply()" />

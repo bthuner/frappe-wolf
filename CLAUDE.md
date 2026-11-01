@@ -327,3 +327,13 @@ Commit and PR attribution
     Every commit message and pull request description ends with the single line "Co-authored with AI".
 
     Never add "Co-Authored-By: Claude", "Claude-Session" links, "Generated with Claude Code" or any other Claude/Anthropic mention to commits, PRs or files in this repository.
+
+    Commits are authored and committed as Théo Hunerblaes <theohunerblaes@me.com>, never as Claude <noreply@anthropic.com>. If `git config user.email` says noreply@anthropic.com (Claude Code cloud containers set it so), run these in the repository before the first commit:
+
+        git config user.name "Théo Hunerblaes"
+        git config user.email "theohunerblaes@me.com"
+        git config commit.gpgsign false
+
+    Signing stays off there: the container's key signs as Claude, so GitHub would mark the commits "Unverified".
+
+    A merge commit is titled "Merge pull request #N: <PR title>", so it never names a claude/… branch.

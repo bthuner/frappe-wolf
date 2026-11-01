@@ -258,19 +258,6 @@ def late_horizon(now, raw_hours):
 	return now - retention + min(timedelta(hours=1), retention / 4)
 
 
-def bucket_partials(rows, bucket_seconds):
-	"""Merge rows into chart buckets per group: {(group, bucket_start): partial}.
-
-	rows: (group, time, partial) with a partial from new_partial (a raw sample) or a rollup row.
-	A bucket is a whole multiple of the rollups read, so a rollup row falls in one bucket.
-	"""
-	out = {}
-	for group, at, part in rows:
-		key = (group, floor(at, bucket_seconds))
-		out[key] = merge(out.get(key), part)
-	return out
-
-
 def whole_buckets(since, until, bucket_seconds):
 	"""(first, end, starts) of the whole chart buckets in [since, until).
 

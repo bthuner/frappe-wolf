@@ -33,13 +33,14 @@ def insert_metrics(rows, agent=None):
 	]  # fmt: skip
 	values = [
 		(
-			storage.sample_name(r["metric_name"], r["timestamp"], frappe.generate_hash(length=12)),
+			storage.sample_name(r["metric_name"], r["timestamp"], frappe.generate_hash(length=10)),
 			now, now, "Administrator", "Administrator", 0,
 			r["metric_name"], r["value"], r["timestamp"], r["host"], r["bench"], r["site"],
 			r["label_key"], r["labels"],
 		)  # fmt: skip
 		for r in rows
 	]
+	values.sort(key=lambda row: row[0])  # in name order, the order InnoDB stores them in
 	frappe.db.bulk_insert("Wolf Metric Sample", fields, values)
 	# samples for minutes that are rolled up already (spool replay) get them rolled again
 	from frappe_wolf.wolf import rollups

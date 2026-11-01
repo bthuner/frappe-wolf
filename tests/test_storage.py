@@ -39,7 +39,9 @@ class TestBuckets(unittest.TestCase):
 		self.assertNotEqual(storage.rollup_name(MINUTE, key), storage.rollup_name(HOUR, key))
 		# NULL and empty bench are different groups in SQL, so they need different names
 		self.assertNotEqual(storage.rollup_name(MINUTE, key), storage.rollup_name(MINUTE, ("cpu_usage", "h1", "", None, None, T0)))
-		self.assertLessEqual(len(storage.rollup_name(MINUTE, key)), 140)
+		# every secondary index entry repeats the name: no longer than the hash it replaced
+		self.assertEqual(len(storage.rollup_name(MINUTE, key)), 33)
+		self.assertEqual(len(storage.sample_name("cpu_usage", T0, "x" * 10)), 28)
 
 	def test_names_keep_a_metric_in_time_order(self):
 		# InnoDB stores rows in name order: one metric's rows of one resolution must be contiguous

@@ -121,11 +121,11 @@ class Loader:
 		end = self.now - timedelta(seconds=self.args.interval)
 		while ts < end:
 			t = ts.strftime("%Y-%m-%d %H:%M:%S")
-			for host in self.hosts:
-				for metric in self.metrics:
-					# named as events.insert_metrics names them: the row order is what reads pay for
-					batch.append((self.storage.sample_name(metric, t, self.name()), t, t, "Administrator", "Administrator", 0,
-					              metric, self.pooled(), t, host, None, None, None, None))
+			# named and ordered as events.insert_metrics names and orders them: the row order is
+			# what reads pay for
+			batch += sorted((self.storage.sample_name(metric, t, f"{self.name()[-10:]}"), t, t, "Administrator",
+			                 "Administrator", 0, metric, self.pooled(), t, host, None, None, None, None)
+			                for host in self.hosts for metric in self.metrics)
 			if len(batch) >= 50_000:
 				self.bulk("Wolf Metric Sample", fields, batch)
 				batch = []
@@ -142,13 +142,15 @@ class Loader:
 			while ts < until:
 				t = ts.strftime("%Y-%m-%d %H:%M:%S")
 				last = (ts + step - timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
+				rows = []
 				for host in self.hosts:
 					for metric in self.metrics:
 						lo, hi = sorted((self.pooled(), self.pooled()))
-						# named as the rollup job names them (storage.rollup_name)
-						batch.append((storage.rollup_name(res, (metric, host, None, None, None, ts)), t, t,
-						              "Administrator", "Administrator", 0, metric, res, t, host, None, None, None,
-						              per_bucket, (lo + hi) / 2 * per_bucket, lo, hi, hi, last))
+						# named and ordered as the rollup job names and orders them
+						rows.append((storage.rollup_name(res, (metric, host, None, None, None, ts)), t, t,
+						             "Administrator", "Administrator", 0, metric, res, t, host, None, None, None,
+						             per_bucket, (lo + hi) / 2 * per_bucket, lo, hi, hi, last))
+				batch += sorted(rows)
 				if len(batch) >= 50_000:
 					self.bulk("Wolf Metric Rollup", fields, batch)
 					batch = []

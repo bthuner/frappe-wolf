@@ -10,7 +10,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_fullname
+from frappe.utils import cint, get_datetime, get_fullname, now_datetime
 
 from frappe_wolf.api.ui import READ_ROLES
 from frappe_wolf.wolf import access, events, incidents, schema, timeline, window
@@ -103,7 +103,23 @@ def get_incident(incident):
 		"timeline_window": {"since": window.to_utc(start, tz), "until": window.to_utc(end, tz), "padding_minutes": padding,
 							"open_ended": not doc.resolved_at},  # fmt: skip
 		"time_zone": tz,
+		"regulatory": _regulatory(doc, tz),
 		"can": _can(doc),
+	}
+
+
+def _regulatory(doc, tz):
+	"""NIS2 / GDPR flags and deadlines (wolf/compliance.py); None when no flag is set."""
+	from frappe_wolf.api.compliance import serialize
+	from frappe_wolf.wolf import compliance
+
+	if not (doc.get("nis2_significant") or doc.get("gdpr_breach")):
+		return None
+	return {
+		"nis2": bool(doc.nis2_significant),
+		"gdpr": bool(doc.gdpr_breach),
+		"reference": doc.get("regulatory_reference"),
+		"deadlines": serialize(compliance.deadlines(doc.as_dict(), now_datetime()), tz),
 	}
 
 

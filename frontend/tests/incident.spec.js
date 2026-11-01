@@ -167,3 +167,42 @@ describe('useTimeline', () => {
     expect(t.rows.value.map((r) => r.id)).toEqual(ROWS.map((r) => r.id))
   })
 })
+
+describe('IncidentPage regulatory reporting', () => {
+  it('lists the deadlines with their status and loads the report draft as text', async () => {
+    const regulatory = {
+      nis2: true, gdpr: false, reference: 'CERT-FR 2026-123',
+      deadlines: [
+        { id: 'nis2_early_warning', regime: 'NIS2', label: 'Early warning to the CSIRT / authority (24 h)',
+          due_at: '2026-10-31T00:48:00Z', done_at: null, status: 'overdue', estimated: false },
+        { id: 'nis2_final_report', regime: 'NIS2', label: 'Final report (1 month after the notification)',
+          due_at: '2026-12-02T00:48:00Z', done_at: null, status: 'open', estimated: true },
+      ],
+    }  // prettier-ignore
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+      'frappe_wolf.api.compliance.get_report': () => ({ markdown: '# Incident report: <b>x</b>' }),
+    })
+    const { page } = await open()
+    const text = page.text()
+    expect(text).toContain('Regulatory reporting: NIS2 significant incident')
+    expect(text).toContain('reference CERT-FR 2026-123')
+    expect(text).toContain('Overdue')
+    expect(text).toContain('(estimated)')
+    expect(text).toContain('sends nothing')
+    await page.findAll('button').find((b) => b.text() === 'Report draft').trigger('click')
+    await flushPromises()
+    expect(page.get('pre').text()).toBe('# Incident report: <b>x</b>') // text, not HTML
+    expect(page.find('pre b').exists()).toBe(false)
+  })
+
+  it('shows no regulatory section for an incident without a flag', async () => {
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory: null }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+    })
+    const { page } = await open()
+    expect(page.text()).not.toContain('Regulatory reporting')
+  })
+})

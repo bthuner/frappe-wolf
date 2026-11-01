@@ -308,3 +308,15 @@ are readable), `hosts`, `recent_hours`, `score`, `coverage`, `passed`, `failed`,
 The score is the weight passed over the total weight; an unknown check counts as not passed.
 Agent samples older than `recent_hours` (3) are not used. A site the caller may not see is a 403.
 The hourly `record_security_scores` job stores the score as the `security_score` metric.
+
+## Regulatory reporting
+
+`get_incident` returns `regulatory`: `null` when neither flag is set, else `{nis2, gdpr,
+reference, deadlines}`; each deadline is `{id, regime, label, due_at, done_at, status,
+estimated}` with `status` `open`, `due_soon` (within 6 h), `overdue`, `done` or `done_late`.
+
+### `frappe_wolf.api.compliance.get_report`
+
+Argument: `incident`. Returns `{incident, markdown}`: a draft with the facts, the deadlines,
+the timeline (linked events and comments, 100 each at most) and the postmortem's impact, root
+cause, lessons and action items. Read permission on the incident is enough. Nothing is sent.

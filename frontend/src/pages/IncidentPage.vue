@@ -1,9 +1,10 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle, TabButtons, Textarea, TextInput } from 'frappe-ui'
+import { Button, PageHeader, TabButtons, Textarea, TextInput } from 'frappe-ui'
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import PageTitle from '@/components/PageTitle.vue'
 import ResponsePanel from '@/components/ResponsePanel.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
@@ -39,6 +40,7 @@ const comment = ref('')
 const posting = ref(false)
 const expanded = ref(new Set())
 const timeline = useTimeline(() => name.value)
+const commentBox = ref(null)
 
 function anchor(row) {
   return `row-${row.id.replace(/[^A-Za-z0-9_-]/g, '-')}`
@@ -169,6 +171,8 @@ async function postComment() {
   try {
     await call('frappe_wolf.api.incident.add_comment', { incident: name.value, content: comment.value }, { post: true })
     comment.value = '' // cleared only once it is saved
+    // the Comment button is disabled now that the box is empty: the box keeps the focus
+    commentBox.value?.querySelector('textarea')?.focus()
     await timeline.load(families.value, timeline.rows.value.length + 1)
   } catch (e) {
     actionError.value = e.message
@@ -208,7 +212,7 @@ watch(name, () => {
 
 <template>
   <PageHeader>
-    <PageHeaderTitle :title="`Incident ${name}`" />
+    <PageTitle :title="`Incident ${name}`" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />
       <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="timeline.loading.value" @click="live.apply()" />
@@ -354,7 +358,7 @@ watch(name, () => {
       <Button v-if="timeline.paging.value.has_more" label="Load more" :loading="timeline.loading.value" @click="timeline.more(families)" />
     </section>
 
-    <section class="wolf-card space-y-2" aria-label="Comment">
+    <section ref="commentBox" class="wolf-card space-y-2" aria-label="Comment">
       <Textarea v-model="comment" :rows="3" placeholder="Add a comment for the team" aria-label="Comment" />
       <Button label="Comment" :disabled="!comment.trim()" :loading="posting" @click="postComment" />
     </section>

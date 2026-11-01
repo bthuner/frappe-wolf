@@ -1,6 +1,8 @@
 <script setup>
-import { PageHeader, PageHeaderTitle } from 'frappe-ui'
+import { PageHeader } from 'frappe-ui'
 import { inject } from 'vue'
+
+import PageTitle from '@/components/PageTitle.vue'
 
 // Raw-log search needs line storage and a query API that Wolf does not have. Until it does,
 // this page explains why and points to the events parsed from the same logs.
@@ -10,7 +12,7 @@ const logs = boot.capabilities.logs
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Logs" />
+    <PageTitle title="Logs" />
   </PageHeader>
   <section class="max-w-2xl space-y-3 p-5 text-base text-ink-gray-8">
     <template v-if="!logs.available">

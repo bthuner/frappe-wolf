@@ -1,7 +1,8 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle } from 'frappe-ui'
+import { Button, PageHeader } from 'frappe-ui'
 import { inject, onMounted, ref } from 'vue'
 
+import PageTitle from '@/components/PageTitle.vue'
 import MonitoringPanel from '@/components/dash/MonitoringPanel.vue'
 import { call } from '@/services/api'
 
@@ -26,7 +27,7 @@ onMounted(load)
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Monitoring" />
+    <PageTitle title="Monitoring" />
     <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="load" />
   </PageHeader>
   <div class="mx-auto max-w-6xl space-y-5 p-5">

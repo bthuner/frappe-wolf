@@ -1,9 +1,10 @@
 <script setup>
-import { Button, PageHeader, PageHeaderTitle } from 'frappe-ui'
+import { Button, PageHeader } from 'frappe-ui'
 import { inject, ref } from 'vue'
 
 import ExploreFilters from '@/components/ExploreFilters.vue'
 import LiveStatus from '@/components/LiveStatus.vue'
+import PageTitle from '@/components/PageTitle.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
 import { useExplore } from '@/composables/useExplore'
 import { useLive } from '@/composables/useLive'
@@ -52,7 +53,7 @@ const live = useLive(hub, {
 
 <template>
   <PageHeader>
-    <PageHeaderTitle title="Events" />
+    <PageTitle title="Events" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="New events recorded" />
       <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="list.loading.value" @click="live.apply()" />

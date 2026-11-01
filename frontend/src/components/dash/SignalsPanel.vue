@@ -17,7 +17,7 @@ const STATE = {
   watched: { label: 'Within its rules', glyph: '✓', color: 'var(--wolf-ok)' },
   unwatched: { label: 'No rule watches this', glyph: '–', color: 'var(--wolf-muted)' },
 }
-const GROUPS = { workers: 'Workers and queues', processes: 'Bench processes', redis: 'Redis', database: 'Database', backups: 'Backups', tls: 'TLS certificates', host: 'Host resources' }
+const GROUPS = { workers: 'Workers and queues', processes: 'Bench processes', redis: 'Redis', database: 'Database', backups: 'Backups', tls: 'TLS certificates', security: 'Security exposure', host: 'Host resources' }
 
 const groups = computed(() => {
   const by = {}

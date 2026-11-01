@@ -76,6 +76,13 @@ def accept(agent, data, now=None):
 		if not queued:
 			store_batch(agent, metrics, events_ok)
 
+	# response actions (api/response.py): results of the last ones, then what is pending
+	from frappe_wolf.api import response as response_api
+
+	if isinstance(data.get("action_results"), list):
+		response_api.record_results(agent, data["action_results"][:100])
+	actions = response_api.pending_for_agent(agent, now)
+
 	frappe.db.set_value(
 		"Wolf Agent",
 		agent,
@@ -105,6 +112,7 @@ def accept(agent, data, now=None):
 		"clock_skew_seconds": skew,
 		"clamped": clamped,
 		"queued": queued,
+		"actions": actions,
 	}
 
 

@@ -37,12 +37,31 @@
   "capture_admin_logins",
   "capture_privileged_users",
   "privileged_roles",
+  "capture_app_security",
   "signals_section",
   "capture_email_queue",
   "email_queue_stale_minutes",
   "cb_signals",
   "capture_admin_countries",
   "geoip_database",
+  "threat_section",
+  "ip_reputation_enabled",
+  "ip_reputation_sources",
+  "cb_threat",
+  "honeytoken_users",
+  "honeytoken_api_keys",
+  "honeytoken_paths",
+  "siem_section",
+  "siem_enabled",
+  "siem_host",
+  "siem_port",
+  "siem_transport",
+  "siem_verify_tls",
+  "cb_siem",
+  "siem_format",
+  "siem_min_severity",
+  "siem_event_types",
+  "siem_journal",
   "retention_section",
   "raw_retention_hours",
   "minute_retention_days",
@@ -267,6 +286,13 @@
    "label": "Privileged Roles"
   },
   {
+   "default": "1",
+   "description": "Server and Client Scripts that can run new code, System Console runs, permission rule and Role Profile changes, weakened System Settings (2FA, password policy, lockout, sessions), API keys generated and Webhooks to a new host.",
+   "fieldname": "capture_app_security",
+   "fieldtype": "Check",
+   "label": "Flag risky application changes"
+  },
+  {
    "fieldname": "signals_section",
    "fieldtype": "Section Break",
    "label": "Email queue and login geography (this site)"
@@ -303,6 +329,127 @@
    "fieldname": "geoip_database",
    "fieldtype": "Data",
    "label": "GeoIP Database"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "threat_section",
+   "fieldtype": "Section Break",
+   "label": "Threat intelligence and deception"
+  },
+  {
+   "default": "0",
+   "description": "Download the lists below once a day and tag security events whose IP is on one (one severity step more). Only the lists are downloaded; nothing is sent.",
+   "fieldname": "ip_reputation_enabled",
+   "fieldtype": "Check",
+   "label": "Use IP reputation lists"
+  },
+  {
+   "default": "firehol_level1 https://iplists.firehol.org/files/firehol_level1.netset\nspamhaus_drop https://www.spamhaus.org/drop/drop.txt",
+   "depends_on": "eval:doc.ip_reputation_enabled",
+   "description": "One list per line: a name, then a URL or a file path (relative to the site). One address or CIDR per line in each list.",
+   "fieldname": "ip_reputation_sources",
+   "fieldtype": "Small Text",
+   "label": "IP reputation lists"
+  },
+  {
+   "fieldname": "cb_threat",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Decoy accounts nobody uses (one email per line): any login attempt on them is critical.",
+   "fieldname": "honeytoken_users",
+   "fieldtype": "Small Text",
+   "label": "Decoy users"
+  },
+  {
+   "description": "Decoy API keys (one per line), e.g. left in an old backup or a repository: any request using one is critical. Do not create them on a real user.",
+   "fieldname": "honeytoken_api_keys",
+   "fieldtype": "Small Text",
+   "label": "Decoy API keys"
+  },
+  {
+   "description": "Paths linked from nowhere (one per line, e.g. /app/backup-admin): any request for one is critical.",
+   "fieldname": "honeytoken_paths",
+   "fieldtype": "Small Text",
+   "label": "Decoy paths"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "siem_section",
+   "fieldtype": "Section Break",
+   "label": "SIEM export (syslog)",
+   "description": "Send security events, and the journal, to UniSOC, Wazuh, Graylog or any syslog collector: RFC 5424 carrying CEF or OCSF JSON."
+  },
+  {
+   "default": "0",
+   "fieldname": "siem_enabled",
+   "fieldtype": "Check",
+   "label": "Export to a SIEM"
+  },
+  {
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_host",
+   "fieldtype": "Data",
+   "label": "Collector host"
+  },
+  {
+   "default": "514",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_port",
+   "fieldtype": "Int",
+   "label": "Port"
+  },
+  {
+   "default": "tcp",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "TCP and TLS use octet-counted frames (RFC 6587). UDP may drop or cut messages.",
+   "fieldname": "siem_transport",
+   "fieldtype": "Select",
+   "label": "Transport",
+   "options": "tcp\ntls\nudp"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.siem_enabled && doc.siem_transport == 'tls'",
+   "fieldname": "siem_verify_tls",
+   "fieldtype": "Check",
+   "label": "Verify the collector's certificate"
+  },
+  {
+   "fieldname": "cb_siem",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "ocsf",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_format",
+   "fieldtype": "Select",
+   "label": "Format",
+   "options": "ocsf\ncef"
+  },
+  {
+   "default": "warning",
+   "depends_on": "eval:doc.siem_enabled",
+   "fieldname": "siem_min_severity",
+   "fieldtype": "Select",
+   "label": "Minimum severity",
+   "options": "info\nwarning\ncritical"
+  },
+  {
+   "default": "security",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "Comma-separated: security, error, cron_failure, worker_failure, host_metric_alert, deployment.",
+   "fieldname": "siem_event_types",
+   "fieldtype": "Data",
+   "label": "Event types"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "Also send every signed journal entry (seq, digest, mac): an external copy of the chain.",
+   "fieldname": "siem_journal",
+   "fieldtype": "Check",
+   "label": "Send the journal"
   },
   {
    "fieldname": "retention_section",
@@ -366,7 +513,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-30 13:00:00.000000",
+ "modified": "2026-11-01 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

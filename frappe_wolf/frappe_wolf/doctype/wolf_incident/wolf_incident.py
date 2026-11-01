@@ -37,6 +37,11 @@ class WolfIncident(Document):
 				self.acknowledged_at = now_datetime()
 		if self.public_title:
 			self.public_title = self.public_title.strip()[:140]
+		# regulatory deadlines count from awareness: ticking a flag starts the clock now
+		if self.nis2_significant and not self.nis2_aware_at:
+			self.nis2_aware_at = now_datetime()
+		if self.gdpr_breach and not self.gdpr_aware_at:
+			self.gdpr_aware_at = now_datetime()
 
 	def on_update(self):
 		before = self.get_doc_before_save()

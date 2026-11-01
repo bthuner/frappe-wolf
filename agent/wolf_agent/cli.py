@@ -12,9 +12,10 @@ import threading
 
 from . import __version__
 from .collector import Collector
-from .config import DEFAULTS, config_path, load_config, press_settings, save_config
+from .config import DEFAULTS, config_path, load_config, press_settings, save_config, section
 from .discovery import discover_benches
 from .fallback import FallbackError
+from .responder import Responder
 from .shipper import AuthError, RejectedError, Shipper, TransportError, register
 from .util import parse_duration_minutes
 from .watchdog import STATE_FILE, Watchdog, assess
@@ -188,6 +189,7 @@ def cmd_run(args):
 	state_path = os.path.join(cfg["spool_dir"], "tail-state.json")
 	collector = Collector(cfg, state_path=state_path)
 	shipper = Shipper(cfg)
+	responder = Responder(section(cfg, "response"))
 	watchdog = _watchdog(cfg)
 
 	stop = threading.Event()
@@ -205,6 +207,8 @@ def cmd_run(args):
 				watchdog.fatal(f"the Wolf site rejected agent {cfg['agent_id']} credentials ({e}); re-register this host")
 				return EXIT_AUTH
 			watchdog.observe(ok, shipper.health)
+			if ok and shipper.actions:
+				shipper.results += responder.handle(shipper.actions)
 			stop.wait(shipper.push_interval)
 	finally:
 		collector.close()

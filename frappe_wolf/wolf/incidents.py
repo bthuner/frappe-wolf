@@ -73,6 +73,9 @@ def open_incident(rule, key, scope, summary, started_at=None):
 		if name:
 			kind = "reopened"
 			frappe.db.set_value("Wolf Incident", name, {"status": "Open", "resolved_at": None, "resolved_by": None})
+			from frappe_wolf.api import journal
+
+			journal.incident_set(name, {"status": "Open"}, "reopened by its rule")
 
 	if name:
 		frappe.db.set_value("Wolf Incident", name, {"last_event_at": now, "summary": summary})
@@ -114,6 +117,9 @@ def resolve(name, reason="Condition cleared"):
 		name,
 		{"status": "Resolved", "resolved_at": now_datetime(), "resolved_by": None, "summary": reason},
 	)
+	from frappe_wolf.api import journal
+
+	journal.incident_set(name, {"status": "Resolved", "summary": reason}, "resolved automatically")
 
 
 def link_events(incident, names):

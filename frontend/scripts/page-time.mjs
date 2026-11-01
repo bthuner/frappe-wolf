@@ -106,6 +106,7 @@ function report(label, runs) {
   row('app shell (DOMContentLoaded)', runs.map((r) => r.domContentLoaded))
   row('first read sent (app started, session checked)', runs.map((r) => Math.min(...r.reads.map((x) => x.start))))
   row('reads window (first read sent → last answered)', runs.map((r) => Math.max(...r.reads.map((x) => x.end)) - Math.min(...r.reads.map((x) => x.start))))
+  row('drawing (last read answered → panels drawn)', runs.map((r) => r.ready - Math.max(...r.reads.map((x) => x.end))))
   const names = [...new Set(runs.flatMap((r) => r.reads.map((x) => x.name)))].sort()
   for (const name of names) {
     row(`  ${name}`, runs.flatMap((r) => r.reads.filter((x) => x.name === name).map((x) => x.end - x.start)))

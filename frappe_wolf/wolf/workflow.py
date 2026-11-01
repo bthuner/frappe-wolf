@@ -179,6 +179,17 @@ def open_from_event(event):
 # ---- merge / split -------------------------------------------------------------------------
 
 
+def moved_comment_count(incident):
+	"""Comments a merge moves with the events (the merge dialog announces the same number)."""
+	return frappe.db.count(
+		"Comment",
+		{"reference_doctype": "Wolf Incident", "reference_name": incident, "comment_type": ("in", MOVED_COMMENT_TYPES)},
+	)
+
+
+SPLIT_LIMIT = 5000
+
+
 def merge(source, target):
 	"""Move the events and comments of `source` into `target`; source becomes Resolved, merged."""
 	src = frappe.get_doc("Wolf Incident", source)
@@ -193,10 +204,7 @@ def merge(source, target):
 		"update `tabWolf Event` set incident = %(target)s where incident = %(source)s",
 		{"source": src.name, "target": tgt.name},
 	)
-	comments = frappe.db.count(
-		"Comment",
-		{"reference_doctype": "Wolf Incident", "reference_name": src.name, "comment_type": ("in", MOVED_COMMENT_TYPES)},
-	)
+	comments = moved_comment_count(src.name)
 	frappe.db.sql(
 		"""update `tabComment` set reference_name = %(target)s
 		where reference_doctype = 'Wolf Incident' and reference_name = %(source)s
@@ -233,7 +241,7 @@ def split(incident, events, title=None):
 		"Wolf Event",
 		filters={"incident": src.name},
 		fields=["name", "title", "severity", "timestamp", "last_seen"],
-		limit=5000,
+		limit=SPLIT_LIMIT,
 	)
 	error, names = incident_ops.check_split([r.name for r in linked], events)
 	if error:

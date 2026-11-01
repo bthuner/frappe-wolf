@@ -1,12 +1,14 @@
 <script setup>
 import { Button, PageHeader, TabButtons, Textarea, TextInput } from 'frappe-ui'
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import LiveStatus from '@/components/LiveStatus.vue'
+import MergeDialog from '@/components/MergeDialog.vue'
 import PageTitle from '@/components/PageTitle.vue'
 import ResponsePanel from '@/components/ResponsePanel.vue'
 import SeverityGlyph from '@/components/SeverityGlyph.vue'
+import SplitDialog from '@/components/SplitDialog.vue'
 import TimelineRow from '@/components/TimelineRow.vue'
 import { useLive } from '@/composables/useLive'
 import { useQueryParam } from '@/composables/useQueryParam'
@@ -15,6 +17,7 @@ import { call } from '@/services/api'
 import { clock, day, duration, full } from '@/services/time'
 
 const route = useRoute()
+const router = useRouter()
 const boot = inject('boot')
 const tz = boot.time_zone
 
@@ -170,6 +173,33 @@ async function act(action) {
   }
 }
 
+// merge, split and postmortem: the workflow's own methods, behind dialogs that say what moves
+const merging = ref(false)
+const splitting = ref(false)
+const workflowNote = ref(null) // what the last workflow action did, with a link
+function onMerged(target) {
+  // the destination is where the incident goes on: open it (this one is now closed as merged)
+  router.push({ name: 'incident', params: { incident: target } })
+}
+async function onSplit(name) {
+  workflowNote.value = { text: 'Events moved to', link: name }
+  await refresh()
+}
+const postmortemBusy = ref(false)
+async function writePostmortem() {
+  postmortemBusy.value = true
+  actionError.value = null
+  try {
+    const name = await call('frappe_wolf.api.incident.create_postmortem', { incident: incident.value.name }, { post: true })
+    incident.value = { ...incident.value, postmortem: name }
+    window.location.assign(`/app/wolf-postmortem/${encodeURIComponent(name)}`)
+  } catch (e) {
+    actionError.value = e.message
+  } finally {
+    postmortemBusy.value = false
+  }
+}
+
 async function postComment() {
   posting.value = true
   actionError.value = null
@@ -210,6 +240,7 @@ onMounted(async () => {
 watch(families, () => timeline.load(families.value))
 watch(name, () => {
   fresh.value = []
+  workflowNote.value = null
   // another incident: never show the previous one's report draft
   report.value = null
   reportError.value = null
@@ -312,11 +343,22 @@ watch(name, () => {
         <Button v-if="incident.can.acknowledge" variant="solid" label="Acknowledge" :loading="acting === 'acknowledge'" @click="act('acknowledge')" />
         <Button v-if="incident.can.assign_to_me" label="Assign to me" :loading="acting === 'assign_to_me'" @click="act('assign_to_me')" />
         <Button v-if="incident.can.resolve" label="Resolve" :loading="acting === 'resolve'" @click="act('resolve')" />
-        <a v-if="incident.can.workflow" class="wolf-link text-sm" :href="`/app/wolf-incident/${encodeURIComponent(incident.name)}`">
-          Merge, split or write the postmortem in Desk
-        </a>
+        <Button v-if="incident.can.merge" label="Merge…" @click="merging = true" />
+        <Button v-if="incident.can.split" label="Split…" @click="splitting = true" />
+        <a v-if="incident.can.postmortem && incident.postmortem" class="wolf-link text-sm"
+           :href="`/app/wolf-postmortem/${encodeURIComponent(incident.postmortem)}`">Postmortem {{ incident.postmortem }} (Desk)</a>
+        <Button v-else-if="incident.can.postmortem" label="Write the postmortem" :loading="postmortemBusy" @click="writePostmortem" />
+        <span v-else-if="incident.can.workflow && !incident.merged_into && incident.status !== 'Resolved'" class="text-sm text-ink-gray-6">
+          The postmortem comes once it is resolved.
+        </span>
       </div>
+      <p v-if="workflowNote" role="status" class="text-sm">
+        {{ workflowNote.text }}
+        <RouterLink class="wolf-link" :to="{ name: 'incident', params: { incident: workflowNote.link } }">{{ workflowNote.link }}</RouterLink>.
+      </p>
       <p v-if="actionError" role="alert" class="text-sm" style="color: var(--wolf-critical)">{{ actionError }}</p>
+      <MergeDialog v-if="incident.can.merge" v-model:open="merging" :incident="incident.name" :time-zone="tz" @merged="onMerged" />
+      <SplitDialog v-if="incident.can.split" v-model:open="splitting" :incident="incident.name" :time-zone="tz" @split="onSplit" />
     </header>
 
     <ResponsePanel :incident="incident.name" :time-zone="tz" @changed="refresh" />

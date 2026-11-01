@@ -123,7 +123,12 @@ and the timeline window. `deployment` gives the time of the deployment before th
 with `available: false` when retention deleted its event but the incident kept the time.
 `event_records` (linked Wolf Events; `event_count` is the same number, as on Wolf Incident) and
 `event_occurrences` (the occurrences they report, repeats included) are different numbers. `can` says which actions the caller may take: Wolf Users read and comment,
-and Wolf Managers also acknowledge, resolve, take the incident and work on it in Desk.
+and Wolf Managers also acknowledge, resolve, take the incident, and:
+- `merge`: the incident is not merged;
+- `split`: not merged, and at least two events are linked (one must stay);
+- `postmortem`: not merged, and either resolved or already has one (`postmortem` names it).
+
+Each matches the check the action itself makes.
 
 ### `frappe_wolf.api.incident_view.get_timeline`
 
@@ -162,8 +167,39 @@ POST `incident` and `action`, one of `acknowledge`, `resolve` or `assign_to_me`.
 incident's own method, so Frappe's write permission applies, and returns the new
 `get_incident`. The incident's state is checked first: acknowledging needs an Open incident,
 and resolving or taking needs an unresolved one. A page left open on a stale incident gets
-an error instead of reopening it. Merged incidents refuse every action. Merge, split and
-postmortems stay in Desk for now.
+an error instead of reopening it. Merged incidents refuse every action.
+
+### `frappe_wolf.api.incident_view.merge_preview`
+
+`source`, and optionally `target`; Wolf Managers with write permission only. Nothing is written.
+
+- `candidates`: where the source may go. These are unresolved, unmerged incidents the caller may
+  read: the newest 50 (`more_candidates` says when there are more), the source's site first,
+  then its bench.
+- `preview`, for a `target`:
+  - `error`: the merge's own refusal (itself, a merged incident, no write permission) or null;
+  - the `events` and `comments` that would move;
+  - `target_after`: severity, start and status, once the target covers both;
+  - `source_after`: Resolved, merged into the target.
+
+The merge itself is `frappe_wolf.api.incident.merge` (POST `source`, `target`), which checks
+again.
+
+### `frappe_wolf.api.incident_view.split_preview`
+
+`incident`, and optionally `events` (a JSON list of Wolf Event names); Wolf Managers only.
+Nothing is written.
+
+- `events`: the linked events, oldest first, at most 500 (`more_events`).
+- `preview`, for a selection:
+  - `error`: the split's own refusal (nothing ticked, an event not linked, all of them ticked)
+    or null;
+  - `moved` and `kept`;
+  - `new_incident`: title, severity, start and status. It is Open, or Resolved when the source
+    is. It has no alert rule, so nothing resolves it by itself.
+
+The split itself is `frappe_wolf.api.incident.split` (POST `incident`, `events`, `title`).
+The postmortem is created by `frappe_wolf.api.incident.create_postmortem` and edited in Desk.
 
 ## Dashboards
 

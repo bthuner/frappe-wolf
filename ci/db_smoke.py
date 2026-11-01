@@ -700,7 +700,17 @@ def main():
 		return f"{a}, {b}: assigned, acknowledged, {len(activity)} activity entries"
 
 	def merge_split():
+		from frappe_wolf.api import incident_view as view
+
 		a, b, e = wf["a"], wf["b"], wf["events"]
+		# the Wolf UI's dry runs: what would move, before anything does
+		pre = view.merge_preview(a, b)
+		assert a not in {c["name"] for c in pre["candidates"]}, "an incident offered as its own destination"
+		p = pre["preview"]
+		assert not p["error"] and p["source_after"] == {"status": "Resolved", "merged_into": b}, p
+		assert p["events"] == frappe.db.count("Wolf Event", {"incident": a}), p
+		assert frappe.db.get_value("Wolf Incident", a, "status") != "Resolved", "the preview wrote"
+		assert view.merge_preview(a, a)["preview"]["error"], "merging into itself not refused"
 		res = inc_api.merge(a, b)
 		src = frappe.db.get_value("Wolf Incident", a, ["status", "merged_into"], as_dict=True)
 		assert (src.status, src.merged_into) == ("Resolved", b), src
@@ -713,6 +723,12 @@ def main():
 			raise AssertionError("merged twice")
 		except frappe.ValidationError:
 			frappe.clear_messages()
+		sp = view.split_preview(b, json.dumps([e[0], e[1]]))
+		assert sp["preview"]["moved"] == 2 and not sp["preview"]["error"], sp["preview"]
+		assert sp["preview"]["kept"] == len(sp["events"]) - 2, sp["preview"]
+		every = view.split_preview(b, json.dumps([x["name"] for x in sp["events"]]))["preview"]
+		assert every["error"], "a split that empties the incident was not refused"
+		assert view.get_incident(b)["can"]["split"], "split not offered on an incident with several events"
 		c = inc_api.split(b, json.dumps([e[0], e[1]]), "smoke split")
 		new = frappe.db.get_value("Wolf Incident", c, ["split_from", "alert_rule", "severity", "event_count"], as_dict=True)
 		assert (new.split_from, new.alert_rule, new.severity, new.event_count) == (b, None, "critical", 2), new

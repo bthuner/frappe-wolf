@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
-import { fixtures, mockApi } from './api.js'
+import { fixtures, INCIDENT, mockApi } from './api.js'
 
 // Every view of the Wolf UI, in a real browser on the production build: it renders, no console
 // error, no API call the page was not given, and no serious or critical WCAG 2 A/AA finding in
@@ -171,4 +171,39 @@ test('focus: a new page focuses its title; a filter or the first load does not',
   await page.goBack() // the filter replaced the URL: one step back is the overview
   await expect(page).toHaveURL(/\/wolf\/$/)
   await expect.poll(() => focused(page)).toMatch(/^h1:/)
+})
+
+test('merge: the dialog says what moves, passes axe, gives focus back, and merges on confirmation', async ({ page }) => {
+  const card = (name) => ({ name, title: `incident ${name}`, status: 'Open', severity: 'warning',
+    scope: { site: 'a.example.com', bench: 'frappe-bench', host: 'bench-01' }, started_at: INCIDENT.started_at }) // prettier-ignore
+  const calls = await mockApi(page, {
+    'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, can: { ...INCIDENT.can, merge: true, split: true } }),
+    'frappe_wolf.api.incident_view.merge_preview': (args) => ({
+      source: card('WINC-00001'), candidates: [card('WINC-00002')], more_candidates: false,
+      preview: args.target ? { error: null, target: card('WINC-00002'), events: 2, comments: 1,
+        target_after: { severity: 'critical', started_at: INCIDENT.started_at, status: 'Open' },
+        source_after: { status: 'Resolved', merged_into: 'WINC-00002' } } : null,
+    }), // prettier-ignore
+    'frappe_wolf.api.incident.merge': () => ({ target: 'WINC-00002', events: 2, comments: 1 }),
+  })
+  await page.goto('/wolf/incidents/WINC-00001')
+  const trigger = page.getByRole('button', { name: 'Merge…' })
+  await trigger.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('combobox').selectOption('WINC-00002')
+  await expect(dialog.getByText('Moves 2 events and 1 comment from WINC-00001 to WINC-00002')).toBeVisible()
+  expect(await axe(page), 'serious or critical accessibility findings with the dialog open').toEqual([])
+  // cancelling changes nothing and hands the focus back to the button that opened it
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  expect(calls.filter((c) => c.method === 'frappe_wolf.api.incident.merge')).toEqual([])
+  await trigger.click()
+  await page.getByRole('dialog').getByRole('combobox').selectOption('WINC-00002')
+  await page.getByRole('button', { name: 'Merge into WINC-00002' }).click()
+  await expect(page).toHaveURL(/\/wolf\/incidents\/WINC-00002$/)
+  expect(calls.filter((c) => c.method === 'frappe_wolf.api.incident.merge').map((c) => c.args)).toEqual([
+    { source: 'WINC-00001', target: 'WINC-00002' },
+  ])
 })

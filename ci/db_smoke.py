@@ -1240,6 +1240,9 @@ def main():
 			frappe.publish_realtime = original
 			frappe.flags.wolf_live_sent = None
 			if inc:
+				# Frappe keeps the comments of a deleted doc and gives its name back to the series:
+				# the next incident would inherit them
+				frappe.db.delete("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name})
 				frappe.delete_doc("Wolf Incident", inc.name, force=True, ignore_permissions=True)
 		return "doc and DocType rooms, one message per room and request, held list message flushed"
 
@@ -1369,7 +1372,7 @@ def main():
 		assert all(frappe.db.get_value("Wolf Event", n, "incident") == inc.name for n in first)
 		assert compliance_api.check_deadlines() == [], "one reminder per obligation and stage"
 		comments = frappe.db.count("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc.name,
-		                                       "comment_type": "Comment"})  # fmt: skip
+		                                       "comment_type": "Comment", "creation": (">=", inc.creation)})  # fmt: skip
 		assert comments == 2, comments
 		view = incident_view.get_incident(inc.name)["regulatory"]
 		assert view["nis2"] and view["gdpr"] and len(view["deadlines"]) == 4, view

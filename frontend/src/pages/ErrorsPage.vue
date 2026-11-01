@@ -23,6 +23,7 @@ const live = useLive(hub, {
     await list.load()
     return true
   },
+  polls: false, // a poll would only reshuffle the list: the reader refreshes
 })
 </script>
 
@@ -31,7 +32,7 @@ const live = useLive(hub, {
     <PageHeaderTitle title="Errors" />
     <div class="flex items-center gap-2">
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" pending-label="New events recorded" />
-      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="list.loading.value" @click="list.load()" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="list.loading.value" @click="live.apply()" />
     </div>
   </PageHeader>
   <div class="mx-auto max-w-6xl space-y-3 p-5">

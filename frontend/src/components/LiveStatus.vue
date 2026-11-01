@@ -14,9 +14,13 @@ const label = computed(() => {
   if (l.paused.value) return 'Paused'
   if (l.state.value === 'live') return 'Live'
   if (l.state.value === 'connecting') return 'Connecting…'
-  if (l.state.value === 'polling') return `Checks every ${props.pollSeconds} s`
+  if (l.state.value === 'polling') return l.polls ? `Checks every ${props.pollSeconds} s` : 'Not live: refresh by hand'
   return 'Refresh by hand'
 })
+// a known change, or one that may have been missed while the socket was away
+const pendingText = computed(() =>
+  props.live.pendingReason?.value === 'reconnect' ? 'Reconnected, changes may have been missed' : props.pendingLabel,
+)
 </script>
 
 <template>
@@ -30,6 +34,6 @@ const label = computed(() => {
       :aria-pressed="live.paused.value"
       @click="live.toggle()"
     />
-    <Button v-if="live.pending.value" size="sm" variant="subtle" :label="`${pendingLabel} · Refresh`" @click="live.apply()" />
+    <Button v-if="live.pending.value" size="sm" variant="subtle" :label="`${pendingText} · Refresh`" @click="live.apply()" />
   </div>
 </template>

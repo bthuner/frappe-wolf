@@ -10,10 +10,12 @@ the APIs, which apply the permissions once more:
   permission on the DocType). Message `{"kind": "incidents"}` or `{"kind": "events"}`: no
   names, so a restricted reader only learns that something changed somewhere.
 
-Each room gets at most one message per request or job, sent after commit. List messages are
-also throttled to one per `THROTTLE_SECONDS` per kind across requests (ingest can attach
-hundreds of events a minute); one held back by the throttle marks its kind dirty, and
-`flush()` (every minute) sends it, so a change is never lost, only delayed.
+Each room gets at most one message per transaction, sent after commit. The bookkeeping is
+cleared on commit and on rollback, so a job that commits many times (the rule engine, ingest
+retries) announces each transaction, and a rolled-back one announces nothing. List messages
+are also throttled to one per `THROTTLE_SECONDS` per kind across requests (ingest can attach
+hundreds of events a minute); one held back by the throttle marks its kind dirty after commit,
+and `flush()` (every minute) sends it, so a committed change is never lost, only delayed.
 """
 
 import frappe
@@ -42,10 +44,23 @@ def doctype_room(doctype):
 	return helper(doctype) if helper else f"doctype:{doctype}"
 
 
+def _reset():
+	frappe.flags.wolf_live_sent = None
+	frappe.flags.wolf_live_kinds = None
+
+
+def _state():
+	"""(rooms announced, list kinds handled) in this transaction; cleared on commit and rollback."""
+	if frappe.flags.wolf_live_sent is None:
+		frappe.flags.wolf_live_sent = set()
+		frappe.flags.wolf_live_kinds = set()
+		frappe.db.after_commit.add(_reset)
+		frappe.db.after_rollback.add(_reset)
+	return frappe.flags.wolf_live_sent, frappe.flags.wolf_live_kinds
+
+
 def _publish(message, room):
-	sent = frappe.flags.wolf_live_sent
-	if sent is None:
-		sent = frappe.flags.wolf_live_sent = set()
+	sent, _ = _state()
 	if room in sent:
 		return False
 	sent.add(room)
@@ -67,16 +82,18 @@ def incident_changed(name):
 
 def list_changed(kind):
 	"""Something in a list (incidents, events) changed: throttled, never dropped."""
-	doctype = LIST_DOCTYPES[kind]
-	room = doctype_room(doctype)
-	if room in (frappe.flags.wolf_live_sent or ()):
-		return
+	_, kinds = _state()
+	if kind in kinds:
+		return  # already announced, or already held back, in this transaction: no Redis round trip
+	kinds.add(kind)
 	cache = frappe.cache()
 	if cache.get_value(_THROTTLE_KEY + kind):
-		cache.set_value(_DIRTY_KEY + kind, 1)
+		# held back: mark it once the change is committed, so flush() never announces
+		# something browsers cannot read yet (and a rollback marks nothing)
+		frappe.db.after_commit.add(lambda: cache.set_value(_DIRTY_KEY + kind, 1))
 		return
 	cache.set_value(_THROTTLE_KEY + kind, 1, expires_in_sec=THROTTLE_SECONDS)
-	_publish({"kind": kind}, room)
+	_publish({"kind": kind}, doctype_room(LIST_DOCTYPES[kind]))
 
 
 def flush():

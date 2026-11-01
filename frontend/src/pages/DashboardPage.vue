@@ -94,6 +94,9 @@ const live = useLive(hub, {
     return true
   },
   pollAlways: true,
+  // messages carry no scope: an unrelated host's events would reload every panel; at most one
+  // reload per 10 s per tab
+  debounceMs: 10000,
 })
 </script>
 
@@ -103,7 +106,7 @@ const live = useLive(hub, {
     <div class="flex items-center gap-2">
       <TabButtons v-model="range" :options="RANGES" />
       <LiveStatus :live="live" :poll-seconds="hub?.pollSeconds" />
-      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="load" />
+      <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="loading" @click="live.apply()" />
     </div>
   </PageHeader>
 

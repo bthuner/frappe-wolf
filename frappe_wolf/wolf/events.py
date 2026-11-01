@@ -72,6 +72,9 @@ def insert_event(data, agent=None, dedupe_minutes=None):
 				{"count": (existing.count or 1) + data.get("count", 1), "last_seen": data["timestamp"]},
 				update_modified=False,
 			)
+			from frappe_wolf.wolf import live
+
+			live.list_changed("events")  # a repeat bumps count / last seen: the lists show both
 			return existing.name
 
 	if data.get("event_type") == "security":

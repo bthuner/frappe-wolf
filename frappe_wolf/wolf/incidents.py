@@ -53,11 +53,13 @@ def latest_deployment(host=None, bench=None, site=None, minutes=30, before=None)
 	return rows[0] if rows else None
 
 
-def open_incident(rule, key, scope, summary, started_at=None):
+def open_incident(rule, key, scope, summary, started_at=None, newest_at=None):
 	"""Create, update or reopen the incident for (rule, key).
 
 	Returns (incident_name, kind) where kind is "fired", "reopened" or None when an
-	already-open incident was just updated (no notification needed).
+	already-open incident was just updated (no notification needed). Returns (None, None)
+	when `newest_at` (the newest matching record, event rules) is not newer than the
+	resolution of the just-resolved incident: whoever resolved it had already seen it.
 	"""
 	now = now_datetime()
 	name = find_open(rule.name, key)
@@ -72,12 +74,20 @@ def open_incident(rule, key, scope, summary, started_at=None):
 			live.incident_changed(target)
 			return target, None
 		name = find_recently_resolved(rule.name, key, rule.cooldown_minutes)
+		if name and newest_at:
+			resolved_at = frappe.db.get_value("Wolf Incident", name, "resolved_at")
+			if resolved_at and get_datetime(newest_at) <= get_datetime(resolved_at):
+				return None, None
 		if name:
 			kind = "reopened"
 			frappe.db.set_value("Wolf Incident", name, {"status": "Open", "resolved_at": None, "resolved_by": None})
 			from frappe_wolf.api import journal
 
 			journal.incident_set(name, {"status": "Open"}, "reopened by its rule")
+			# no Version records it: say it where the incident's activity is read
+			frappe.get_doc("Wolf Incident", name).add_comment(
+				"Info", f"Reopened by rule {rule.rule_name}: it matched again after the incident was resolved."
+			)
 
 	if name:
 		frappe.db.set_value("Wolf Incident", name, {"last_event_at": now, "summary": summary})

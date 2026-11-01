@@ -56,7 +56,7 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 | Group by | `host`, `bench`, `site`, `host_label` (for example per disk mount) or `none`: one incident per group |
 | Active from/to | only evaluate in this window. It may wrap midnight (`04:00 → 01:00`) |
 | Require recent deployment | only fire if a deployment hit the same bench/site/host recently |
-| Cooldown | re-fire into the just-resolved incident instead of opening a new one |
+| Cooldown | re-fire into the just-resolved incident instead of opening a new one. An event rule reopens it only for an event newer than the resolution; a metric rule, while its window still breaches |
 | Fire / resolve after evaluations | consecutive breached (or clear) one-minute evaluations before an incident opens (or auto-resolves). Default 1 |
 | Separate resolve threshold | hysteresis: e.g. fire above 90, resolve only once at or below 80 |
 | Channels | Email, Webhook, Raven, Slack, Mattermost, Matrix, ntfy, Gotify, SMS, PagerDuty (see [Channels](#channels)). Each channel can use an **hourly digest**: info/warning alerts are batched into one message per destination; critical alerts are always immediate |

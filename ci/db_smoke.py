@@ -126,6 +126,35 @@ def main():
 		assert linked == before, f"linked {linked}, expected {before} (not {after}, made after the start)"
 		return f"{name} linked the deployment before its start"
 
+	def reopen_after_resolve():
+		# resolved by someone who saw the events: those never reopen it, a newer one does, and says so
+		site = "smoke-reopen.localhost"
+
+		def failure(at):
+			return events.insert_event(schema.normalize_event(
+				{"type": "cron_failure", "category": "scheduled_job", "host": HOST, "bench": "b2", "site": site,
+				 "severity": "critical", "title": "smoke reopen cron"}, tz, at))  # fmt: skip
+
+		doc = rule("smoke reopen", signal_type="event", event_type="cron_failure", min_severity="warning", operator=">=",
+		           threshold=1, window_minutes=15, group_by="site", filter_site=site, cooldown_minutes=240)
+		failure(now_datetime() - timedelta(minutes=2))
+		fired = rules.evaluate(doc, now_datetime())["fired"]
+		assert len(fired) == 1, fired
+		inc = fired[0]
+		incidents.resolve(inc, "smoke: handled")
+		again = rules.evaluate(doc, now_datetime())
+		status = frappe.db.get_value("Wolf Incident", inc, "status")
+		assert not again["fired"] and status == "Resolved", f"reopened on the events it was resolved with: {again}, {status}"
+		failure(now_datetime() + timedelta(seconds=2))  # a new failure after the resolution
+		third = rules.evaluate(doc, now_datetime() + timedelta(seconds=3))
+		assert third["fired"] == [inc], f"not reopened by a new event: {third}"
+		note = frappe.db.get_value("Comment", {"reference_doctype": "Wolf Incident", "reference_name": inc,
+		                                       "comment_type": "Info"}, "content")  # fmt: skip
+		assert note and note.startswith("Reopened by rule smoke reopen"), note
+		frappe.db.set_value("Wolf Alert Rule", doc.name, "enabled", 0)
+		incidents.resolve(inc, "smoke: done")
+		return f"{inc}: same events kept it resolved; a newer one reopened it, with a note"
+
 	def skew():
 		future = schema.normalize_metric({"metric_name": "smoke_skew", "value": 99, "host": HOST}, tz,
 		                                 now + timedelta(hours=11))
@@ -1620,7 +1649,8 @@ def main():
 		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
 
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline),
-	                 ("deployment link", deployment_link), ("skew", skew),
+	                 ("deployment link", deployment_link),
+	                 ("reopen after resolve", reopen_after_resolve), ("skew", skew),
 	                 ("overview+charts", overview), ("presets+signal rules", presets_and_signal_rules),
 	                 ("email queue", email_queue_signals), ("backup failure+geoip", backup_failure_and_geoip),
 	                 ("scoped user", scoped_user), ("agent secrets", agent_secrets),

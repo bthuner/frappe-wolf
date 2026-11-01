@@ -180,9 +180,18 @@ def _before(doc):
 	return before.as_dict() if before else None
 
 
+def on_user_before_save(doc, method=None):
+	"""Frappe masks Password fields (`*****`) after before_save, so a new API secret is only
+	visible here: note it for on_update, which records it once the save went through."""
+	try:
+		doc.flags.wolf_new_api_secret = app_security.new_api_secret(doc.get("api_secret"))
+	except Exception:
+		frappe.logger("frappe_wolf").exception("could not inspect the API secret")
+
+
 def check_api_key(doc, settings):
 	"""`api_key_generated`: a User save wrote a new API secret (generate keys, or by hand)."""
-	if not _app_security(settings) or not app_security.new_api_secret(doc.get("api_secret")):
+	if not _app_security(settings) or not doc.flags.get("wolf_new_api_secret"):
 		return
 	privileged = is_privileged(doc.name, settings)
 	events.emit(

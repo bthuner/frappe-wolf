@@ -7,8 +7,9 @@ The handlers in local_signals.py feed documents in; this module decides what is 
 - `script_change(before, after, fields)`: whether a Server/Client Script change can run new code
   (created, enabled, or its code, type or trigger changed); a description edit is not one.
 - `url_domain(url)`: the host a Webhook sends documents to.
-- `new_api_secret(value)`: a User save that wrote a new API secret (Desk shows saved Password
-  fields as asterisks, so an unchanged one never looks new).
+- `new_api_secret(value)`: a User save that writes a new API secret (Desk shows saved Password
+  fields as asterisks, so an unchanged one never looks new). Read it in before_save: Frappe
+  masks Password fields right after, so on_update only ever sees asterisks.
 """
 
 from urllib.parse import urlsplit

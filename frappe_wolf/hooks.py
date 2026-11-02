@@ -125,5 +125,6 @@ scheduler_events = {
 		],
 		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data", "frappe_wolf.api.journal.purge_journal"],
 		"41 4 * * *": ["frappe_wolf.api.threat.refresh_reputation"],
+		"47 4 * * *": ["frappe_wolf.api.advisories.refresh_advisories"],
 	},
 }

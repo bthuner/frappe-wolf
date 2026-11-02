@@ -50,6 +50,7 @@
   "threat_section",
   "ip_reputation_enabled",
   "ip_reputation_sources",
+  "check_security_advisories",
   "cb_threat",
   "honeytoken_users",
   "honeytoken_api_keys",
@@ -379,6 +380,13 @@
    "label": "IP reputation lists"
   },
   {
+   "default": "1",
+   "description": "Download the Frappe and ERPNext security advisories from GitHub once a day and compare them with the versions the agents report (Security posture). An unauthenticated read of public data: nothing about this installation is sent.",
+   "fieldname": "check_security_advisories",
+   "fieldtype": "Check",
+   "label": "Check versions against GitHub Security Advisories"
+  },
+  {
    "fieldname": "cb_threat",
    "fieldtype": "Column Break"
   },
@@ -548,7 +556,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 20:00:00.000000",
+ "modified": "2026-11-02 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

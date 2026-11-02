@@ -11,9 +11,15 @@ Facts come from two places (api/security.py gathers them):
 - the agent's latest samples for any site: `site_config_risks`, `exposed_services` on the
   hosts serving it, `backup_age_hours`, `tls_days_left` and `hsts_max_age_days`.
 
+The versions of Frappe and ERPNext come from the agent's `app_version` samples for the site's
+benches (and, on the Wolf site, from its own packages); the advisories from GitHub
+(wolf/advisories.py, api/advisories.py).
+
 SPF and DMARC are read from DNS by the site itself, for the domains its outgoing Email
 Accounts send from (api/security.py); other sites' mail domains are unknown to Wolf.
 """
+
+from frappe_wolf.wolf import advisories
 
 PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
 MIN_PASSWORD_SCORE = 3
@@ -44,6 +50,8 @@ CHECKS = [
 	 "Publish one TXT record `v=spf1 <your senders> -all` on the domain the site sends email from."),
 	("dmarc", "DMARC policy quarantine or reject", 1,
 	 "Publish `v=DMARC1; p=quarantine; rua=mailto:...` at _dmarc.<domain> (after a while at p=none to check reports)."),
+	("advisories", "No published security advisory applies to Frappe or ERPNext", 3,
+	 "Update the bench (bench update) to the version the evidence names, or a later one of the same line."),
 ]  # fmt: skip
 
 
@@ -192,6 +200,37 @@ def check_dmarc(per_domain):
 	return _mail_check("dmarc", per_domain)
 
 
+def check_advisories(versions, sources):
+	"""`versions`: {app: {(major, minor, patch)}} for the apps advisories cover.
+	`sources`: None when the check is off, else {app: {"advisories": [...] or None, "why": str}}
+	("why" says why there is no usable list: never fetched, failing, too old)."""
+	if sources is None:
+		return _row("advisories", UNKNOWN, "the advisory check is off in Wolf Settings")
+	versions = {app: v for app, v in (versions or {}).items() if v}
+	if not versions:
+		return _row("advisories", UNKNOWN, "no app_version sample from an agent on this site's benches")
+	affected, unknown, clear = [], [], []
+	for app in sorted(versions):
+		source = sources.get(app) or {}
+		for version in sorted(versions[app]):
+			if source.get("advisories") is None:
+				unknown.append(f"{app} {advisories.fmt(version)}: {source.get('why') or 'advisories not fetched yet'}")
+				continue
+			result = advisories.assess(app, version, source["advisories"])
+			if result["status"] == "affected":
+				ids = ", ".join(a["id"] for a in result["found"][:3] if a.get("id"))
+				affected.append(f"{advisories.summary(result)}" + (f" ({ids}{', ...' if len(result['found']) > 3 else ''})" if ids else ""))
+			elif result["status"] == "unknown":
+				unknown.append(result["why"])
+			else:
+				clear.append(f"{app} {result['version']}")
+	if affected:
+		return _row("advisories", FAIL, "; ".join(affected + unknown))
+	if unknown:
+		return _row("advisories", UNKNOWN, "; ".join(unknown + [f"{c}: no advisory applies" for c in clear]))
+	return _row("advisories", PASS, f"{', '.join(clear)}: no published advisory applies")
+
+
 def score(rows):
 	"""`{score, coverage, passed, failed, unknown}`: score and coverage in 0..100."""
 	total = sum(r["weight"] for r in rows) or 1
@@ -215,4 +254,5 @@ def evaluate(facts):
 	rows.append(check_hsts(facts.get("hsts_max_age_days")))
 	rows.append(check_spf(facts.get("spf")))
 	rows.append(check_dmarc(facts.get("dmarc")))
+	rows.append(check_advisories(facts.get("app_versions"), facts.get("advisories")))
 	return {"checks": rows, **score(rows)}

@@ -96,6 +96,9 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   never had a backup sends nothing, so "No backup for 26 h" cannot fire for it. Press benches are
   skipped (`backups.press`), since Press uploads backups offsite and its local copies are not a
   reliable signal. Offsite-only setups can point `backups.dirs` at a mounted directory per site.
+- **App versions** (every `versions.interval`, 1 h): `app_version` per bench and app, from the
+  `__version__` in `apps/<app>/<app>/__init__.py`, which the Wolf site compares with the GitHub
+  Security Advisories of Frappe and ERPNext. Development versions are not sent.
 - **Exposure** (every `exposure.interval`, 10 min): `exposed_services` per host counts bench
   ports listening on all interfaces or a public address in `/proc/net/tcp{,6}` (MariaDB 3306,
   Postgres 5432, Redis 6379/11000/12000/13000 or the bench's own `redis_*` ports, socket.io 9000,
@@ -162,6 +165,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "mariadb": {"enabled": true, "cli": null, "host": null, "port": null, "user": null,
               "password": null, "defaults_file": null},
   "processes": {"enabled": true, "manager": "auto"},
+  "versions": {"enabled": true, "interval": 3600},
   "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
@@ -177,7 +181,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
-`rq`, `backups`, `tls`, `mariadb`, `processes`: every key is optional (defaults above), and
+`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`: every key is optional (defaults above), and
 `"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
 `supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
 

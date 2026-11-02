@@ -52,6 +52,8 @@ _SPEC = [
 	("exposed_services", "security", "Bench services listening beyond loopback", "gauge", "services", "host", 600),
 	("site_config_risks", "security", "Risky site_config settings", "gauge", "settings", "site", 600),
 	("security_score", "security", "Security score", "gauge", "/ 100", "site", 3600),
+	# major * 1e6 + minor * 1e3 + patch: a step on the chart is an upgrade
+	("app_version", "security", "App version", "gauge", "version", "bench", 3600),
 ]
 CATALOG = {
 	m: {"metric": m, "group": g, "label": label, "kind": kind, "unit": unit, "level": level, "cadence_seconds": cadence}
@@ -63,6 +65,7 @@ GROUPS = ("workers", "processes", "redis", "database", "backups", "tls", "securi
 CAVEATS = {
 	"backup_age_hours": "Age of the newest backup file; it does not prove the backup restores.",
 	"tls_days_left": "Days until the certificate served on port 443 expires; not a full validity check.",
+	"app_version": "Version of each app in the bench (apps/<app>/<app>/__init__.py) as major * 1e6 + minor * 1e3 + patch: 15100000 is 15.100.0; development versions are not sent.",
 	"hsts_max_age_days": "Strict-Transport-Security max-age of the first response to HEAD / (0: no header); redirects are not followed.",
 	"exposed_services": "A listening socket, not proof of reachability: a firewall may still block it.",
 	"security_score": "Share of the checks Wolf could prove passed; a check it cannot read counts as not passed.",
@@ -128,7 +131,7 @@ LABELS = {
 	"rq_failed_jobs_added": "queue", "rq_long_running_jobs": "queue", "tls_days_left": "domain", "hsts_max_age_days": "domain",
 	"bench_processes_down": "manager", "redis_used_memory_percent": "of",
 	"db_connections_used_percent": "db", "db_threads_connected": "db", "db_slow_queries": "db", "db_replication_running": "db",
-	"db_replication_lag_seconds": "db",
+	"db_replication_lag_seconds": "db", "app_version": "app",
 }  # fmt: skip
 
 # what a bucket may say about each kind. A gauge is a level: its average, extremes or last value

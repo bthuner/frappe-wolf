@@ -9,3 +9,4 @@ frappe_wolf.patches.default_max_pushes_per_minute
 frappe_wolf.patches.default_storage_settings
 frappe_wolf.patches.event_last_seen
 frappe_wolf.patches.default_app_security_setting
+frappe_wolf.patches.default_advisory_check

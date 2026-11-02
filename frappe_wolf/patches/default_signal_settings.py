@@ -14,6 +14,7 @@ DEFAULTS = {
 	"siem_event_types": "security",
 	"siem_journal": 1,
 	"siem_verify_tls": 1,
+	"check_security_advisories": 1,
 }
 
 

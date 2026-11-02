@@ -215,6 +215,7 @@ what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
 | HSTS for 180 days or more, on every domain | 1 | the agent's `hsts_max_age_days` |
 | SPF for the mail domain, ending in `-all` or `~all` | 1 | DNS, for the domains of the outgoing Email Accounts (Wolf site only) |
 | DMARC policy `quarantine` or `reject` | 1 | DNS, `_dmarc.<domain>`, then its parents' `sp=` / `p=` (Wolf site only) |
+| No published security advisory applies to Frappe or ERPNext | 3 | the agent's `app_version` for the site's benches (and the Wolf site's own packages), against GitHub Security Advisories |
 
 - A check Wolf cannot read is **unknown** and counts as not passed; `coverage` says how much of
   the weight Wolf could read. Agent samples older than 3 h are not used.
@@ -232,10 +233,25 @@ what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
   - DMARC: `p=quarantine` or `p=reject`. A subdomain without a record follows its parent's
     `sp=` (else `p=`), as receivers do. `p=none` fails: it only collects reports. The parents
     are tried label by label, without the public suffix list.
+- **Security advisories** (`wolf/advisories.py`, `api/advisories.py`): the Wolf site reads the
+  published advisories of `frappe/frappe` and `frappe/erpnext` from the GitHub API once a day
+  (unauthenticated: nothing about the installation is sent), and at once from the hourly score
+  job when it has no copy yet. A repository that fails keeps its last copy; a copy older than
+  7 days is not used. The agent sends `app_version` per bench and app (hourly), read from
+  `apps/<app>/<app>/__init__.py`; development versions are not sent. Wolf Settings → Check
+  versions against GitHub Security Advisories turns it off (the check is then unknown).
+  - The ranges are typed by hand (`<16.21.0`, `< v15.120.0`, `<= v16.18.2`,
+    `>= 15.0.0, < 15.123.0`, `tbd`). An upper bound alone covers its own major line only, so a
+    15.x is not caught by `<16.21.0`; a version at or past the patched one is never affected;
+    `tbd` ranges are skipped.
+  - Any advisory that applies fails the check; the evidence counts them by severity and names
+    the version that fixes them all on that line. A major line that no advisory of the last
+    year names (Dodock, numbered differently, or a line out of support such as 13.x) is
+    unknown, never safe.
 - The score is stored hourly as `security_score`. Three presets: Security score low (< 60),
   Bench service exposed, Development settings in production.
 
-Not built yet: Frappe/ERPNext versions against GitHub Security Advisories, SPF/DMARC of other
+Not built yet: advisories of other apps (HRMS, Dokos' own), SPF/DMARC of other
 sites' mail domains, and the System Settings checks of sites other than the Wolf site (they
 need Wolf installed there; satellites forward events, not settings). A listening socket is not
 proof of reachability: a firewall may block it.

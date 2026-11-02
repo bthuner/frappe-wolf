@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import database, pilot, press, tls_expiry
+from . import app_versions, database, pilot, press, tls_expiry
 from .backups import backup_metrics
 from .config import pilot_settings, press_settings, resolve_auth_log, section
 from .discovery import discover_benches, read_bench_toml, resolve_platform
@@ -253,7 +253,7 @@ class Collector:
 
 
 class InfraChecks:
-	"""Redis/RQ, backups, TLS expiry, MariaDB, process states and exposure, each on its own interval.
+	"""Redis/RQ, backups, TLS expiry, MariaDB, process states, exposure and app versions, each on its own interval.
 
 	Redis, MariaDB and process states run every cycle. Backups run every
 	`backups.interval` seconds. TLS handshakes can take seconds per domain, so they run
@@ -271,6 +271,7 @@ class InfraChecks:
 		self.mariadb = section(cfg, "mariadb")
 		self.processes = section(cfg, "processes")
 		self.exposure = section(cfg, "exposure")
+		self.versions = section(cfg, "versions")
 		self.exposure_watcher = (
 			ExposureWatcher(host, self.exposure.get("ports")) if self.exposure.get("enabled", True) else None
 		)
@@ -295,6 +296,7 @@ class InfraChecks:
 		for name, fn in (
 			("redis", self._redis), ("backups", self._backups), ("tls", self._tls),
 			("mariadb", self._mariadb), ("processes", self._processes), ("exposure", self._exposure),
+			("versions", self._versions),
 		):
 			try:
 				m, e = fn(benches, now)
@@ -382,6 +384,11 @@ class InfraChecks:
 		if not self.exposure_watcher or not self._due("exposure", self.exposure.get("interval")):
 			return [], []
 		return self.exposure_watcher.collect(benches, now)
+
+	def _versions(self, benches, now):
+		if not self.versions.get("enabled", True) or not self._due("versions", self.versions.get("interval")):
+			return [], []
+		return app_versions.version_metrics(benches, self.host, now), []
 
 
 def _signature(benches):

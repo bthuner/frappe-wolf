@@ -298,7 +298,7 @@ Not built yet: advisories of other apps (HRMS, Dokos' own) and SPF/DMARC of othe
 domains. A listening socket is not
 proof of reachability: a firewall may block it.
 
-### Step 4: deception and threat intelligence (built, except CrowdSec)
+### Step 4: deception and threat intelligence (built)
 
 Wolf Settings → **Threat intelligence and deception** (`frappe_wolf/api/threat.py`,
 `wolf/reputation.py`):
@@ -317,7 +317,33 @@ Wolf Settings → **Threat intelligence and deception** (`frappe_wolf/api/threat
   list gets `reputation: {listed, lists}` and one severity step more. Lookups never leave the
   site; a list that fails to download keeps its last copy. Check its terms of use before
   enabling a list.
-- Not built: **CrowdSec** (sending Wolf's detections and reading its decisions back).
+- **CrowdSec** (optional, off by default; Wolf Settings → CrowdSec, `wolf/crowdsec.py`,
+  `api/crowdsec.py`). The Wolf site talks to a CrowdSec Local API every minute (central site
+  only).
+  - **Decisions in** (bouncer key from `cscli bouncers add`): the whole list on the first run
+    and every hour, the changes in between, into `private/wolf/crowdsec_decisions.json`. This
+    covers CrowdSec's own detections, `cscli` bans, and the community blocklist when the LAPI
+    is enrolled. A security event whose IP (or range) is under a decision gets
+    `payload.crowdsec` (type, origin, scenario, until) and one severity step more. Wolf's own
+    blocks get the tag but no raise.
+  - **Detections out** (machine login from `cscli machines add`): security events with an IP,
+    at or above the minimum severity (warning), become LAPI alerts with the scenario
+    `frappe-wolf/<category>`, sent once after a minute through a cursor, like the SIEM
+    export. Past events are not replayed.
+    - By default they carry `remediation: false`: CrowdSec records them (`cscli alerts list`)
+      and decides nothing.
+    - *Let CrowdSec decide on detections* turns remediation on. CrowdSec's profiles then
+      decide, and the default profile bans the IP for 4 h, with no human approval: that is
+      CrowdSec's choice, not Wolf's.
+  - **Approved blocks out**: when a Wolf Manager approves a `block_ip`, the same block goes to
+    the LAPI as a `ban` decision for the approved duration (origin `frappe-wolf`), so every
+    bouncer of that LAPI applies it (firewall, nginx, Cloudflare). The Wolf agent still applies
+    its own block when its responder is on, and the incident comment says what was sent.
+  - The LAPI refuses a login whose User-Agent is not `name/version`. Wolf sends
+    `frappe-wolf/<version>`.
+  - Tried against CrowdSec 1.6.4: a `cscli` ban tagged and raised a Wolf event, Wolf's
+    detections appeared as alerts without a decision, and an approved block became a 6 h
+    `frappe-wolf` ban.
 
 ### Step 5: human-validated response (built)
 

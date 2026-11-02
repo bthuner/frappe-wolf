@@ -55,6 +55,17 @@
   "honeytoken_users",
   "honeytoken_api_keys",
   "honeytoken_paths",
+  "crowdsec_section",
+  "crowdsec_enabled",
+  "crowdsec_url",
+  "crowdsec_bouncer_key",
+  "crowdsec_machine_id",
+  "crowdsec_password",
+  "cb_crowdsec",
+  "crowdsec_send_detections",
+  "crowdsec_min_severity",
+  "crowdsec_detection_remediation",
+  "crowdsec_apply_blocks",
   "siem_section",
   "siem_enabled",
   "siem_host",
@@ -413,6 +424,82 @@
   },
   {
    "collapsible": 1,
+   "fieldname": "crowdsec_section",
+   "fieldtype": "Section Break",
+   "label": "CrowdSec",
+   "description": "Read the decisions of a CrowdSec Local API, send it Wolf's detections and the blocks a Wolf Manager approved. See docs/cyber.md (step 4)."
+  },
+  {
+   "default": "0",
+   "fieldname": "crowdsec_enabled",
+   "fieldtype": "Check",
+   "label": "Use CrowdSec"
+  },
+  {
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "description": "The Local API, e.g. http://127.0.0.1:8080.",
+   "fieldname": "crowdsec_url",
+   "fieldtype": "Data",
+   "label": "Local API URL"
+  },
+  {
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "description": "From `cscli bouncers add frappe-wolf`: lets Wolf read the decisions. Security events whose IP is under one are tagged and raised one severity step.",
+   "fieldname": "crowdsec_bouncer_key",
+   "fieldtype": "Password",
+   "label": "Bouncer API key"
+  },
+  {
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "description": "From `cscli machines add frappe-wolf --password ...`: lets Wolf send alerts and decisions.",
+   "fieldname": "crowdsec_machine_id",
+   "fieldtype": "Data",
+   "label": "Machine ID"
+  },
+  {
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "fieldname": "crowdsec_password",
+   "fieldtype": "Password",
+   "label": "Machine password"
+  },
+  {
+   "fieldname": "cb_crowdsec",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "description": "Security events with an IP, as CrowdSec alerts (scenario frappe-wolf/<category>). Past events are not replayed.",
+   "fieldname": "crowdsec_send_detections",
+   "fieldtype": "Check",
+   "label": "Send detections"
+  },
+  {
+   "default": "warning",
+   "depends_on": "eval:doc.crowdsec_enabled && doc.crowdsec_send_detections",
+   "fieldname": "crowdsec_min_severity",
+   "fieldtype": "Select",
+   "label": "Minimum severity sent",
+   "options": "info\nwarning\ncritical"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.crowdsec_enabled && doc.crowdsec_send_detections",
+   "description": "Off: CrowdSec records Wolf's alerts and decides nothing. On: its profiles decide, and the default profile bans the IP for 4 h, without a human approving it.",
+   "fieldname": "crowdsec_detection_remediation",
+   "fieldtype": "Check",
+   "label": "Let CrowdSec decide on detections"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.crowdsec_enabled",
+   "description": "A block a Wolf Manager approves also goes to CrowdSec as a ban for the approved duration, so every bouncer applies it.",
+   "fieldname": "crowdsec_apply_blocks",
+   "fieldtype": "Check",
+   "label": "Apply approved blocks"
+  },
+  {
+   "collapsible": 1,
    "fieldname": "siem_section",
    "fieldtype": "Section Break",
    "label": "SIEM export (syslog)",
@@ -584,7 +671,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 23:00:00.000000",
+ "modified": "2026-11-02 23:45:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

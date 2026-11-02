@@ -9,7 +9,10 @@ much of the weight Wolf could read at all.
 Facts come from two places (api/security.py gathers them):
 - the site Wolf runs on: its System Settings, roles and site config;
 - the agent's latest samples for any site: `site_config_risks`, `exposed_services` on the
-  hosts serving it, `backup_age_hours` and `tls_days_left`.
+  hosts serving it, `backup_age_hours`, `tls_days_left` and `hsts_max_age_days`.
+
+SPF and DMARC are read from DNS by the site itself, for the domains its outgoing Email
+Accounts send from (api/security.py); other sites' mail domains are unknown to Wolf.
 """
 
 PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
@@ -17,6 +20,8 @@ MIN_PASSWORD_SCORE = 3
 MAX_LOGIN_ATTEMPTS = 10
 MAX_BACKUP_HOURS = 26
 MIN_TLS_DAYS = 14
+MIN_HSTS_DAYS = 180  # browsers' preload list asks a year; six months is the usual floor
+STRICT_DMARC = ("quarantine", "reject")
 
 # id, label, weight, fix
 CHECKS = [
@@ -33,6 +38,12 @@ CHECKS = [
 	 "Bind MariaDB, Redis, socket.io and gunicorn to 127.0.0.1 (or a private address) and keep a firewall in front."),
 	("backup", f"A backup newer than {MAX_BACKUP_HOURS} h", 2, "Check the scheduler and the backup job (bench backup)."),
 	("tls", f"TLS certificates valid for {MIN_TLS_DAYS} days or more", 2, "Renew the certificate (bench setup lets-encrypt)."),
+	("hsts", f"HSTS for {MIN_HSTS_DAYS} days or more", 1,
+	 'Add `add_header Strict-Transport-Security "max-age=31536000" always;` to the site\'s HTTPS server block in nginx.'),
+	("spf", "SPF for the mail domain, ending in -all or ~all", 1,
+	 "Publish one TXT record `v=spf1 <your senders> -all` on the domain the site sends email from."),
+	("dmarc", "DMARC policy quarantine or reject", 1,
+	 "Publish `v=DMARC1; p=quarantine; rua=mailto:...` at _dmarc.<domain> (after a while at p=none to check reports)."),
 ]  # fmt: skip
 
 
@@ -116,6 +127,71 @@ def check_tls(days_left):
 	return _row("tls", FAIL, f"a certificate expires in {days_left:.0f} days")
 
 
+def check_hsts(per_domain):
+	"""`per_domain`: {domain: max-age in days} from the agent's latest samples (0: no header)."""
+	if not per_domain:
+		return _row("hsts", UNKNOWN, "no recent hsts_max_age_days sample (the agent reads it with the TLS check)")
+	short = {d: v for d, v in per_domain.items() if v < MIN_HSTS_DAYS}
+	if short:
+		return _row("hsts", FAIL, "; ".join(f"{d}: {'no header' if not v else f'{v:g} days'}" for d, v in sorted(short.items())))
+	return _row("hsts", PASS, f"{', '.join(sorted(per_domain))}: {min(per_domain.values()):g} days or more")
+
+
+def spf_verdict(records):
+	"""(ok, why) for a domain's TXT records."""
+	spf = [r.strip() for r in records if r.strip().lower().startswith("v=spf1")]
+	if not spf:
+		return False, "no SPF record"
+	if len(spf) > 1:
+		return False, f"{len(spf)} SPF records: receivers treat that as an error"
+	terms = spf[0].lower().split()[1:]
+	last = next((t for t in reversed(terms) if t.lstrip("+-~?") == "all"), None)
+	if last in ("-all", "~all"):
+		return True, f"ends in {last}"
+	if last is None:
+		redirect = next((t for t in terms if t.startswith("redirect=")), None)
+		if redirect:
+			return True, f"delegated with {redirect} (not followed)"
+		return False, "no all term: any other sender passes as neutral"
+	return False, f"ends in {last}: any sender is accepted" if last in ("all", "+all") else f"ends in {last}: neutral"
+
+
+def dmarc_verdict(records, subdomain=False):
+	"""(ok, why) for the TXT records of _dmarc.<domain>; `subdomain` reads sp= when present."""
+	dmarc = [r.strip() for r in records if r.strip().lower().startswith("v=dmarc1")]
+	if not dmarc:
+		return False, "no DMARC record"
+	if len(dmarc) > 1:
+		return False, f"{len(dmarc)} DMARC records: receivers ignore them all"
+	tags = dict((k.strip().lower(), v.strip().lower()) for k, _, v in (t.partition("=") for t in dmarc[0].split(";")) if k.strip())
+	policy = (tags.get("sp") if subdomain else None) or tags.get("p") or "none"
+	pct = tags.get("pct", "100")
+	if policy in STRICT_DMARC:
+		return True, f"p={policy}" + (f", applied to {pct}% of messages" if pct != "100" else "")
+	return False, f"p={policy}: reports only, spoofed mail is still delivered"
+
+
+def _mail_check(check_id, per_domain):
+	"""`per_domain`: {domain: (ok, why)} or {domain: None} when DNS could not tell."""
+	if not per_domain:
+		return _row(check_id, UNKNOWN, "no outgoing Email Account on this site, or another site's mail domain")
+	if any(v is None for v in per_domain.values()):
+		failed = ", ".join(sorted(d for d, v in per_domain.items() if v is None))
+		return _row(check_id, UNKNOWN, f"DNS did not answer for {failed}")
+	bad = {d: why for d, (ok, why) in per_domain.items() if not ok}
+	if bad:
+		return _row(check_id, FAIL, "; ".join(f"{d}: {why}" for d, why in sorted(bad.items())))
+	return _row(check_id, PASS, "; ".join(f"{d}: {why}" for d, (_, why) in sorted(per_domain.items())))
+
+
+def check_spf(per_domain):
+	return _mail_check("spf", per_domain)
+
+
+def check_dmarc(per_domain):
+	return _mail_check("dmarc", per_domain)
+
+
 def score(rows):
 	"""`{score, coverage, passed, failed, unknown}`: score and coverage in 0..100."""
 	total = sum(r["weight"] for r in rows) or 1
@@ -136,4 +212,7 @@ def evaluate(facts):
 	rows.append(check_exposure(facts.get("exposed_services")))
 	rows.append(check_backup(facts.get("backup_age_hours")))
 	rows.append(check_tls(facts.get("tls_days_left")))
+	rows.append(check_hsts(facts.get("hsts_max_age_days")))
+	rows.append(check_spf(facts.get("spf")))
+	rows.append(check_dmarc(facts.get("dmarc")))
 	return {"checks": rows, **score(rows)}

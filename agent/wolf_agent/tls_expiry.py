@@ -1,12 +1,18 @@
-"""Days until the TLS certificate of each site domain expires.
+"""Days until the TLS certificate of each site domain expires, and its HSTS max-age.
 
 The agent does a TLS handshake with SNI to `<domain>:443`, takes the leaf certificate as
 DER (verification is off on purpose, so an expired or self-signed certificate is still
 measured) and reads `notAfter` with a minimal DER walk of the X.509 structure.
+
+On the same connection it sends `HEAD /` and reads `Strict-Transport-Security` from the
+response headers (the first response: redirects are not followed). `hsts_max_age_days` is 0
+when the header is absent; when no HTTP response could be read, no sample is sent, so the
+site's HSTS check stays unknown rather than failed.
 """
 
 import ipaddress
 import logging
+import re
 import socket
 import ssl
 from concurrent.futures import ThreadPoolExecutor
@@ -79,16 +85,58 @@ def not_after(der):
 	return _parse_time(tag, der[s:e])
 
 
-def fetch_not_after(domain, port=443, timeout=5.0, connect_host=None):
+HEAD_LIMIT = 16384
+_MAX_AGE = re.compile(r"(?:^|;)\s*max-age\s*=\s*\"?(\d+)\"?\s*(?:;|$)", re.IGNORECASE)
+
+
+def parse_hsts(value):
+	"""max-age in seconds of a Strict-Transport-Security value, None if it has none."""
+	m = _MAX_AGE.search(value or "")
+	return int(m.group(1)) if m else None
+
+
+def response_header(raw, name):
+	"""A header of an HTTP response head (bytes), or None; raises ValueError if it is not one."""
+	head = raw.split(b"\r\n\r\n", 1)[0].decode("iso-8859-1")
+	lines = head.split("\r\n")
+	if not lines or not lines[0].startswith("HTTP/"):
+		raise ValueError("not an HTTP response")
+	for line in lines[1:]:
+		key, sep, value = line.partition(":")
+		if sep and key.strip().lower() == name.lower():
+			return value.strip()
+	return None
+
+
+def fetch_tls(domain, port=443, timeout=5.0, connect_host=None):
+	"""(notAfter, hsts) for a domain. hsts is {"read": bool, "header": str or None}: whether an
+	HTTP response came back on the connection, and its Strict-Transport-Security value."""
 	ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 	ctx.check_hostname = False
 	ctx.verify_mode = ssl.CERT_NONE
 	with socket.create_connection((connect_host or domain, port), timeout=timeout) as sock:
 		with ctx.wrap_socket(sock, server_hostname=domain) as tls:
 			der = tls.getpeercert(binary_form=True)
-	if not der:
-		raise DERError("no certificate")
-	return not_after(der)
+			if not der:
+				raise DERError("no certificate")
+			expiry = not_after(der)
+			hsts = {"read": False, "header": None}
+			try:
+				tls.sendall(f"HEAD / HTTP/1.1\r\nHost: {domain}\r\nUser-Agent: wolf-agent\r\nConnection: close\r\n\r\n".encode())
+				raw = b""
+				while b"\r\n\r\n" not in raw and len(raw) < HEAD_LIMIT:
+					chunk = tls.recv(4096)
+					if not chunk:
+						break
+					raw += chunk
+				hsts = {"read": True, "header": response_header(raw, "Strict-Transport-Security")}
+			except (OSError, ssl.SSLError, ValueError) as e:
+				log.info("HSTS check %s:%s skipped: %s", domain, port, e)
+	return expiry, hsts
+
+
+def fetch_not_after(domain, port=443, timeout=5.0, connect_host=None):
+	return fetch_tls(domain, port=port, timeout=timeout, connect_host=connect_host)[0]
 
 
 def is_public_name(domain):
@@ -127,24 +175,31 @@ def site_domains(benches, extra=(), exclude=()):
 	return {d: scope for d, scope in sorted(out.items()) if d not in excluded}
 
 
-def tls_metrics(domains, host, now=None, port=443, timeout=5.0, connect_host=None, workers=8, fetch=fetch_not_after):
-	"""`tls_days_left` per reachable domain (unreachable ones are logged and skipped)."""
+def tls_metrics(domains, host, now=None, port=443, timeout=5.0, connect_host=None, workers=8, fetch=fetch_tls):
+	"""`tls_days_left` and `hsts_max_age_days` per reachable domain (unreachable ones are logged
+	and skipped). `fetch` returns (notAfter, hsts) as fetch_tls does, or notAfter alone."""
 	now = now or datetime.now(timezone.utc)
 	ts = utc_iso(now)
 
 	def check(item):
 		domain, (bench, site) = item
 		try:
-			expiry = fetch(domain, port=port, timeout=timeout, connect_host=connect_host)
+			got = fetch(domain, port=port, timeout=timeout, connect_host=connect_host)
 		except (OSError, ssl.SSLError, ValueError) as e:
 			log.info("TLS check %s:%s skipped: %s", domain, port, e)
-			return None
+			return []
+		expiry, hsts = got if isinstance(got, tuple) else (got, None)
 		days = round((expiry - now).total_seconds() / 86400.0, 2)
-		return metric("tls_days_left", days, ts, host, bench=bench, site=site, labels={"domain": domain})
+		out = [metric("tls_days_left", days, ts, host, bench=bench, site=site, labels={"domain": domain})]
+		if hsts and hsts.get("read"):
+			age = parse_hsts(hsts.get("header")) or 0
+			out.append(metric("hsts_max_age_days", round(age / 86400.0, 2), ts, host, bench=bench, site=site,
+			                  labels={"domain": domain}))  # fmt: skip
+		return out
 
 	items = list(domains.items())
 	if not items:
 		return []
 	with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items)))) as pool:
 		results = list(pool.map(check, items))
-	return [m for m in results if m]
+	return [m for found in results for m in found]

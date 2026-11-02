@@ -31,6 +31,7 @@ TECHNIQUES = {
 	"T1552.004": ("Unsecured Credentials: Private Keys", "credential-access"),
 	"T1562.001": ("Impair Defenses: Disable or Modify Tools", "defense-evasion"),
 	"T1567": ("Exfiltration Over Web Service", "exfiltration"),
+	"T1030": ("Data Transfer Size Limits", "exfiltration"),
 	"T1595.002": ("Active Scanning: Vulnerability Scanning", "reconnaissance"),
 	"T1595.003": ("Active Scanning: Wordlist Scanning", "reconnaissance"),
 }
@@ -60,6 +61,7 @@ CATEGORIES = {
 	"security_settings_weakened": ["T1562.001"],
 	"api_key_generated": ["T1098.001"],
 	"webhook_external": ["T1567"],
+	"data_exfiltration": ["T1567", "T1030"],
 	# exposure (agent): weaknesses, mapped to what they open the door to
 	"service_exposed": ["T1190"],
 	"insecure_site_config": ["T1190"],

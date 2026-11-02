@@ -93,8 +93,9 @@ doc_events = {
 	},
 }
 
-# Role Permission Manager changes bypass doc events (raw SQL): read from the request
-after_request = ["frappe_wolf.wolf.local_signals.after_request"]
+# Role Permission Manager changes bypass doc events (raw SQL): read from the request;
+# data exports and list reads counted per user (api/exfiltration.py)
+after_request = ["frappe_wolf.wolf.local_signals.after_request", "frappe_wolf.api.exfiltration.after_request"]
 # decoy API keys and paths, checked before Frappe validates the token (api/threat.py)
 before_request = ["frappe_wolf.api.threat.before_request"]
 
@@ -114,6 +115,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.send_digests",
 			"frappe_wolf.api.security.record_security_scores",
 			"frappe_wolf.api.response.expire_actions",
+			"frappe_wolf.api.exfiltration.flush_volumes",
 		],
 		"23 * * * *": ["frappe_wolf.tasks.purge_metrics"],
 		"*/5 * * * *": [

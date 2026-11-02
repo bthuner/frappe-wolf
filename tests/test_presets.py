@@ -48,7 +48,7 @@ class TestPresets(unittest.TestCase):
 		for category in ("ssh_login_after_failures", "sudo_failure", "account_created", "admin_group_change",
 		                 "web_attack_probe", "web_sensitive_file_exposed", "server_script_change",
 		                 "console_execution", "security_settings_weakened", "permission_change",
-		                 "api_key_generated", "webhook_external"):  # fmt: skip
+		                 "api_key_generated", "webhook_external", "data_exfiltration"):  # fmt: skip
 			self.assertTrue(any(p.get("event_category") == category for p in security), category)
 
 	def test_low_is_bad_presets_breach_when_value_drops(self):

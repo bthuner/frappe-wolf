@@ -1620,6 +1620,85 @@ def main():
 					frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 		return seen
 
+	def exfiltration_check():
+		"""Exports and list reads counted per user and hour, flushed as user_export_bytes, compared
+		with each user's largest hour (data_exfiltration)."""
+		from types import SimpleNamespace
+
+		import redis
+
+		from frappe_wolf.api import exfiltration as exfil
+
+		frappe.db.set_single_value("Wolf Settings", {"capture_exfiltration": 1, "exfiltration_floor_mb": 1, "exfiltration_factor": 5})
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		frappe.cache.delete_keys("wolf_exfil")
+		since = now_datetime() - timedelta(seconds=1)
+		users = {k: f"wolf-exfil-{k}@example.com" for k in ("new", "usual", "never")}
+		export = "/api/method/frappe.desk.reportview.export_query"
+
+		def request(user, path, size, args=None, message=None):
+			frappe.set_user(user)
+			frappe.form_dict.clear()
+			frappe.form_dict.update(args or {"doctype": "Customer"})
+			frappe.local.response["message"] = message
+			try:
+				exfil.after_request(response=SimpleNamespace(status_code=200, content_length=size),
+				                    request=SimpleNamespace(path=path, method="POST"))  # fmt: skip
+			finally:
+				frappe.set_user("Administrator")
+				frappe.form_dict.clear()
+				frappe.local.response.pop("message", None)
+
+		def found(user):
+			return frappe.get_all("Wolf Event", filters={"category": "data_exfiltration", "creation": (">=", since),
+			                      "title": ("like", f"%{user}%")}, fields=["title", "severity", "payload"], order_by="creation")  # fmt: skip
+
+		seen = {}
+		try:
+			# a site without history yet: a first large export is a warning, not critical
+			request(users["new"], "/api/method/frappe.client.get_count", 5_000_000)  # not data taken out
+			assert not found(users["new"])
+			request(users["new"], export, 600_000)
+			assert not found(users["new"])  # below the 1 MB floor
+			request(users["new"], "/api/method/frappe.client.get_list", 600_000, message=[{"name": i} for i in range(40)])
+			e = found(users["new"])
+			assert [r.severity for r in e] == ["warning"] and "no export history" in e[0].title, e
+			payload = json.loads(e[0].payload)
+			assert payload["hour_bytes"] == 1_200_000 and payload["hour_rows"] == 40, payload
+			assert {t["id"] for t in payload["mitre_attack"]} == {"T1567", "T1030"}, payload["mitre_attack"]
+			request(users["new"], export, 600_000)
+			assert len(found(users["new"])) == 1  # one event per user, hour and severity
+			seen["no history"] = e[0].title
+
+			# the hourly flush: last hour's counters become one sample per user
+			last_hour = frappe.cache.make_key(f"wolf_exfil|{exfil._hour() - 1}")
+			frappe.cache.hincrby(last_hour, f"{users['usual']}|bytes", 400_000)
+			frappe.cache.hincrby(last_hour, f"{users['usual']}|requests", 3)
+			assert exfil.flush_volumes() == 1 and not redis.Redis.exists(frappe.cache, last_hour)
+			label = schema.label_key({"user": users["usual"]})
+			assert frappe.db.get_value("Wolf Metric Sample", {"metric_name": "user_export_bytes", "label_key": label}, "value") == 400_000
+			assert exfil.baseline_bytes(users["usual"]) == 400_000
+
+			# a site with history: against the user's largest hour, or critical without one
+			frappe.cache.set_value("wolf_exfil_learning", False, expires_in_sec=600)
+			request(users["usual"], export, 1_600_000)  # 4x: usual enough
+			assert not found(users["usual"])
+			request(users["usual"], export, 400_000)  # 5x
+			request(users["usual"], export, 6_000_000)  # 20x
+			e = found(users["usual"])
+			assert [r.severity for r in e] == ["warning", "critical"], e
+			assert "20.0x their largest hour in 14 days" in e[1].title, e[1].title
+			request(users["never"], export, 2_000_000)
+			assert [r.severity for r in found(users["never"])] == ["critical"]
+			seen["baseline"] = e[1].title
+		finally:
+			frappe.set_user("Administrator")
+			frappe.cache.delete_keys("wolf_exfil")
+			frappe.db.delete("Wolf Metric Sample", {"metric_name": "user_export_bytes"})
+			frappe.db.set_single_value("Wolf Settings", {"exfiltration_floor_mb": 50})
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		return seen
+
 	def posture_score():
 		from frappe_wolf.api import security
 
@@ -1894,6 +1973,7 @@ def main():
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("live updates", live_updates),
 	                 ("app security", app_security), ("permission drift", permission_drift),
+	                 ("exfiltration", exfiltration_check),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("journal", journal_chain),

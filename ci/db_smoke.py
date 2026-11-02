@@ -1803,6 +1803,59 @@ def main():
 		assert (rule.event_category, rule.min_severity) == ("hids_alert", "critical"), rule.as_dict()
 		return f"{ev.name} on {ev.host}: ATT&CK {payload['mitre_attack'][0]['id']}, preset installed"
 
+	def wazuh_integration():
+		"""The Wazuh integration route: an `integration` agent posts raw alerts to api/wazuh.alert."""
+		from frappe.utils.password import get_decrypted_password
+		from werkzeug.test import EnvironBuilder
+
+		from frappe_wolf import tasks
+		from frappe_wolf.api import agent as agent_api
+		from frappe_wolf.api import wazuh as wazuh_api
+
+		def post(body, headers=None):
+			frappe.local.request = EnvironBuilder(method="POST", json=body, headers=headers or {}).get_request()
+			frappe.local.request_ip = "127.0.0.1"
+
+		saved_request, saved_ip = getattr(frappe.local, "request", None), getattr(frappe.local, "request_ip", None)
+		alert = {"timestamp": "2026-11-02T22:50:24.782+0000", "id": "1793666224.1",
+		         "rule": {"level": 10, "description": "Three failed attempts to run sudo", "id": "5404",
+		                  "mitre": {"id": ["T1548.003"]}, "groups": ["syslog", "sudo"]},
+		         "agent": {"id": "000", "name": "wazuh-manager"}, "predecoder": {"hostname": "erp-web02"},
+		         "data": {"srcuser": "deploy"}, "location": "172.18.0.8",
+		         "full_log": "erp-web02 sudo:   deploy : 3 incorrect password attempts ; USER=root"}  # fmt: skip
+		try:
+			token = get_decrypted_password("Wolf Settings", "Wolf Settings", "registration_token")
+			post({"registration_token": token, "hostname": "smoke-wazuh-manager", "kind": "integration"})
+			creds = agent_api.register()
+			headers = {"X-Wolf-Agent-Id": creds["agent_id"], "X-Wolf-Agent-Secret": creds["agent_secret"]}
+			assert frappe.db.get_value("Wolf Agent", creds["agent_id"], "kind") == "integration"
+			results = []
+			for _ in range(3):
+				post(alert, headers)
+				results.append(wazuh_api.alert())
+			names = {r["event"] for r in results}
+			assert all(r["stored"] for r in results) and len(names) == 1, results  # repeats merge
+			ev = frappe.get_doc("Wolf Event", names.pop())
+			assert (ev.category, ev.host, ev.count, ev.agent) == ("hids_alert", "erp-web02", 3, creds["agent_id"]), ev.as_dict()
+			assert [t["id"] for t in json.loads(ev.payload)["mitre_attack"]] == ["T1548.003"]
+			post({**alert, "rule": {**alert["rule"], "id": "100903", "groups": ["frappe_wolf"]}}, headers)
+			skipped = wazuh_api.alert()
+			assert not skipped["stored"] and "frappe_wolf" in skipped["reason"], skipped  # no loop back into Wolf
+			post(alert, {**headers, "X-Wolf-Agent-Secret": "wrong"})
+			try:
+				wazuh_api.alert()
+				raise AssertionError("wrong secret accepted")
+			except frappe.AuthenticationError:
+				frappe.clear_messages()
+			# an integration is quiet when there is nothing to report: never reported silent
+			frappe.db.set_value("Wolf Agent", creds["agent_id"], "last_seen", now_datetime() - timedelta(hours=3))
+			tasks.check_agents()
+			assert not frappe.db.get_value("Wolf Agent", creds["agent_id"], "silence_reported")
+		finally:
+			frappe.local.request, frappe.local.request_ip = saved_request, saved_ip
+		frappe.delete_doc("Wolf Agent", creds["agent_id"], ignore_permissions=True, force=True)
+		return f"3 alerts → {ev.name} (count {ev.count}) on {ev.host}; loop guard and wrong secret refused; never silent"
+
 	def crowdsec_check():
 		"""CrowdSec LAPI (a local stand-in): decisions tag events, detections and approved blocks go out."""
 		from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2478,6 +2531,7 @@ def main():
 	                 ("crowdsec", crowdsec_check),
 	                 ("suricata events", suricata_events),
 	                 ("wazuh events", wazuh_events),
+	                 ("wazuh integration", wazuh_integration),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

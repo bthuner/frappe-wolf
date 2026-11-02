@@ -68,6 +68,7 @@ def check_agents():
 		filters={
 			"status": "Active",
 			"silence_reported": 0,
+			"kind": ("!=", "integration"),  # pushes only when it has an alert: silence is normal
 			"last_seen": ("<", add_to_date(now_datetime(), minutes=-minutes)),
 		},
 		fields=["name", "hostname", "last_seen", "kind", "benches"],

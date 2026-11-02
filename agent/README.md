@@ -124,6 +124,29 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
     (agent `000`), it is the host name in the log line, where it happened.
   - The payload keeps the rule (id, level, description, groups, `rule.mitre.id` as ATT&CK), the
     Wazuh agent, the source IP and user, and the first log line (scrubbed like every event).
+  - **Without a Wolf agent on the manager's host**, Wazuh's integration daemon can post its
+    alerts to Wolf itself:
+    1. Register a source of kind `integration`. It is never reported silent, since it only
+       speaks when Wazuh has an alert:
+       `curl -X POST -H 'Content-Type: application/json' -d '{"registration_token": "...", "hostname": "wazuh-manager", "kind": "integration"}' https://wolf.example.com/api/method/frappe_wolf.api.agent.register`
+       gives `agent_id` and `agent_secret`.
+    2. Copy `agent/wazuh/custom-frappe-wolf` and `custom-frappe-wolf.py` to
+       `/var/ossec/integrations/` (`root:wazuh`, mode 750).
+    3. Add this to `ossec.conf`, then restart the manager:
+
+       ```xml
+       <integration>
+         <name>custom-frappe-wolf</name>
+         <hook_url>https://wolf.example.com</hook_url>
+         <api_key>AGENT_ID:AGENT_SECRET</api_key>
+         <level>7</level>
+         <alert_format>json</alert_format>
+       </integration>
+       ```
+
+    Wazuh runs the script for each alert at or above `<level>`. Wolf maps the alert like the
+    agent does (`sca` and `frappe_wolf` left out), and the same rule and subject within 10 min
+    bump one event's count. Errors go to `/var/ossec/logs/integrations.log`.
 - **App versions** (every `versions.interval`, 1 h): `app_version` per bench and app, from the
   `__version__` in `apps/<app>/<app>/__init__.py`, which the Wolf site compares with the GitHub
   Security Advisories of Frappe and ERPNext. Development versions are not sent.

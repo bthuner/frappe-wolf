@@ -96,6 +96,21 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
   never had a backup sends nothing, so "No backup for 26 h" cannot fire for it. Press benches are
   skipped (`backups.press`), since Press uploads backups offsite and its local copies are not a
   reliable signal. Offsite-only setups can point `backups.dirs` at a mounted directory per site.
+- **Suricata** (optional, #72): when Suricata writes an EVE log (`suricata.eve_log`, else
+  `/var/log/suricata/eve.json` if it exists), the agent tails it like the other logs.
+  - Only `alert` records are read. Each (signature, remote address) pair gives one
+    `network_ids_alert` event per push interval, with a count; past 500 pairs, alerts are only
+    counted.
+  - Severity follows the rule's priority: 1 is critical, 2 warning, 3 info. Priorities above
+    `suricata.max_priority` are skipped.
+  - The payload keeps the rule (SID, signature, category, ATT&CK from its
+    `mitre_technique_id` metadata), the flow (`flow_id`, `community_id`, ports) and the
+    app-layer fields Suricata puts on alerts (HTTP host, URL, user agent, TLS SNI, DNS query).
+  - The remote address is the rule's `source` when set. Otherwise it is the end of the flow
+    that is not one of this host's addresses (read from `/proc/net`), so a rule on the
+    server's answer still names the client, and an outbound connection names the remote
+    server. The HTTP host or SNI maps the alert to a site.
+  - Without Suricata nothing changes: the agent's own web and auth-log detection stays on.
 - **App versions** (every `versions.interval`, 1 h): `app_version` per bench and app, from the
   `__version__` in `apps/<app>/<app>/__init__.py`, which the Wolf site compares with the GitHub
   Security Advisories of Frappe and ERPNext. Development versions are not sent.
@@ -173,6 +188,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "processes": {"enabled": true, "manager": "auto"},
   "versions": {"enabled": true, "interval": 3600},
   "site_settings": {"enabled": true, "interval": 3600},
+  "suricata": {"enabled": true, "eve_log": null, "max_priority": 3},
   "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
@@ -188,7 +204,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
-`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`, `site_settings`: every key is optional (defaults above), and
+`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`, `site_settings`, `suricata`: every key is optional (defaults above), and
 `"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
 `supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
 

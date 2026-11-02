@@ -1765,6 +1765,28 @@ def main():
 			frappe.cache.delete_keys(api_keys.CACHE_PREFIX)
 		return f"{len(found())} events: " + "; ".join(r.title for r in found())
 
+	def suricata_events():
+		"""A Suricata alert as the agent ships it: ATT&CK from the rule, a block to propose, the preset."""
+		from frappe_wolf.wolf import response
+
+		name = events.insert_event(schema.normalize_event({
+			"type": "security", "category": "network_ids_alert", "severity": "critical", "host": HOST, "source": "suricata",
+			"site": SITE, "title": "Suricata: ET EXPLOIT smoke from 45.33.32.157",
+			"fingerprint": schema.fingerprint(HOST, "suricata", 2999999, "45.33.32.157"),
+			"payload": {"ip": "45.33.32.157", "sid": 2999999, "signature": "ET EXPLOIT smoke", "priority": 1, "count": 3,
+			            "attack_techniques": ["T1190"], "flow_id": 123, "community_id": "1:abc="},
+		}, tz, now_datetime()))  # fmt: skip
+		ev = frappe.get_doc("Wolf Event", name)
+		payload = json.loads(ev.payload)
+		assert [t["id"] for t in payload["mitre_attack"]] == ["T1190"], payload  # from the rule's metadata
+		assert payload["mitre_attack"][0]["name"], "known technique named"
+		# (a documentation address such as 198.51.100.x would rightly not be proposed: not global)
+		proposals = response.suggest([{**ev.as_dict(), "payload": payload, "agent": "smoke-agent"}])
+		assert any(p["action"] == "block_ip" and p["target"] == "45.33.32.157" for p in proposals), proposals
+		rule = frappe.get_doc("Wolf Alert Rule", "Network IDS alert (critical)")
+		assert (rule.event_category, rule.min_severity, rule.severity) == ("network_ids_alert", "critical", "critical"), rule.as_dict()
+		return f"{ev.name}: ATT&CK {payload['mitre_attack'][0]['id']}, block proposed, preset installed"
+
 	def crowdsec_check():
 		"""CrowdSec LAPI (a local stand-in): decisions tag events, detections and approved blocks go out."""
 		from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2438,6 +2460,7 @@ def main():
 	                 ("exfiltration", exfiltration_check),
 	                 ("api key addresses", api_key_ips),
 	                 ("crowdsec", crowdsec_check),
+	                 ("suricata events", suricata_events),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

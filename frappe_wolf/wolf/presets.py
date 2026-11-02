@@ -292,6 +292,15 @@ PRESETS = [
 		"severity": "warning", "auto_resolve": 1, "cooldown_minutes": 60,
 	},
 	{
+		"rule_name": "Network IDS alert (critical)",
+		"description": "Suricata raised a priority 1 alert (the agent reads its eve.json when there is one, "
+		"#72): command-and-control, exploitation, known-bad traffic. The rule's ATT&CK techniques are "
+		"in the event.",
+		"signal_type": "event", "event_type": "security", "event_category": "network_ids_alert", "min_severity": "critical",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 30,
+	},
+	{
 		"rule_name": "Sensitive file served",
 		"description": "nginx answered 2xx to a request for .env, .git/, site_config.json, a private "
 		"key or a database dump: the file was probably leaked. Rotate the secrets (MITRE T1552.001).",

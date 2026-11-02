@@ -123,6 +123,37 @@ describe('DashboardPage', () => {
     expect(page.text()).toContain('7 critical')
   })
 
+  it('draws the first 10 rows of a group and the rest on demand, problems first', async () => {
+    const row = (i, state) => ({ metric_name: 'cpu_usage', group: 'host', label: 'CPU', unit: '%', host: `h${String(i).padStart(2, '0')}`,
+      value: i, last_at: state === 'stale' ? OLD : NOW, state, rules: [], incidents: [] })
+    // the server's order: firing, then stale, then the others
+    const series = [...Array.from({ length: 9 }, (_, i) => row(i, 'firing')), ...Array.from({ length: 3 }, (_, i) => row(9 + i, 'stale')),
+      ...Array.from({ length: 13 }, (_, i) => row(12 + i, 'unwatched'))]
+    server({ 'frappe_wolf.api.dashboard.get_signals': () => ({ ...SIGNALS, series, counts: { host: { firing: 9, stale: 3, unwatched: 13 } }, total_series: 25 }) })
+    const { page } = await open()
+    const rows = () => page.findAll('[aria-label="Signals"] li')
+    expect(rows()).toHaveLength(10)
+    expect(page.text()).toContain('· 9 rule firing · 3 no new data') // the group's counts stay exact
+    const more = page.findAll('button').find((b) => b.text().startsWith('Show the other'))
+    expect(more.text()).toBe('Show the other 15 of 25, 2 with a problem')
+    await more.trigger('click')
+    expect(rows()).toHaveLength(25)
+    const fold = page.findAll('button').find((b) => b.text() === 'Show the first 10 only')
+    await fold.trigger('click')
+    expect(rows()).toHaveLength(10)
+  })
+
+  it('draws the first 20 hosts and the rest on demand', async () => {
+    const hosts = Array.from({ length: 23 }, (_, i) => ({ host: `host-${i}`, sources: ['agent'], benches: [] }))
+    server({ 'frappe_wolf.api.scope.get_inventory': () => ({ hosts, note: '' }) })
+    const { page } = await open()
+    const drawn = () => page.findAll('[aria-label="Hosts, benches and sites"] > ul > li')
+    expect(drawn()).toHaveLength(20)
+    const more = page.findAll('button').find((b) => b.text() === 'Show the other 3 of 23 hosts')
+    await more.trigger('click')
+    expect(drawn()).toHaveLength(23)
+  })
+
   it('scopes a bench by its host and keeps the range in the URL', async () => {
     const fetchFn = server()
     const { router } = await open('/hosts/h2/benches/frappe-bench?range=7d')

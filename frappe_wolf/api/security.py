@@ -13,6 +13,7 @@ import frappe
 from frappe.utils import cint, now_datetime
 
 from frappe_wolf import satellite
+from frappe_wolf.api import advisories as advisory_store
 from frappe_wolf.api.ui import READ_ROLES
 from frappe_wolf.wolf import access, dns_txt, events, posture
 
@@ -26,7 +27,7 @@ def _latest(metric, since, **scope):
 	allowed, params = access.sql_condition("Wolf Metric Sample")
 	where = "".join(f" and `{k}` = %({k})s" for k in scope)
 	return frappe.db.sql(
-		f"""select s.host, s.site, s.value, s.label_key from `tabWolf Metric Sample` s
+		f"""select s.host, s.site, s.bench, s.value, s.label_key from `tabWolf Metric Sample` s
 		join (select host, coalesce(site, '') as site_key, max(`timestamp`) as ts from `tabWolf Metric Sample`
 			where metric_name = %(metric)s and `timestamp` >= %(since)s {where} {allowed}
 			group by host, coalesce(site, '')) latest
@@ -125,7 +126,22 @@ def facts_for(site, now=None):
 	facts["hsts_max_age_days"] = hsts
 	if site == frappe.local.site:
 		facts["spf"], facts["dmarc"] = mail_auth(mail_domains())
+	facts["app_versions"] = app_versions(site, risks + backups, since)
+	facts["advisories"] = advisory_store.sources(now)
 	return facts
+
+
+def app_versions(site, site_rows, since):
+	"""{app: {version}} of the benches serving `site` (from the agent's samples), plus the
+	Wolf site's own packages when `site` is it."""
+	versions = {}
+	for host, bench in sorted({(r.host, r.bench) for r in site_rows if r.host and r.bench}):
+		for app, found in advisory_store.versions_from_rows(_latest("app_version", since, host=host, bench=bench)).items():
+			versions.setdefault(app, set()).update(found)
+	if site == frappe.local.site:
+		for app, found in advisory_store.local_versions().items():
+			versions.setdefault(app, set()).update(found)
+	return versions
 
 
 def known_sites(now=None):
@@ -157,6 +173,10 @@ def record_security_scores():
 	"""Scheduler (hourly): one `security_score` sample per known site."""
 	if satellite.is_satellite():
 		return
+	try:
+		advisory_store.refresh_if_due()
+	except Exception:
+		frappe.logger("frappe_wolf").exception("refreshing security advisories")
 	now = now_datetime()
 	rows = []
 	host = events.local_scope().get("host")

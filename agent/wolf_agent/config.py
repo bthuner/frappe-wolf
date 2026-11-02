@@ -54,6 +54,8 @@ DEFAULTS = {
 		"enabled": True, "cli": None, "host": None, "port": None,
 		"user": None, "password": None, "defaults_file": None,
 	},
+	# version of each app in each bench (apps/<app>/<app>/__init__.py), for the advisory check
+	"versions": {"enabled": True, "interval": 3600},
 	# bench process states: "auto" (supervisor, else systemd), "supervisor" or "systemd"
 	"processes": {"enabled": True, "manager": "auto"},
 	# services listening beyond loopback and risky site_config settings (exposure.py);

@@ -1706,19 +1706,66 @@ def main():
 		now = now_datetime()
 		samples = [
 			schema.normalize_metric({"metric_name": "exposed_services", "value": 1, "host": host}, tz, now),
-			schema.normalize_metric({"metric_name": "site_config_risks", "value": 0, "host": host, "site": SITE}, tz, now),
+			schema.normalize_metric({"metric_name": "site_config_risks", "value": 0, "host": host, "site": SITE,
+			                         "bench": "smoke-bench"}, tz, now),  # fmt: skip
+			# the agent's versions for that bench: 16.20.0 is before the fixture advisory's fix
+			schema.normalize_metric({"metric_name": "app_version", "value": 16020000, "host": host, "bench": "smoke-bench",
+			                         "labels": {"app": "frappe"}}, tz, now),  # fmt: skip
 			schema.normalize_metric({"metric_name": "backup_age_hours", "value": 2, "host": host, "site": SITE}, tz, now),
 		]
 		events.insert_metrics(samples)
+		# GitHub Security Advisories, from a fake source: CI must not depend on api.github.com
+		from frappe_wolf.api import advisories as advisory_store
+		from frappe_wolf.wolf import advisories
+
+		fixture = [{"ghsa_id": "GHSA-smok-e000-0001", "severity": "critical", "summary": "smoke SSTI", "state": "published",
+		            "published_at": "2026-10-15T00:00:00Z", "html_url": "https://github.com/advisories/x",
+		            "vulnerabilities": [{"vulnerable_version_range": "<16.21.0", "patched_versions": "16.21.0"},
+		                                {"vulnerable_version_range": "<15.111.0", "patched_versions": "15.111.0"}]}]  # fmt: skip
+		fetched, original_fetch = [], advisories.fetch
+
+		def fake_fetch(repo):
+			fetched.append(repo)
+			if repo == "frappe/erpnext" and len(fetched) > 2:
+				raise OSError("GitHub unreachable")
+			return advisories.compact(fixture if repo == "frappe/frappe" else [])
+
+		advisories.fetch = fake_fetch
+		if os.path.exists(advisory_store.store_path()):
+			os.remove(advisory_store.store_path())
+		assert advisory_store.enabled(), "on by default"
 		result = security.get_posture(SITE)
 		status = {c["id"]: c["status"] for c in result["checks"]}
 		assert result["local"] and status["two_factor"] in ("pass", "fail"), status  # read on the site itself
 		assert status["exposure"] == "fail" and status["backup"] == "pass", status
 		assert status["tls"] == "unknown", status  # no sample: never counted as passed
+		assert status["advisories"] == "unknown", result["checks"]  # not fetched yet
 		assert 0 <= result["score"] < 100 and result["coverage"] < 100, result
 		before = frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE})
-		security.record_security_scores()
-		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 1
+		try:
+			security.record_security_scores()  # fetches the advisories first: there is no copy
+			assert fetched == ["frappe/frappe", "frappe/erpnext"], fetched
+			security.record_security_scores()
+			assert len(fetched) == 2, "fetched once a day"
+			check = next(c for c in security.get_posture(SITE)["checks"] if c["id"] == "advisories")
+			assert check["status"] == "fail", check
+			assert "frappe 16.20.0: 1 advisory (1 critical), fixed in 16.21.0 (GHSA-smok-e000-0001)" in check["evidence"], check
+			# a failing repository keeps its last copy
+			status_after = advisory_store.refresh_advisories()
+			assert status_after["erpnext"]["ok"] is False and status_after["frappe"]["ok"], status_after
+			assert advisory_store.sources()["erpnext"]["advisories"] == [], advisory_store.sources()
+			advisory_store.get_status()
+			frappe.db.set_single_value("Wolf Settings", "check_security_advisories", 0)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			check = next(c for c in security.get_posture(SITE)["checks"] if c["id"] == "advisories")
+			assert check["evidence"] == "the advisory check is off in Wolf Settings", check
+		finally:
+			advisories.fetch = original_fetch
+			frappe.db.set_single_value("Wolf Settings", "check_security_advisories", 1)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			if os.path.exists(advisory_store.store_path()):
+				os.remove(advisory_store.store_path())
+		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 2
 		assert SITE in security.list_sites()
 
 		# HSTS from the agent's samples, per domain; SPF / DMARC from DNS for the outgoing mail domains
@@ -1755,7 +1802,7 @@ def main():
 			dns_txt.lookup = original
 			frappe.cache.delete_keys("wolf_mail_auth|")
 			frappe.db.delete("Email Account", {"name": account.name})
-		return f"score {result['score']} (coverage {result['coverage']}%), {status}; hsts, spf, dmarc read"
+		return f"score {result['score']} (coverage {result['coverage']}%), {status}; hsts, spf, dmarc, advisories read"
 
 	def regulatory_deadlines():
 		from frappe_wolf.api import compliance as compliance_api

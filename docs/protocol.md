@@ -180,6 +180,7 @@ Categories added with the infrastructure signals:
 | `backup_age_hours`   | hours    | host, bench, site: age of the newest `sites/<site>/private/backups/*-database.sql*`; every 10 min; sites without any backup send nothing |
 | `tls_days_left`      | days (negative = expired) | host, bench, site, `labels.domain`: certificate `notAfter` of each public site name / custom domain, hourly |
 | `hsts_max_age_days` | days     | host, bench, site, `labels.domain`: `Strict-Transport-Security` max-age of the first response to `HEAD /` on the TLS check's connection, 0 without the header; no sample when no HTTP response came back; hourly |
+| `app_version`        | version number | host, bench, `labels.app`: `__version__` of `apps/<app>/<app>/__init__.py` as major × 10⁶ + minor × 10³ + patch (15.100.0 → 15100000); development versions (`16.0.0-dev`) are not sent; hourly (`versions.interval`) |
 | `exposed_services`   | count    | host: bench ports (MariaDB/Postgres, bench Redis, socket.io, gunicorn) listening on all interfaces or a public address, from `/proc/net/tcp{,6}`; every 10 min |
 | `site_config_risks`  | count    | host, bench, site: `developer_mode`, `allow_tests`, a plain-HTTP `host_name`, `allow_cors: "*"` in the merged site config; every 10 min |
 | `security_score`     | 0–100    | site: written by the app (hourly), not the agent; see [cyber.md](cyber.md#step-3-posture-score-and-exposure-built) |

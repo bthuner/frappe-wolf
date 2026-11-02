@@ -1,4 +1,4 @@
-"""Backups, TLS expiry, MariaDB, process states and their wiring (InfraChecks)."""
+"""Backups, TLS expiry, MariaDB, process states, app versions and their wiring (InfraChecks)."""
 
 import json
 import os
@@ -17,7 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from wolf_agent import backups, collector, database, processes, tls_expiry  # noqa: E402
+from wolf_agent import app_versions, backups, collector, database, processes, tls_expiry  # noqa: E402
 from wolf_agent.config import section  # noqa: E402
 
 from test_discovery_config import make_bench  # noqa: E402
@@ -405,6 +405,55 @@ class TestProcesses(unittest.TestCase):
 		self.assertEqual(w.collect([{"name": "frappe-bench"}], NOW), ([], []))
 		w = self.watcher({"supervisorctl": OSError("boom")}, manager="supervisor")
 		self.assertEqual(w.collect([{"name": "frappe-bench"}], NOW), ([], []))
+
+
+def write_app(bench_path, app, init_text):
+	os.makedirs(os.path.join(bench_path, "apps", app, app), exist_ok=True)
+	with open(os.path.join(bench_path, "apps", app, app, "__init__.py"), "w") as f:
+		f.write(init_text)
+
+
+class TestAppVersions(unittest.TestCase):
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.path = make_bench(self.tmp.name, sites=("a.example.com",), redis=None)
+		self.benches = [{"name": "main", "path": self.path, "sites": ["a.example.com"]}]
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def test_encode(self):
+		self.assertEqual(app_versions.encode("15.100.0"), 15100000)
+		self.assertEqual(app_versions.encode("v16.35.2"), 16035002)
+		for dev in ("16.0.0-dev", "15.x.x-develop", "", None, "1.2", "1.1000.0"):
+			self.assertIsNone(app_versions.encode(dev), dev)
+
+	def test_one_sample_per_app_with_a_release_version(self):
+		write_app(self.path, "frappe", '# comment\n__version__ = "15.100.0"\n__title__ = "Frappe"\n')
+		write_app(self.path, "erpnext", "import x\n__version__ = '16.35.2'\n")
+		write_app(self.path, "hrms", '__version__ = "16.0.0-dev"\n')  # development branch: nothing
+		write_app(self.path, "custom", "VERSION = 1\n")  # no __version__
+		os.makedirs(os.path.join(self.path, "apps", "empty"))  # no package
+		with open(os.path.join(self.path, "apps", "apps.txt"), "w") as f:
+			f.write("frappe\n")  # a file in apps/: skipped
+		out = app_versions.version_metrics(self.benches, "h1", NOW)
+		got = {(m["labels"]["app"], m["value"], m["bench"], m["site"]) for m in out}
+		self.assertEqual(got, {("erpnext", 16035002, "main", None), ("frappe", 15100000, "main", None)})
+		self.assertEqual({m["metric_name"] for m in out}, {"app_version"})
+		self.assertEqual(app_versions.version_metrics([{"name": "x", "path": "/nonexistent"}], "h1", NOW), [])
+
+	def test_infra_runs_it_on_its_interval(self):
+		write_app(self.path, "frappe", '__version__ = "15.100.0"\n')
+		ticks = [0.0]
+		cfg = {"mariadb": False, "processes": False, "backups": False, "tls": False, "exposure": False}
+		infra = collector.InfraChecks({**cfg, "versions": {"interval": 3600}}, "h1", clock=lambda: ticks[0])
+		self.assertEqual([m["metric_name"] for m in infra.collect(self.benches, NOW)[0]], ["app_version"])
+		ticks[0] = 600
+		self.assertEqual(infra.collect(self.benches, NOW)[0], [])
+		ticks[0] = 3601
+		self.assertEqual(len(infra.collect(self.benches, NOW)[0]), 1)
+		off = collector.InfraChecks({**cfg, "versions": False}, "h1", clock=lambda: ticks[0])
+		self.assertEqual(off.collect(self.benches, NOW)[0], [])
 
 
 class TestInfraChecks(unittest.TestCase):

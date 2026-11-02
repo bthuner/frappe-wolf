@@ -171,6 +171,12 @@ def approve(incident, action, target, agent=None, duration_hours=None, reason=No
 	what = response.label(action, target, hours, scope.get("host"))
 	note = {"Approved": "approved, waiting for the agent", "Applied": f"applied: {row.result}",
 	        "Failed": f"failed: {row.result}"}[row.status]  # fmt: skip
+	if action == "block_ip":
+		from frappe_wolf.api import crowdsec
+
+		sent = crowdsec.apply_block(row)  # the same block for every CrowdSec bouncer, when set up
+		if sent:
+			note += f"; {sent}"
 	doc.add_comment("Comment", f"Response action {row.name} ({what}) {note}.")
 	return row.as_dict()
 

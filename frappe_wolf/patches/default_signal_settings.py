@@ -15,6 +15,9 @@ DEFAULTS = {
 	"siem_journal": 1,
 	"siem_verify_tls": 1,
 	"check_security_advisories": 1,
+	"crowdsec_send_detections": 1,
+	"crowdsec_min_severity": "warning",
+	"crowdsec_apply_blocks": 1,
 }
 
 

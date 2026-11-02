@@ -1765,6 +1765,108 @@ def main():
 			frappe.cache.delete_keys(api_keys.CACHE_PREFIX)
 		return f"{len(found())} events: " + "; ".join(r.title for r in found())
 
+	def crowdsec_check():
+		"""CrowdSec LAPI (a local stand-in): decisions tag events, detections and approved blocks go out."""
+		from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+		from types import SimpleNamespace
+
+		from frappe_wolf.api import crowdsec as cs_api
+
+		seen = {"alerts": [], "streams": [], "agents": set()}
+
+		class LAPI(BaseHTTPRequestHandler):
+			def log_message(self, *args):
+				pass
+
+			def reply(self, code, body):
+				data = json.dumps(body).encode()
+				self.send_response(code)
+				self.send_header("Content-Type", "application/json")
+				self.send_header("Content-Length", str(len(data)))
+				self.end_headers()
+				self.wfile.write(data)
+
+			def do_POST(self):
+				body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+				seen["agents"].add(self.headers.get("User-Agent"))
+				if self.path == "/v1/watchers/login":
+					ok = body == {"machine_id": "wolf-smoke", "password": "smoke-pw"} and "/" in self.headers.get("User-Agent", "")
+					return self.reply(200, {"code": 200, "token": "tok"}) if ok else self.reply(401, {"message": "bad login"})
+				if self.path == "/v1/alerts" and self.headers.get("Authorization") == "Bearer tok":
+					seen["alerts"] += body
+					return self.reply(201, [str(len(seen["alerts"]))])
+				return self.reply(403, {})
+
+			def do_GET(self):
+				if self.headers.get("X-Api-Key") != "smoke-key":
+					return self.reply(403, {"message": "access forbidden"})
+				seen["streams"].append(self.path)
+				first = self.path.endswith("startup=true")
+				return self.reply(200, {"new": [{"scope": "Ip", "value": "45.33.32.156", "type": "ban", "origin": "CAPI",
+				                                 "scenario": "crowdsecurity/http-probing", "duration": "3h59m58s"}] if first else [],
+				                        "deleted": None})  # fmt: skip
+
+		server = ThreadingHTTPServer(("127.0.0.1", 0), LAPI)
+		threading.Thread(target=server.serve_forever, daemon=True).start()
+		settings = frappe.get_single("Wolf Settings")
+		settings.update({"crowdsec_enabled": 1, "crowdsec_url": f"http://127.0.0.1:{server.server_address[1]}",
+		                 "crowdsec_bouncer_key": "smoke-key", "crowdsec_machine_id": "wolf-smoke", "crowdsec_password": "smoke-pw",
+		                 "crowdsec_send_detections": 1, "crowdsec_min_severity": "warning", "crowdsec_apply_blocks": 1})  # fmt: skip
+		settings.save(ignore_permissions=True)
+		frappe.db.set_global(cs_api.CURSOR_KEY, None)
+		if os.path.exists(cs_api.store_path()):
+			os.remove(cs_api.store_path())
+		lag = cs_api.LAG_SECONDS
+		try:
+			first = cs_api.sync_crowdsec()
+			assert first["error"] is None and first["decisions"] == 1 and first["alerts_sent"] == 0, first  # the past is not replayed
+			assert seen["streams"] == ["/v1/decisions/stream?startup=true"], seen["streams"]
+
+			def insert(ip, severity, title):
+				name = events.insert_event(schema.normalize_event({"type": "security", "category": "web_attack_probe", "severity": severity,
+				                                                   "host": HOST, "title": title, "payload": {"ip": ip}}, tz, now_datetime()))  # fmt: skip
+				return frappe.db.get_value("Wolf Event", name, ["severity", "payload"], as_dict=True)
+
+			banned = insert("45.33.32.156", "warning", "crowdsec smoke: banned")
+			assert banned.severity == "critical" and json.loads(banned.payload)["crowdsec"]["origin"] == "CAPI", banned
+			clean = insert("203.0.113.70", "warning", "crowdsec smoke: clean")
+			assert clean.severity == "warning" and "crowdsec" not in json.loads(clean.payload), clean
+			insert("203.0.113.71", "info", "crowdsec smoke: below the minimum")
+			cs_api.LAG_SECONDS = 0
+			second = cs_api.sync_crowdsec()
+			assert second["error"] is None and second["alerts_sent"] == 2, second
+			assert seen["streams"][-1] == "/v1/decisions/stream", "changes only, after the first full read"
+			sent = {a["source"]["ip"]: a for a in seen["alerts"]}
+			assert set(sent) == {"45.33.32.156", "203.0.113.70"} and not any(a["remediation"] for a in sent.values()), sent
+			assert sent["203.0.113.70"]["scenario"] == "frappe-wolf/web_attack_probe" and "decisions" not in sent["203.0.113.70"]
+			assert cs_api.sync_crowdsec()["alerts_sent"] == 0, "the cursor moved"
+
+			note = cs_api.apply_block(SimpleNamespace(name="WRA-SMOKE", target="198.51.100.77", duration_hours=6,
+			                                          approved_by="Administrator", incident="WINC-SMOKE", approved_at=now_datetime()))  # fmt: skip
+			assert note and "6 h ban" in note, note
+			block = seen["alerts"][-1]
+			assert block["decisions"] == [{"type": "ban", "duration": "6h", "scope": "Ip", "value": "198.51.100.77",
+			                               "origin": "frappe-wolf", "scenario": "frappe-wolf/approved_block"}], block  # fmt: skip
+			assert all("/" in a for a in seen["agents"]), seen["agents"]  # the LAPI refuses other User-Agents
+
+			settings.reload()
+			settings.crowdsec_password = "wrong"
+			settings.save(ignore_permissions=True)
+			cs_api.LAG_SECONDS = 0
+			insert("203.0.113.72", "critical", "crowdsec smoke: while refused")
+			failed = cs_api.sync_crowdsec()
+			assert failed["error"] and "401" in failed["error"], failed
+			assert cs_api.get_status()["error"] == failed["error"]
+		finally:
+			cs_api.LAG_SECONDS = lag
+			server.shutdown()
+			server.server_close()
+			frappe.db.set_single_value("Wolf Settings", "crowdsec_enabled", 0)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+			if os.path.exists(cs_api.store_path()):
+				os.remove(cs_api.store_path())
+		return f"{len(seen['alerts'])} alerts sent, banned IP tagged and raised, approved block sent as a 6 h ban"
+
 	def posture_score():
 		from frappe_wolf.api import security
 
@@ -2335,6 +2437,7 @@ def main():
 	                 ("app security", app_security), ("permission drift", permission_drift),
 	                 ("exfiltration", exfiltration_check),
 	                 ("api key addresses", api_key_ips),
+	                 ("crowdsec", crowdsec_check),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

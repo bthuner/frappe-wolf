@@ -64,6 +64,15 @@ doc_events = {
 	"Client Script": {"on_update": "frappe_wolf.wolf.local_signals.on_client_script"},
 	"Console Log": {"after_insert": "frappe_wolf.wolf.local_signals.on_console_log"},
 	"Role Profile": {"on_update": "frappe_wolf.wolf.local_signals.on_role_profile"},
+	# permission drift outside the Role Permission Manager (Data Import, REST, code)
+	"Custom DocPerm": {
+		"on_update": "frappe_wolf.wolf.local_signals.on_custom_docperm",
+		"on_trash": "frappe_wolf.wolf.local_signals.on_custom_docperm_trash",
+	},
+	"User Permission": {
+		"on_update": "frappe_wolf.wolf.local_signals.on_user_permission",
+		"on_trash": "frappe_wolf.wolf.local_signals.on_user_permission_trash",
+	},
 	"System Settings": {"on_update": "frappe_wolf.wolf.local_signals.on_system_settings"},
 	"Webhook": {"on_update": "frappe_wolf.wolf.local_signals.on_webhook"},
 	# live updates for the Wolf UI (wolf/live.py): invalidations only, never telemetry;

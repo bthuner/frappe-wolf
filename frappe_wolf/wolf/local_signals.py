@@ -156,6 +156,7 @@ def check_new_country(doc, previous, settings):
 def on_user_update(doc):
 	settings = _settings()
 	check_api_key(doc, settings)
+	check_desk_access(doc, settings)
 	if not cint(settings.capture_privileged_users) or not doc.enabled:
 		return
 	privileged = privileged_roles(settings)
@@ -207,6 +208,29 @@ def check_api_key(doc, settings):
 		category="api_key_generated",
 		source="frappe",
 		payload={"user": doc.name, "api_key": doc.get("api_key"), "privileged": privileged, "by": frappe.session.user},
+	)
+
+
+def check_desk_access(doc, settings):
+	"""`permission_change`: a Website user (portal: customer, supplier) now has desk access.
+
+	Frappe derives user_type from the roles on each save: a desk role makes a System User.
+	"""
+	if not _app_security(settings):
+		return
+	before = doc.get_doc_before_save()
+	if not before or before.get("user_type") != "Website User" or doc.get("user_type") != "System User":
+		return
+	added = sorted({r.role for r in doc.roles} - {r.role for r in before.roles})
+	events.emit(
+		"security",
+		f"Website user {doc.name} given desk access" + (f" ({', '.join(added)})" if added else ""),
+		severity="warning",
+		category="permission_change",
+		source="frappe",
+		payload={"kind": "desk_access", "user": doc.name, "roles": added, "by": frappe.session.user, "via": _via()},
+		fingerprint=fingerprint("permission_change", "desk_access", doc.name),
+		dedupe_minutes=10,
 	)
 
 
@@ -294,6 +318,116 @@ def after_request(response=None, request=None):
 		frappe.db.commit()
 	except Exception:
 		frappe.logger("frappe_wolf").exception("could not record a permission change")
+
+
+def _permission_manager_request():
+	"""True inside a Role Permission Manager call: after_request records those."""
+	path = getattr(getattr(frappe.local, "request", None), "path", "") or ""
+	return path.startswith("/api/method/" + PERMISSION_MANAGER)
+
+
+def _via():
+	"""How a change came in, for the event: Data Import, a request path, or neither."""
+	if frappe.flags.in_import:
+		return "data import"
+	path = getattr(getattr(frappe.local, "request", None), "path", None)
+	return path or "background job or console"
+
+
+def _standard_rule(doc):
+	"""The DocType's own rule a new Custom DocPerm copies, if any: Frappe copies every standard
+	rule into Custom DocPerm before the first custom change, and a copy grants nothing."""
+	key = {"parent": doc.get("parent"), "role": doc.get("role"), "permlevel": cint(doc.get("permlevel")),
+	       "if_owner": cint(doc.get("if_owner"))}  # fmt: skip
+	return frappe.db.get_value("DocPerm", key, [*app_security.DOCPERM_RIGHTS, "if_owner", "role", "parent"], as_dict=True)
+
+
+def _docperm_event(doc, action, change):
+	parent, role = doc.get("parent"), doc.get("role")
+	granted = change.get("granted") or []
+	everyone = role in app_security.EVERYONE_ROLES and bool(granted)
+	title = f"Permission rule {action}: {role} on {parent}"
+	if granted:
+		title += f", grants {', '.join(granted)}"
+	elif change.get("revoked"):
+		title += f", removes {', '.join(change['revoked'])}"
+	events.emit(
+		"security",
+		title[:255],
+		severity="critical" if everyone else "warning",
+		category="permission_change",
+		source="frappe",
+		payload={
+			"kind": "custom_docperm", "doctype": parent, "role": role, "action": action, "permlevel": doc.get("permlevel"),
+			"if_owner": cint(doc.get("if_owner")), **change, "everyone": everyone, "by": frappe.session.user, "via": _via(),
+		},
+		# only the same change again is merged (a Data Import repeating a row): another right, or
+		# a grant after a removal, is an event of its own
+		fingerprint=fingerprint("permission_change", "custom_docperm", parent, role, action, ",".join(granted),
+		                        ",".join(change.get("revoked") or [])),
+		dedupe_minutes=10,
+	)  # fmt: skip
+
+
+@_safe
+def on_custom_docperm(doc):
+	"""Custom DocPerm saved outside the Role Permission Manager: Data Import, the REST API, code."""
+	if not _app_security() or _permission_manager_request():
+		return
+	before = _before(doc)
+	reference = before or _standard_rule(doc)
+	change = app_security.docperm_change(reference, doc.as_dict())
+	if change:
+		_docperm_event(doc, "changed" if before else "added", change)
+
+
+@_safe
+def on_custom_docperm_trash(doc):
+	if not _app_security() or _permission_manager_request():
+		return
+	rights = [r for r in app_security.DOCPERM_RIGHTS if cint(doc.get(r))]
+	if rights:
+		_docperm_event(doc, "removed", {"granted": [], "revoked": rights})
+
+
+def _user_permission_event(doc, before, after):
+	others = frappe.db.count("User Permission", {"user": doc.user, "allow": doc.allow, "name": ("!=", doc.name)})
+	if not app_security.user_permission_widens(before, after, others):
+		return
+	if after is None:
+		action, title = "removed", f"User Permission removed: {doc.user} no longer restricted on {doc.allow}"
+	elif before:
+		action, title = "changed", f"User Permission changed: {doc.user} on {doc.allow} {doc.for_value}"
+	else:
+		action, title = "added", f"User Permission added: {doc.user} may also see {doc.allow} {doc.for_value}"
+	previous = {k: before.get(k) for k in app_security.USER_PERMISSION_TARGET + app_security.USER_PERMISSION_NARROWING} if before else None
+	events.emit(
+		"security",
+		title[:255],
+		severity="warning",
+		category="permission_change",
+		source="frappe",
+		payload={
+			"kind": "user_permission", "action": action, "user": doc.user, "allow": doc.allow, "for_value": doc.for_value,
+			"applicable_for": doc.get("applicable_for"), "previous": previous, "other_values": others,
+			"by": frappe.session.user, "via": _via(),
+		},
+		fingerprint=fingerprint("permission_change", "user_permission", action, doc.user, doc.allow, doc.for_value),
+		dedupe_minutes=10,
+	)  # fmt: skip
+
+
+@_safe
+def on_user_permission(doc):
+	"""`permission_change` when a User Permission lets its user see more (app_security)."""
+	if _app_security():
+		_user_permission_event(doc, _before(doc), doc.as_dict())
+
+
+@_safe
+def on_user_permission_trash(doc):
+	if _app_security():
+		_user_permission_event(doc, doc.as_dict(), None)
 
 
 @_safe

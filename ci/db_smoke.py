@@ -1537,6 +1537,89 @@ def main():
 				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
 		return seen
 
+	def permission_drift():
+		"""Custom DocPerm and User Permission changes outside the Role Permission Manager, and a
+		Website user given desk access (permission_change)."""
+		from types import SimpleNamespace
+
+		frappe.db.set_single_value("Wolf Settings", "capture_app_security", 1)
+		frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		since = now_datetime() - timedelta(seconds=1)
+
+		def drift(kind):
+			rows = frappe.get_all("Wolf Event", filters={"category": "permission_change", "creation": (">=", since)},
+			                      fields=["title", "severity", "payload"], order_by="creation desc")  # fmt: skip
+			return [r for r in rows if json.loads(r.payload).get("kind") == kind]
+
+		seen = {}
+		cleanup = []
+		request = getattr(frappe.local, "request", None)
+		try:
+			# a copy of a standard rule grants nothing (Frappe copies them all before the first custom one)
+			standard = frappe.get_all("DocPerm", filters={"parent": "ToDo"}, fields="*", limit=1)[0]
+			copy = frappe.new_doc("Custom DocPerm")
+			copy.update({k: v for k, v in standard.items() if k not in ("name", "creation", "modified", "owner", "modified_by")})
+			copy.insert(ignore_permissions=True)
+			cleanup.append(("Custom DocPerm", copy.name))
+			assert not drift("custom_docperm"), drift("custom_docperm")
+
+			# Guest given read on ToDo, as Data Import or the REST API would: critical
+			rule = frappe.get_doc({"doctype": "Custom DocPerm", "parent": "ToDo", "parenttype": "DocType", "parentfield": "permissions",
+			                       "role": "Guest", "permlevel": 0, "read": 1}).insert(ignore_permissions=True)  # fmt: skip
+			cleanup.append(("Custom DocPerm", rule.name))
+			e = drift("custom_docperm")[0]
+			# Custom DocPerm's defaults come with it (export, print, email...): all granted to Guest
+			assert e.severity == "critical" and e.title.startswith("Permission rule added: Guest on ToDo, grants read"), e
+			assert any(t["id"] == "T1098" for t in json.loads(e.payload)["mitre_attack"]), e
+			seen["custom docperm"] = e.title
+
+			# inside a Role Permission Manager call, after_request records it: no second event
+			frappe.local.request = SimpleNamespace(path="/api/method/frappe.core.page.permission_manager.permission_manager.update")
+			frappe.db.delete("Wolf Event", {"category": "permission_change", "creation": (">=", since)})
+			rule.reload()
+			rule.write = 1
+			rule.save(ignore_permissions=True)
+			assert not drift("custom_docperm"), drift("custom_docperm")
+			frappe.local.request = request
+
+			# User Permissions: the first restricts, the second widens, removing the last lifts it
+			user = frappe.get_doc({"doctype": "User", "email": "wolf-drift@example.com", "first_name": "Drift",
+			                       "send_welcome_email": 0}).insert(ignore_permissions=True)  # fmt: skip
+			cleanup.append(("User", user.name))
+			assert user.user_type == "Website User", user.user_type
+			first = frappe.get_doc({"doctype": "User Permission", "user": user.name, "allow": "Role", "for_value": "Guest",
+			                        "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)  # fmt: skip
+			cleanup.append(("User Permission", first.name))
+			assert not drift("user_permission"), drift("user_permission")
+			second = frappe.get_doc({"doctype": "User Permission", "user": user.name, "allow": "Role", "for_value": "All",
+			                         "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)  # fmt: skip
+			e = drift("user_permission")[0]
+			assert e.title == f"User Permission added: {user.name} may also see Role All", e
+			frappe.delete_doc("User Permission", second.name, force=True, ignore_permissions=True)
+			assert len(drift("user_permission")) == 1  # one of two removed: still restricted
+			frappe.db.delete("Wolf Event", {"category": "permission_change", "creation": (">=", since)})
+			frappe.delete_doc("User Permission", first.name, force=True, ignore_permissions=True)
+			cleanup.remove(("User Permission", first.name))
+			assert drift("user_permission")[0].title == f"User Permission removed: {user.name} no longer restricted on Role"
+			seen["user permission"] = "second value added, last one removed"
+
+			# the portal user gets a desk role
+			desk_role = frappe.get_all("Role", filters={"desk_access": 1, "name": ("not in", ("Administrator", "System Manager"))},
+			                           pluck="name", limit=1)[0]  # fmt: skip
+			user.reload()
+			user.append("roles", {"role": desk_role})
+			user.save(ignore_permissions=True)
+			assert user.user_type == "System User", user.user_type
+			e = drift("desk_access")[0]
+			assert e.title == f"Website user {user.name} given desk access ({desk_role})", e
+			seen["desk access"] = e.title
+		finally:
+			frappe.local.request = request
+			for doctype, name in reversed(cleanup):
+				if frappe.db.exists(doctype, name):
+					frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+		return seen
+
 	def posture_score():
 		from frappe_wolf.api import security
 
@@ -1810,7 +1893,8 @@ def main():
 	                 ("incident view", incident_view), ("dashboards", dashboards), ("read cache", read_cache_check),
 	                 ("explorers", explorers), ("metrics explorer", metrics_explorer),
 	                 ("live updates", live_updates),
-	                 ("app security", app_security), ("posture score", posture_score),
+	                 ("app security", app_security), ("permission drift", permission_drift),
+	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("journal", journal_chain),
 	                 ("siem export", siem_export)]:

@@ -136,10 +136,21 @@ risky application changes** (on by default):
   enabled, or with its code, type or trigger changed (`server_script_change`,
   `client_script_change`); each System Console run (`console_execution`). Editing a
   description or disabling a script raises nothing.
-- **Permission drift** (T1098): Role Permission Manager add, update, remove and reset
-  (`permission_change`). Frappe writes `update`, `remove` and `reset` with raw SQL, so Wolf reads
-  them from the request through the `after_request` hook; also a Role Profile created or granting
-  more roles.
+- **Permission drift** (T1098), all as `permission_change`:
+  - Role Permission Manager add, update, remove and reset. Older Frappe versions write `update`,
+    `remove` and `reset` with raw SQL, so Wolf reads them from the request through the
+    `after_request` hook.
+  - Custom DocPerm saved or deleted anywhere else: Data Import, the REST API, code
+    (`payload.kind` `custom_docperm`, `via` says how). Each event lists the rights granted and
+    removed. A new rule is compared with the DocType's standard rule, so the copies Frappe makes
+    before the first custom change grant nothing. A right given to `Guest` or `All` is critical.
+  - A User Permission that lets its user see more (`user_permission`). User Permissions are
+    allow lists, so the first one for a DocType only restricts (ERPNext creates those for
+    employees) and raises nothing. A further value, an edit that allows another value, user or
+    DocType, or removing the last one (which lifts the restriction) raise one.
+  - A Website user (portal: customer, supplier) given a desk role, which makes them a System
+    User (`desk_access`).
+  - A Role Profile created or granting more roles.
 - **Weakened settings** (T1562.001, critical): System Settings saves that turn 2FA, the password
   policy, one session per user, SSO-only login or logout on password reset off, lower the
   password score or the lockout duration, allow more failed logins (or no lockout), lengthen
@@ -154,8 +165,10 @@ Not built yet: **exfiltration** (T1567/T1030): report exports, Data Export or la
 `get_list` page sizes above a per-user baseline. It needs a baseline per user. API key *use*
 from an IP never seen for it also needs request logs Wolf does not keep yet.
 
-Limits: permission rules changed outside the Role Permission Manager (Data Import, the REST API
-on Custom DocPerm) are not seen. Script events keep the first 300 characters of the code.
+Limits: changes made with raw SQL (a patch, `bench mariadb`) fire no document event and are not
+seen; patches and migrations are skipped on purpose. A User Permission restricted to one DocType
+(`applicable_for`) is counted with the user's others for the same allowed DocType. Script events
+keep the first 300 characters of the code.
 
 ### Step 3: posture score and exposure (built)
 

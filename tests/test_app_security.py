@@ -74,3 +74,44 @@ class TestHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class TestDocpermChange(unittest.TestCase):
+	RULE = {"parent": "Sales Invoice", "role": "Accounts User", "read": 1, "write": 1, "if_owner": 0}
+
+	def test_new_rule_grants_its_rights(self):
+		self.assertEqual(appsec.docperm_change(None, {**self.RULE, "delete": 1}), {"granted": ["read", "write", "delete"], "revoked": []})
+
+	def test_copy_of_the_standard_rule_grants_nothing(self):
+		self.assertIsNone(appsec.docperm_change(dict(self.RULE), dict(self.RULE)))
+
+	def test_rights_granted_and_revoked(self):
+		self.assertEqual(appsec.docperm_change(self.RULE, {**self.RULE, "write": 0, "export": 1}), {"granted": ["export"], "revoked": ["write"]})
+
+	def test_only_if_creator(self):
+		owner = {**self.RULE, "if_owner": 1}
+		self.assertEqual(appsec.docperm_change(owner, self.RULE), {"granted": ["all documents"], "revoked": []})
+		self.assertEqual(appsec.docperm_change(self.RULE, owner), {"granted": [], "revoked": ["all documents"]})
+
+	def test_rule_moved_to_another_role_grants_everything_there(self):
+		self.assertEqual(appsec.docperm_change(self.RULE, {**self.RULE, "role": "Guest"}), {"granted": ["read", "write"], "revoked": []})
+
+
+class TestUserPermissionWidens(unittest.TestCase):
+	ROW = {"user": "a@example.com", "allow": "Company", "for_value": "ACME", "apply_to_all_doctypes": 1, "hide_descendants": 0}
+
+	def test_first_restricts_further_ones_widen(self):
+		self.assertFalse(appsec.user_permission_widens(None, self.ROW, others=0))  # ERPNext's employee row
+		self.assertTrue(appsec.user_permission_widens(None, self.ROW, others=1))
+
+	def test_removing_the_last_lifts_the_restriction(self):
+		self.assertTrue(appsec.user_permission_widens(self.ROW, None, others=0))
+		self.assertFalse(appsec.user_permission_widens(self.ROW, None, others=2))
+
+	def test_edits(self):
+		widens = lambda **after: appsec.user_permission_widens(self.ROW, {**self.ROW, **after}, others=0)  # noqa: E731
+		self.assertTrue(widens(for_value="Other Co"))
+		self.assertTrue(widens(user="b@example.com"))
+		self.assertTrue(widens(apply_to_all_doctypes=0, applicable_for="Sales Invoice"))
+		self.assertFalse(widens(hide_descendants=1))  # narrows
+		self.assertFalse(widens(is_default=1))  # preselects a value only

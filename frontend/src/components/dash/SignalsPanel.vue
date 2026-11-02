@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { ago, full } from '@/services/time'
@@ -19,10 +20,25 @@ const STATE = {
 }
 const GROUPS = { workers: 'Workers and queues', processes: 'Bench processes', redis: 'Redis', database: 'Database', backups: 'Backups', tls: 'TLS certificates', security: 'Security exposure', host: 'Host resources' }
 
+// Each group draws its first rows; the rest on demand. The server sorts problems first, so the
+// rows drawn are a group's firing and stale ones before the others. Drawing all 300 series took
+// 0.1 to 0.3 s of every overview (docs/load-test.md).
+const FIRST_ROWS = 10
+const shown = reactive({}) // groups opened in full; kept while the page refreshes the same scope
+
 const groups = computed(() => {
   const by = {}
   for (const s of props.signals.series) (by[s.group] ||= []).push(s)
-  return Object.keys(GROUPS).filter((g) => by[g]).map((g) => ({ key: g, label: GROUPS[g], series: by[g], counts: props.signals.counts[g] || {} }))
+  return Object.keys(GROUPS).filter((g) => by[g]).map((g) => {
+    const all = by[g]
+    const open = shown[g] || all.length <= FIRST_ROWS
+    const hidden = open ? [] : all.slice(FIRST_ROWS)
+    return {
+      key: g, label: GROUPS[g], series: open ? all : all.slice(0, FIRST_ROWS), counts: props.signals.counts[g] || {},
+      total: all.length, hidden: hidden.length, hiddenProblems: hidden.filter((s) => s.state === 'firing' || s.state === 'stale').length,
+      canFold: shown[g] && all.length > FIRST_ROWS,
+    }
+  })
 })
 const where = (s) => [s.site, s.bench, s.host].filter(Boolean).join(' · ')
 const label = (s) => (s.label_key ? `${s.label} (${s.label_key})` : s.label)
@@ -66,6 +82,14 @@ const email = computed(() => Object.entries(props.signals.email || {}))
           <span v-if="signals.caveats[s.metric_name]" class="w-full text-xs text-ink-gray-6">{{ signals.caveats[s.metric_name] }}</span>
         </li>
       </ul>
+      <Button
+        v-if="g.hidden"
+        size="sm"
+        variant="ghost"
+        :label="`Show the other ${g.hidden} of ${g.total}${g.hiddenProblems ? `, ${g.hiddenProblems} with a problem` : ''}`"
+        @click="shown[g.key] = true"
+      />
+      <Button v-else-if="g.canFold" size="sm" variant="ghost" :label="`Show the first ${FIRST_ROWS} only`" @click="shown[g.key] = false" />
     </div>
 
     <div v-if="email.length" class="space-y-1">

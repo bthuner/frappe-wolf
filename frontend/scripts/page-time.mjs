@@ -26,7 +26,9 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const target = new URL(opts.url)
 const base = `${target.protocol}//${opts.site}:${target.port || 80}`
 // the site is chosen by Host header: resolve its name to the bench without touching /etc/hosts
-const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${opts.site} ${target.hostname}`] })
+// WOLF_CHROMIUM: a preinstalled Chromium, as for the browser tests
+const browser = await chromium.launch({ args: [`--host-resolver-rules=MAP ${opts.site} ${target.hostname}`],
+  ...(process.env.WOLF_CHROMIUM ? { executablePath: process.env.WOLF_CHROMIUM } : {}) })
 
 const READ = /\/api\/method\/(frappe_wolf\.api\.[\w.]+)/
 

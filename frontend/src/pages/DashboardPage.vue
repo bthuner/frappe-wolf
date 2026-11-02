@@ -77,6 +77,10 @@ const hosts = computed(() => {
   const all = data.value.inventory?.hosts || []
   return scope.value.host ? all.filter((h) => h.host === scope.value.host) : all
 })
+// the first hosts are drawn, the rest on demand (drawing 101 hosts was part of the page's time)
+const FIRST_HOSTS = 20
+const allHosts = ref(false)
+const shownHosts = computed(() => (allHosts.value ? hosts.value : hosts.value.slice(0, FIRST_HOSTS)))
 const SOURCES = { agent: 'agent', satellite: 'satellite', events: 'events', metrics: 'metrics', incidents: 'incidents' }
 
 // another scope: drop the previous one's panels at once, so its numbers never sit under the
@@ -84,6 +88,7 @@ const SOURCES = { agent: 'agent', satellite: 'satellite', events: 'events', metr
 watch(scope, () => {
   data.value = {}
   errors.value = {}
+  allHosts.value = false
 })
 watch([scope, range], load, { immediate: true })
 
@@ -165,7 +170,7 @@ const live = useLive(hub, {
     <section v-if="hosts.length" class="wolf-card space-y-2" aria-label="Hosts, benches and sites">
       <h2 class="text-base font-semibold text-ink-gray-9">{{ scope.host ? 'Benches and sites on this host' : 'Hosts, benches and sites' }}</h2>
       <ul class="space-y-2 text-sm">
-        <li v-for="h in hosts" :key="h.host">
+        <li v-for="h in shownHosts" :key="h.host">
           <RouterLink class="wolf-link" :to="{ name: 'host', params: { host: h.host } }">{{ h.host }}</RouterLink>
           <span class="text-ink-gray-6"> · known from {{ h.sources.map((s) => SOURCES[s]).join(', ') }}</span>
           <ul class="ml-4">
@@ -179,6 +184,13 @@ const live = useLive(hub, {
           </ul>
         </li>
       </ul>
+      <Button
+        v-if="hosts.length > FIRST_HOSTS"
+        size="sm"
+        variant="ghost"
+        :label="allHosts ? `Show the first ${FIRST_HOSTS} hosts only` : `Show the other ${hosts.length - FIRST_HOSTS} of ${hosts.length} hosts`"
+        @click="allHosts = !allHosts"
+      />
       <p class="text-sm text-ink-gray-6">{{ data.inventory.note }}</p>
     </section>
 

@@ -3,7 +3,8 @@
 Every minute `export_siem` sends what is new since its cursor: Wolf Events of the chosen types
 at or above the minimum severity, and, when enabled, every signed journal entry. Messages are
 RFC 5424 syslog carrying CEF or OCSF JSON, over UDP, TCP or TLS (octet-counted frames on TCP
-and TLS). The cursor only moves after a batch was sent, so a collector that is down delays the
+and TLS, or one message per line for collectors that expect it). UDP cannot tell whether the
+collector got anything: the cursor moves anyway. The cursor only moves after a batch was sent, so a collector that is down delays the
 export without losing anything (at-least-once: a collector may see a message twice after a
 failure mid-batch).
 
@@ -14,7 +15,7 @@ field: writing it every minute must not touch the settings form.
 """
 
 import json
-import socket
+import os
 import ssl
 from zoneinfo import ZoneInfo
 
@@ -53,35 +54,17 @@ def _utc(dt, tz):
 	return dt.replace(tzinfo=ZoneInfo(tz)) if dt.tzinfo is None else dt
 
 
-class Sender:
-	def __init__(self, host, port, transport, verify_tls=True):
-		self.host, self.port, self.transport, self.verify_tls = host, int(port), transport, verify_tls
-
-	def send(self, messages):
-		if not messages:
-			return
-		if self.transport == "udp":
-			with socket.socket(socket.AF_INET6 if ":" in self.host else socket.AF_INET, socket.SOCK_DGRAM) as s:
-				for m in messages:
-					s.sendto(m.encode("utf-8")[: siem.MAX_UDP], (self.host, self.port))
-			return
-		raw = socket.create_connection((self.host, self.port), timeout=TIMEOUT)
-		try:
-			conn = raw
-			if self.transport == "tls":
-				context = ssl.create_default_context()
-				if not self.verify_tls:
-					context.check_hostname = False
-					context.verify_mode = ssl.CERT_NONE
-				conn = context.wrap_socket(raw, server_hostname=self.host)
-			conn.sendall(b"".join(siem.frame(m) for m in messages))
-		finally:
-			raw.close()
+def _ca_file(settings):
+	path = (settings.get("siem_ca_file") or "").strip()
+	if path and not os.path.isabs(path):
+		path = frappe.get_site_path(path)  # e.g. private/files/collector-ca.pem
+	return path or None
 
 
 def _sender(settings):
-	return Sender(settings.siem_host, cint(settings.siem_port) or 514, settings.siem_transport or "tcp",
-	              bool(cint(settings.siem_verify_tls)))  # fmt: skip
+	return siem.Sender(settings.siem_host, cint(settings.siem_port) or 514, settings.siem_transport or "tcp",
+	                   verify_tls=bool(cint(settings.siem_verify_tls)), ca_file=_ca_file(settings),
+	                   framing=settings.get("siem_framing") or "octet-counting", timeout=TIMEOUT)  # fmt: skip
 
 
 def _event_rows(cursor, types, min_rank, until):
@@ -123,6 +106,7 @@ def export_siem(lag_seconds=LAG_SECONDS):
 	tz = events.system_tz()
 	fmt = settings.get("siem_format") or "ocsf"
 	hostname = frappe.local.site
+	header = settings.get("siem_header") or "rfc5424"
 	types = [t.strip() for t in (settings.get("siem_event_types") or "security").split(",") if t.strip()]
 	min_rank = SEVERITY_RANK.get(settings.get("siem_min_severity") or "warning", 1)
 	cursor = _cursor()
@@ -137,7 +121,7 @@ def export_siem(lag_seconds=LAG_SECONDS):
 			messages = []
 			for r in rows:
 				r["timestamp"] = _utc(r.timestamp, tz)
-				messages.append(siem.render("event", r, fmt, hostname, __version__))
+				messages.append(siem.render("event", r, fmt, hostname, __version__, header))
 			sender.send(messages)
 			sent += len(messages)
 			cursor.update(event_creation=str(scanned[-1].creation), event_name=scanned[-1].name)
@@ -149,7 +133,7 @@ def export_siem(lag_seconds=LAG_SECONDS):
 			rows = _journal_rows(cursor)
 			if not rows:
 				break
-			messages = [siem.render("journal", {**r, "at": _utc(r.at, tz)}, fmt, hostname, __version__) for r in rows]
+			messages = [siem.render("journal", {**r, "at": _utc(r.at, tz)}, fmt, hostname, __version__, header) for r in rows]
 			sender.send(messages)
 			sent += len(messages)
 			cursor["journal_seq"] = rows[-1].seq
@@ -183,5 +167,6 @@ def send_test():
 	event = {"name": "test", "event_type": "security", "category": "wolf_test", "severity": "info",
 	         "title": "Frappe Wolf SIEM export test", "timestamp": _utc(now_datetime(), events.system_tz()),
 	         "site": frappe.local.site, "payload": {}}  # fmt: skip
-	_sender(settings).send([siem.render("event", event, settings.get("siem_format") or "ocsf", frappe.local.site, __version__)])
+	_sender(settings).send([siem.render("event", event, settings.get("siem_format") or "ocsf", frappe.local.site, __version__,
+	                                    settings.get("siem_header") or "rfc5424")])  # fmt: skip
 	return {"sent": True}

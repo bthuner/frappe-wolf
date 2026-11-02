@@ -68,6 +68,21 @@ class TestSyslog(unittest.TestCase):
 		c = siem.render("journal", entry, "cef", "h")
 		self.assertIn("journal:incident", c)
 		self.assertIn("cs4=" + "m" * 64, c)
+		self.assertIn("dvchost=h ", c)
+
+	def test_bare_messages(self):
+		# header "none": the bare JSON (Wazuh's JSON decoder) or CEF (Graylog's CEF input), one per line
+		bare = siem.render("event", EVENT, "ocsf", "erp.example.com", header="none")
+		self.assertEqual(json.loads(bare)["finding_info"]["uid"], "abc123")
+		cef = siem.render("event", EVENT, "cef", "erp.example.com", header="none")
+		self.assertTrue(cef.startswith("CEF:0|Dokos|Frappe Wolf|"))
+		self.assertIn("dvchost=erp.example.com", cef)
+		entry = {"seq": 7, "at": datetime(2026, 11, 1, 10, 0, tzinfo=timezone.utc), "kind": "incident", "mac": "m" * 64}
+		self.assertEqual(json.loads(siem.render("journal", entry, "ocsf", "h", header="none"))["wolf_journal"]["seq"], 7)
+
+	def test_newline_framing(self):
+		self.assertEqual(siem.frame("a\r\nb é", "newline"), "a  b é\n".encode())
+		self.assertEqual(siem.frame("x", "octet-counting"), b"1 x")
 
 
 if __name__ == "__main__":

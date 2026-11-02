@@ -1,0 +1,48 @@
+<!--
+  Frappe Wolf SIEM export in Wazuh (see docs/siem.md).
+
+  Wolf Settings → SIEM export: Format ocsf, Message header none, Transport tcp, Framing newline.
+  Wazuh's built-in JSON decoder reads each line; these rules raise one alert per Wolf finding,
+  at a level that follows the finding's severity, and keep the signed journal entries in the
+  archives (level 3, no alert by default).
+
+  Install: copy to /var/ossec/etc/rules/ on the manager, then restart it. Change the rule IDs if
+  100900-100919 are taken. Needs Wazuh 4.6 or later (rule 99000); tried with Wazuh 4.9.2.
+-->
+<group name="frappe_wolf,">
+
+  <!-- OCSF lines first match Wazuh's own Amazon Security Lake rule (99000, Wazuh 4.6+): Wolf's
+       findings are picked out under it -->
+  <rule id="100900" level="0">
+    <if_sid>99000</if_sid>
+    <field name="metadata.product.name">^Frappe Wolf$</field>
+    <field name="class_uid">^2004$</field>
+    <description>Frappe Wolf finding</description>
+  </rule>
+
+  <rule id="100901" level="3">
+    <if_sid>100900</if_sid>
+    <field name="severity_id">^1$</field>
+    <description>Frappe Wolf (info): $(finding_info.title)</description>
+  </rule>
+
+  <rule id="100902" level="7">
+    <if_sid>100900</if_sid>
+    <field name="severity_id">^3$</field>
+    <description>Frappe Wolf (warning): $(finding_info.title)</description>
+  </rule>
+
+  <rule id="100903" level="12">
+    <if_sid>100900</if_sid>
+    <field name="severity_id">^5$</field>
+    <description>Frappe Wolf (critical): $(finding_info.title)</description>
+  </rule>
+
+  <rule id="100910" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="wolf_journal.seq">^\d+$</field>
+    <description>Frappe Wolf journal entry $(wolf_journal.seq): $(wolf_journal.kind)</description>
+    <group>frappe_wolf_journal,</group>
+  </rule>
+
+</group>

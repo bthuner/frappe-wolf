@@ -2185,11 +2185,42 @@ def main():
 			assert siem_api.export_siem(lag_seconds=0) == 0
 			down = siem_api.get_status()
 			assert down["last_error"] and down["event_name"] == cursor["event_name"], down  # nothing skipped
+
+			# Wazuh's recipe: bare OCSF JSON, one per line over TCP (the event kept while down goes now)
+			lines = []
+
+			class LineCollector(socketserver.BaseRequestHandler):
+				def handle(self):
+					data = b""
+					while chunk := self.request.recv(65536):
+						data += chunk
+					lines.extend(data.decode("utf-8").splitlines())
+
+			line_server = socketserver.TCPServer(("127.0.0.1", 0), LineCollector)
+			threading.Thread(target=line_server.serve_forever, daemon=True).start()
+			try:
+				for k, v in {"siem_port": line_server.server_address[1], "siem_framing": "newline", "siem_header": "none",
+				             "siem_journal": 0}.items():  # fmt: skip
+					frappe.db.set_single_value("Wolf Settings", k, v)
+				frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+				count = siem_api.export_siem(lag_seconds=0)
+				deadline = time.monotonic() + 10
+				while len(lines) < count and time.monotonic() < deadline:
+					time.sleep(0.05)
+				assert count >= 1 and len(lines) == count, (count, lines)
+				titles = [json.loads(line)["finding_info"]["title"] for line in lines]  # each line is bare JSON
+				assert "SIEM smoke while down" in titles, titles
+				assert siem_api.get_status()["last_error"] is None
+			finally:
+				line_server.shutdown()
+				line_server.server_close()
+				for k, v in {"siem_framing": "octet-counting", "siem_header": "rfc5424"}.items():
+					frappe.db.set_single_value("Wolf Settings", k, v)
 		finally:
 			server.server_close()
 			frappe.db.set_single_value("Wolf Settings", "siem_enabled", 0)
 			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
-		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
+		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded; bare JSON lines sent after"
 
 	def journal_retention():
 		"""Purge after a signed record; verification checks the journal starts where it stopped."""

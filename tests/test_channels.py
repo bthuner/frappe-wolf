@@ -223,6 +223,13 @@ class TestSlack(unittest.TestCase):
 		self.assertLessEqual(len(blocks[0]["text"]["text"]), slack.SECTION_LIMIT)
 		self.assertTrue(all(len(b["text"]["text"]) <= 75 for b in blocks[1]["elements"]))
 
+	def test_response_links_are_buttons(self):
+		responses = [{"label": "Block 45.33.32.156 for 24 h on bench-01", "url": "https://wolf.example.com/r?sig=1"}]
+		(req,) = slack.build_payload(msg(responses=responses), self.CFG)
+		buttons = req["json"]["attachments"][0]["blocks"][1]["elements"]
+		self.assertEqual([b["action_id"] for b in buttons], ["wolf_open", "wolf_ack", "wolf_resolve", "wolf_response_0"])
+		self.assertEqual((buttons[3]["url"], buttons[3]["style"]), (responses[0]["url"], "danger"))
+
 	def test_warning_color(self):
 		(req,) = slack.build_payload(msg(severity="warning"), self.CFG)
 		self.assertEqual(req["json"]["attachments"][0]["color"], c.COLORS["warning"])
@@ -241,6 +248,11 @@ class TestMattermost(unittest.TestCase):
 		self.assertEqual({f["title"] for f in att["fields"]}, {"Severity", "Scope"})
 		self.assertTrue(all(isinstance(f["short"], bool) for f in att["fields"]))
 		self.assertIn("WINC-00012", att["footer"])
+
+	def test_response_links(self):
+		responses = [{"label": "Disable user a@example.com", "url": "https://wolf.example.com/r?sig=2"}]
+		(req,) = mattermost.build_payload(msg(responses=responses), {"chat_webhook_url": "https://mm/x"})
+		self.assertIn("[Disable user a@example.com (Wolf Manager)](https://wolf.example.com/r?sig=2)", req["json"]["attachments"][0]["text"])
 
 	def test_no_links_when_resolved(self):
 		(req,) = mattermost.build_payload(msg(kind="resolved", actions={}), {"chat_webhook_url": "https://mm/x"})

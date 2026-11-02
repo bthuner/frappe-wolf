@@ -1845,6 +1845,69 @@ def main():
 		assert block["name"] in expired, expired
 		return f"{block['name']} blocked then expired, {disabled['name']} {disabled['result']}, refusals ok"
 
+	def response_links():
+		"""Signed links to proposed response actions: in the alert, confirmed only by a logged-in manager."""
+		from types import SimpleNamespace
+		from urllib.parse import parse_qs, urlsplit
+
+		from frappe_wolf.api import actions as actions_api
+		from frappe_wolf.wolf import notify
+
+		user = frappe.get_doc({"doctype": "User", "email": "wolf-link-target@example.com", "first_name": "Target",
+		                       "send_welcome_email": 0}).insert(ignore_permissions=True).name  # fmt: skip
+		clerk = frappe.get_doc({"doctype": "User", "email": "wolf-link-clerk@example.com", "first_name": "Clerk",
+		                        "send_welcome_email": 0, "roles": [{"role": "Wolf User"}]}).insert(ignore_permissions=True).name  # fmt: skip
+		inc = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke response links", "severity": "critical",
+		                      "status": "Open", "site": SITE}).insert(ignore_permissions=True)  # fmt: skip
+		name = events.insert_event(schema.normalize_event(
+			{"type": "security", "category": "api_key_generated", "site": SITE, "payload": {"user": user}}, tz, now_datetime()))  # fmt: skip
+		frappe.db.set_value("Wolf Event", name, "incident", inc.name)
+		frappe.local.wolf_response_proposals = None
+
+		subject, text, html = notify.render(inc, "fired", actor="oncall@example.com")
+		responses = notify.response_links(inc, "fired", actor="oncall@example.com")
+		disable = next(r for r in responses if r["label"] == f"Disable user {user}")
+		assert disable["url"] in text and "Wolf Manager" in html, text
+		params = {k: v[0] for k, v in parse_qs(urlsplit(disable["url"]).query).items()}
+		assert params["actor"] == "oncall@example.com" and "agent" not in params, params
+		assert notify.message(inc, "resolved")["responses"] == [], "no links on a resolved alert"
+
+		def open_link(as_user, method, **override):
+			frappe.set_user(as_user)
+			frappe.local.session.data.csrf_token = "smoke-csrf"  # a request has one; a script cannot make one
+			frappe.local.response = frappe._dict()
+			frappe.local.request = SimpleNamespace(method=method, full_path="/api/method/frappe_wolf.api.actions.response_action?x=1")
+			try:
+				actions_api.response_action(**{**params, **override})
+			finally:
+				frappe.set_user("Administrator")
+				frappe.local.request = None
+			return frappe.local.response.get("http_status_code") or 200, frappe.local.message_title, frappe.local.message
+
+		seen = {}
+		try:
+			status, _, page = open_link("Administrator", "POST", target="other@example.com")
+			assert status == 403 and "not valid" in page, page  # a signed field changed
+			status, _, page = open_link("Guest", "POST")
+			assert status == 200 and "Log in to confirm" in page and not frappe.db.exists("Wolf Response Action",
+			       {"incident": inc.name}), page  # fmt: skip
+			status, _, page = open_link(clerk, "POST")
+			assert status == 403 and "Only a Wolf Manager" in page, page
+			status, _, page = open_link("Administrator", "GET")
+			assert "<form method=\"post\"" in page and frappe.db.get_value("User", user, "enabled"), page  # GET acts on nothing
+			status, _, page = open_link("Administrator", "POST")
+			row = frappe.get_all("Wolf Response Action", filters={"incident": inc.name}, fields=["name", "status", "approved_by", "reason"])
+			assert status == 200 and len(row) == 1 and row[0].status == "Applied", (page, row)
+			assert row[0].approved_by == "Administrator" and "oncall@example.com" in row[0].reason, row
+			assert not frappe.db.get_value("User", user, "enabled")
+			status, _, page = open_link("Administrator", "POST")
+			assert "Nothing to do" in page and frappe.db.count("Wolf Response Action", {"incident": inc.name}) == 1, page
+			seen["confirmed"] = f"{row[0].name} by Administrator from a link sent to oncall@example.com"
+		finally:
+			frappe.local.response = frappe._dict()
+			frappe.db.set_value("User", user, "enabled", 1)
+		return seen
+
 	def journal_chain():
 		from frappe_wolf.api import journal as journal_api
 
@@ -2049,7 +2112,7 @@ def main():
 	                 ("exfiltration", exfiltration_check),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
-	                 ("response actions", response_actions), ("journal", journal_chain),
+	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),
 	                 ("siem export", siem_export), ("journal retention", journal_retention)]:
 		check(name, fn)
 

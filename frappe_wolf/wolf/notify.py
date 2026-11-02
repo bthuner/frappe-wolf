@@ -126,6 +126,19 @@ def action_urls(inc, kind, actor=None):
 	return build(inc.name, inc.status, actor=actor)
 
 
+def response_links(inc, kind, actor=None):
+	"""Signed links to the response actions Wolf proposes (a Wolf Manager confirms each)."""
+	if kind not in ACTIONABLE:
+		return []
+	from frappe_wolf.wolf.action_links import response_links as build
+
+	try:
+		return build(inc.name, inc.status, actor=actor)
+	except Exception:
+		frappe.logger("frappe_wolf").exception("could not build response links")
+		return []  # never lose the alert over its links
+
+
 def _lines(inc, kind):
 	label = KIND_LABEL.get(kind, kind.upper())
 	lines = [
@@ -157,8 +170,14 @@ def render(inc, kind, actor=None):
 		html += "<br>" + " · ".join(
 			f'<a href="{escape_html(u)}">{"Acknowledge" if a == "ack" else "Resolve"}</a>' for a, u in actions.items()
 		)
+	responses = response_links(inc, kind, actor)
+	if responses:
+		html += "<br>" + escape_html("Proposed response (a Wolf Manager confirms after logging in):") + "<br>" + "<br>".join(
+			f'<a href="{escape_html(r["url"])}">{escape_html(r["label"])}</a>' for r in responses
+		)
 	lines.append(url)
 	lines += [f"{'Acknowledge' if a == 'ack' else 'Resolve'}: {u}" for a, u in actions.items()]
+	lines += [f"{r['label']} (Wolf Manager): {r['url']}" for r in responses]
 	return subject, "\n".join(lines), html
 
 
@@ -186,6 +205,7 @@ def message(inc, kind, rendered=None):
 		"host": inc.host,
 		"lines": _lines(inc, kind)[1:],
 		"actions": action_urls(inc, kind),
+		"responses": response_links(inc, kind),
 	}
 
 
@@ -399,7 +419,7 @@ def deliver(ch, inc, kind, subject, text, html):
 		to = recipients(ch.recipients)
 		if not to:
 			raise ValueError("Not configured: Recipients")
-		if not action_urls(inc, kind):
+		if not action_urls(inc, kind) and not response_links(inc, kind):
 			send_email(to, subject, html, inc.name)
 			return None
 		# One message per recipient so an acknowledgement can name who clicked.
@@ -423,6 +443,7 @@ def deliver(ch, inc, kind, subject, text, html):
 				"started_at": _ts(inc.started_at),
 				"url": incident_url(inc.name),
 				"actions": action_urls(inc, kind),
+				"responses": response_links(inc, kind),
 			},
 		}
 		return post_webhook(ch.webhook_url, body)

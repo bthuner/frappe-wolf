@@ -46,6 +46,8 @@ def build_payload(msg, cfg):
 	for action, url in (msg.get("actions") or {}).items():
 		style = "primary" if action == "ack" else None
 		buttons.append(_button(f"wolf_{action}", ACTION_LABEL.get(action, action), url, style))
+	for i, r in enumerate(msg.get("responses") or []):
+		buttons.append(_button(f"wolf_response_{i}", r["label"], r["url"], "danger"))
 	if buttons:
 		blocks.append({"type": "actions", "elements": buttons})
 	attachment = {"color": color(msg), "fallback": truncate(msg["text"], FALLBACK_LIMIT), "blocks": blocks}

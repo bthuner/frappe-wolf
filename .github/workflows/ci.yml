@@ -28,7 +28,7 @@ jobs:
           pip install ruff==0.17.3
           ruff check --output-format=github .
       - name: shellcheck
-        run: shellcheck agent/install.sh agent/wolf-block.sh ci/integration.sh
+        run: shellcheck agent/install.sh agent/wolf-block.sh agent/wolf-block-fail2ban.sh ci/integration.sh
 
   app-tests:
     name: App unit tests (Python 3.12)

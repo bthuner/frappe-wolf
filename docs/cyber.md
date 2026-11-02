@@ -127,7 +127,7 @@ probes in 10 min per site), Sensitive file served.
 
 Each step stands on its own, so a step can ship without the ones after it.
 
-### Step 2: Frappe application security (built, except exfiltration)
+### Step 2: Frappe application security (built)
 
 Site signals (`local_signals.py`, rules in `app_security.py`), behind **Wolf Settings → Flag
 risky application changes** (on by default):
@@ -159,16 +159,43 @@ risky application changes** (on by default):
   for privileged users.
 - **Outbound webhooks** (T1567): a Webhook created, enabled or pointed at another host
   (`webhook_external`).
-- Seven presets, one per signal.
+- **Unusual data exports** (T1567 / T1030, `data_exfiltration`), behind its own setting,
+  **Flag unusual data exports** (on by default):
+  - **What counts:** report exports, Data Export, Data Import templates with records, bulk PDFs
+    and every list read (`frappe.client.get_list`, the list and report views,
+    `/api/resource/<DocType>`), whatever the page size. A script paging through a table in small
+    pages adds up like one big read.
+  - **How:** the response size of each counts towards the user's total for the hour, kept in
+    Redis by the `after_request` hook (`api/exfiltration.py`, rules in `wolf/exfiltration.py`).
+    Every hour, those totals become `user_export_bytes` samples, one series per user
+    (`labels.user`). The series names users: whoever may read the site's metrics in Wolf sees
+    how much each user took out per hour.
+  - **When:** past a floor (50 MB per hour by default), the hour is compared with the user's
+    largest hour over the last 14 days. Warning at 5x (Export Factor), critical at 20x. A user
+    without any history is critical, except while the site itself has less than 14 days of
+    history: then every user lacks one, and it is a warning.
+  - **How often:** at most one event per user, hour and severity, so a warning can still be
+    followed by a critical. The payload has the hour's bytes, requests and rows (for list
+    reads), the baseline, the ratio, the last request (what, which DocType or report) and the
+    IP.
+- Eight presets, one per signal.
 
-Not built yet: **exfiltration** (T1567/T1030): report exports, Data Export or large
-`get_list` page sizes above a per-user baseline. It needs a baseline per user. API key *use*
-from an IP never seen for it also needs request logs Wolf does not keep yet.
+Not built yet: API key *use* from an IP never seen for it needs request logs Wolf does not keep
+yet.
 
 Limits: changes made with raw SQL (a patch, `bench mariadb`) fire no document event and are not
 seen; patches and migrations are skipped on purpose. A User Permission restricted to one DocType
 (`applicable_for`) is counted with the user's others for the same allowed DocType. Script events
 keep the first 300 characters of the code.
+
+Limits of export counting:
+- **Hours:** totals are per clock hour, so an export spread across two hours is split in two.
+- **Background exports:** the list view's export in the background emails a link. Its request is
+  counted, but not the file.
+- **What is not counted:** files sent as they are (private files, backups) and printing one
+  document.
+- **Satellites:** they keep their raw samples for 2 days, so their baseline covers 2 days, not 14.
+- **Bytes:** the size of the response sent, compressed or not by the proxy afterwards.
 
 ### Step 3: posture score and exposure (built)
 
@@ -320,3 +347,4 @@ result; read-only for everyone) and a comment on the incident.
 | `security_settings_weakened` | site | T1562.001 Disable or Modify Tools |
 | `api_key_generated` | site | T1098.001 Additional Cloud Credentials |
 | `webhook_external` | site | T1567 Exfiltration Over Web Service |
+| `data_exfiltration` | site | T1567 Exfiltration Over Web Service, T1030 Data Transfer Size Limits |

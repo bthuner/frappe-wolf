@@ -119,9 +119,10 @@ settings in production.
 | Server / Client Script can run new code | `security` / `server_script_change`, `client_script_change` (site) | a script created, enabled, or its code, type or trigger changed (warning; the event is critical for API and scheduled Server Scripts or guest access) |
 | System Console used | `security` / `console_execution` (site) | a System Console run (Python or SQL) |
 | Security settings weakened | `security` / `security_settings_weakened` (site) | System Settings: 2FA or password policy off, lower password score, looser lockout, longer sessions, guest uploads, one-session or logout-on-reset off (critical) |
-| Permission rules changed | `security` / `permission_change` (site) | Role Permission Manager add/update/remove/reset, or a Role Profile that grants more roles |
+| Permission rules changed | `security` / `permission_change` (site) | permission rules changed (Role Permission Manager, Data Import, REST, code), a Role Profile that grants more roles, a User Permission letting a user see more, a Website user given desk access |
 | API key generated | `security` / `api_key_generated` (site) | a new API secret written for a user (the event is critical for privileged users) |
 | Webhook to a new host | `security` / `webhook_external` (site) | a Webhook created, enabled or pointed at another host |
+| Unusual data export | `security` / `data_exfiltration` (site) | a user's exports and list reads this hour above 50 MB and 5x their largest hour of the last 14 days (critical at 20x, or without any history) |
 | Security score low | `security_score` (app, hourly) | a site's score below 60 (see **Wolf → Security**) |
 | Bench service exposed | `exposed_services` (agent) | MariaDB, a bench Redis, socket.io or gunicorn listening beyond loopback (critical) |
 | Development settings in production | `site_config_risks` (agent) | `developer_mode`, `allow_tests`, plain-HTTP `host_name` or `allow_cors: "*"` |

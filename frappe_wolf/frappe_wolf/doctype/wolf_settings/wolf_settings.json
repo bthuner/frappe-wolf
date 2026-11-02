@@ -38,6 +38,9 @@
   "capture_privileged_users",
   "privileged_roles",
   "capture_app_security",
+  "capture_exfiltration",
+  "exfiltration_floor_mb",
+  "exfiltration_factor",
   "signals_section",
   "capture_email_queue",
   "email_queue_stale_minutes",
@@ -293,6 +296,29 @@
    "label": "Flag risky application changes"
   },
   {
+   "default": "1",
+   "description": "Report exports, Data Export, bulk PDFs and list reads, counted per user and hour. An event when a user's hour is far above their largest hour of the last 14 days (critical at 20x, or without any history), once past the floor below.",
+   "fieldname": "capture_exfiltration",
+   "fieldtype": "Check",
+   "label": "Flag unusual data exports"
+  },
+  {
+   "default": "50",
+   "depends_on": "capture_exfiltration",
+   "description": "Below this volume in an hour (MB of responses), nothing is compared.",
+   "fieldname": "exfiltration_floor_mb",
+   "fieldtype": "Int",
+   "label": "Export Floor (MB per hour)"
+  },
+  {
+   "default": "5",
+   "depends_on": "capture_exfiltration",
+   "description": "Warning when a user's hour is this many times their largest hour of the last 14 days.",
+   "fieldname": "exfiltration_factor",
+   "fieldtype": "Float",
+   "label": "Export Factor"
+  },
+  {
    "fieldname": "signals_section",
    "fieldtype": "Section Break",
    "label": "Email queue and login geography (this site)"
@@ -513,7 +539,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 14:00:00.000000",
+ "modified": "2026-11-02 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

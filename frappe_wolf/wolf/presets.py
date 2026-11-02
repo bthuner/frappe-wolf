@@ -356,6 +356,14 @@ PRESETS = [
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
+	{
+		"rule_name": "Unusual data export",
+		"description": "A user exported or listed far more data this hour than in any hour of the "
+		"last 14 days, or a large volume without any history (MITRE T1567, T1030). Critical at 20x.",
+		"signal_type": "event", "event_type": "security", "event_category": "data_exfiltration",
+		"operator": ">=", "threshold": 1, "window_minutes": 60, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,
+	},
 	# --- cyber: posture (hourly score, api/security.py) ---
 	{
 		"rule_name": "Security score low",

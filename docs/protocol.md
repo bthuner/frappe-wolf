@@ -119,7 +119,7 @@ batch is dropped; 5xx or network error → retry after 1, 2, 4, 8, then 15 minut
 | `error`           | `http_5xx`, `http_502`, `traceback`, `press_job_failed`, `pilot_task_failed`, `backup_failed`, `email_queue_backlog`, `email_queue_error` |
 | `cron_failure`    | `scheduled_job`                                                     |
 | `worker_failure`  | `worker_crash`, `job_failed`, `worker_killed`, `process_down`       |
-| `security`        | `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `server_script_change`, `client_script_change`, `console_execution`, `permission_change`, `security_settings_weakened`, `api_key_generated`, `webhook_external`, `service_exposed`, `insecure_site_config`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
+| `security`        | `data_exfiltration`, `ssh_failed_login`, `ssh_root_login`, `ssh_login_after_failures`, `sudo_failure`, `account_created`, `admin_group_change`, `web_attack_probe`, `web_sensitive_file_exposed`, `server_script_change`, `client_script_change`, `console_execution`, `permission_change`, `security_settings_weakened`, `api_key_generated`, `webhook_external`, `service_exposed`, `insecure_site_config`, `frappe_failed_login`, `new_admin_ip`, `admin_login_new_country`, `privileged_user` |
 | `host_metric_alert` | created by the app: metric rule fired, `agent_silent`, `scheduler_stalled` |
 | `deployment`      | `manual`, `pilot` (Pilot tasks, see [pilot.md](pilot.md)), `migrate`, `press` (Press agent jobs, see [press.md](press.md)) |
 
@@ -149,6 +149,7 @@ Categories added with the infrastructure signals:
 | `permission_change` | site (Role Permission Manager request, Role Profile, Custom DocPerm, User Permission, User) | a permission rule added, changed, removed or reset; a Role Profile created or granting more roles; a User Permission letting its user see more; a Website user given desk access | `doctype`, `role`, `action`, `ptype`, `value` / `role_profile`, `roles`, `added` / `kind` (`custom_docperm`, `user_permission`, `desk_access`), `granted`, `revoked`, `everyone`, `user`, `allow`, `for_value`, `previous`, `via` |
 | `security_settings_weakened` | site (System Settings) | a save that lowers a defence; `critical` | `changes` (`field`, `label`, `old`, `new`), `by` |
 | `api_key_generated` | site (User) | a new API secret; `critical` for privileged users | `user`, `api_key`, `privileged`, `by` |
+| `data_exfiltration` | site (`after_request`) | a user's exports and list reads this hour past the floor and the factor times their largest hour of 14 days; `critical` at 20x or without history | `user`, `hour_bytes`, `hour_requests`, `hour_rows`, `baseline_bytes`, `ratio`, `factor`, `floor_bytes`, `last_request` (`kind`, `label`, `method`, `doctype`, `bytes`), `ip` |
 | `service_exposed` | agent (`source`: `exposure`) | a bench port starts listening beyond loopback (or its addresses change); `critical` for Redis | `port`, `service`, `addresses`, `note` |
 | `insecure_site_config` | agent (`source`: `exposure`) | a site's risky settings change and are not empty; `critical` with `developer_mode` | `findings` (`setting`, `value`, `why`) |
 | `honeytoken_triggered` | site (Activity Log, `before_request`) | a decoy user, API key or path was used; `critical`, once per token and address every 10 min | `kind` (`user`, `api_key`, `path`), `token`, `ip`, `user_agent`, `path` |
@@ -181,6 +182,7 @@ Categories added with the infrastructure signals:
 | `exposed_services`   | count    | host: bench ports (MariaDB/Postgres, bench Redis, socket.io, gunicorn) listening on all interfaces or a public address, from `/proc/net/tcp{,6}`; every 10 min |
 | `site_config_risks`  | count    | host, bench, site: `developer_mode`, `allow_tests`, a plain-HTTP `host_name`, `allow_cors: "*"` in the merged site config; every 10 min |
 | `security_score`     | 0–100    | site: written by the app (hourly), not the agent; see [cyber.md](cyber.md#step-3-posture-score-and-exposure-built) |
+| `user_export_bytes`  | bytes per hour | site, `labels.user`: response bytes of a user's exports and list reads over the past hour, written by the app (hourly); see [cyber.md](cyber.md#step-2-frappe-application-security-built) |
 | `db_threads_connected` | connections | host, bench (when one bench uses the server), `labels.db` (`host:port`) |
 | `db_connections_used_percent` | % | same: `Threads_connected` / `max_connections` |
 | `db_slow_queries`    | queries per push interval | same: increase of `Slow_queries` |

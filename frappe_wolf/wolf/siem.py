@@ -7,11 +7,16 @@
   `unmapped`. The mapping is Wolf's reading of the schema, not a certified profile.
 - `journal_cef` / `journal_json`: the journal entries, so the SIEM keeps an external copy of the
   chain (seq, digest, mac): the best anchor there is.
-- `syslog(...)`: an RFC 5424 message (facility local0); `frame(...)`: RFC 6587 octet counting
-  for TCP and TLS.
+- `syslog(...)`: an RFC 5424 message (facility local0); `frame(...)`: RFC 6587 framing for TCP
+  and TLS, octet counting (the default) or one message per line (non-transparent framing, which
+  Wazuh and other line-based collectors expect).
+- `Sender`: delivery over UDP (one message per datagram, RFC 5426), TCP or TLS (RFC 5425), the
+  collector's certificate checked against the system CAs or a CA file.
 """
 
 import json
+import socket
+import ssl
 from datetime import datetime, timezone
 
 VENDOR, PRODUCT = "Dokos", "Frappe Wolf"
@@ -47,12 +52,12 @@ def _ext(pairs):
 	return " ".join(f"{k}={_cef_ext(v)}" for k, v in pairs if v not in (None, ""))
 
 
-def cef(event, version=""):
+def cef(event, version="", device=None):
 	"""One CEF line for a Wolf Event dict (timestamp as aware datetime or ISO string, in UTC)."""
 	payload = event.get("payload") or {}
 	attacks = ",".join(t.get("id", "") for t in payload.get("mitre_attack") or [] if isinstance(t, dict))
 	ext = _ext([
-		("rt", _epoch_ms(event.get("timestamp"))), ("externalId", event.get("name")), ("cat", event.get("event_type")),
+		("rt", _epoch_ms(event.get("timestamp"))), ("dvchost", device), ("externalId", event.get("name")), ("cat", event.get("event_type")),
 		("msg", event.get("title")), ("src", payload.get("ip")), ("dhost", event.get("host")),
 		("suser", payload.get("user")), ("cnt", event.get("count")),
 		("cs1Label", "site"), ("cs1", event.get("site")), ("cs2Label", "bench"), ("cs2", event.get("bench")),
@@ -95,8 +100,8 @@ def journal_json(entry):
 	                                                   "prev_mac", "mac")}}  # fmt: skip
 
 
-def journal_cef(entry, version=""):
-	ext = _ext([("externalId", entry.get("seq")), ("rt", _epoch_ms(entry.get("at"))), ("msg", entry.get("summary")),
+def journal_cef(entry, version="", device=None):
+	ext = _ext([("dvchost", device), ("externalId", entry.get("seq")), ("rt", _epoch_ms(entry.get("at"))), ("msg", entry.get("summary")),
 	            ("cs1Label", "record"), ("cs1", f"{entry.get('ref_doctype')}/{entry.get('ref_name')}"),
 	            ("cs2Label", "digest"), ("cs2", entry.get("digest")), ("cs3Label", "prev_mac"), ("cs3", entry.get("prev_mac")),
 	            ("cs4Label", "mac"), ("cs4", entry.get("mac"))])  # fmt: skip
@@ -120,10 +125,21 @@ def syslog(message, hostname, severity="info", msgid="-", timestamp=None, app="f
 	return f"<{pri}>1 {ts} {token(hostname, 255)} {token(app, 48)} - {token(msgid, 32)} - {message}"
 
 
-def frame(message):
-	"""RFC 6587 octet counting: `LEN SP MSG`, LEN in bytes."""
+def frame(message, framing="octet-counting"):
+	"""RFC 6587: octet counting (`LEN SP MSG`, LEN in bytes), or `MSG LF` for "newline" (a line
+	break inside the message would split it, so it becomes a space)."""
+	if framing == "newline":
+		return message.replace("\r", " ").replace("\n", " ").encode("utf-8") + b"\n"
 	data = message.encode("utf-8")
 	return f"{len(data)} ".encode("ascii") + data
+
+
+def datagram(message, limit=MAX_UDP):
+	"""A message cut to `limit` bytes without splitting a UTF-8 character."""
+	data = message.encode("utf-8")
+	if len(data) <= limit:
+		return data
+	return data[:limit].decode("utf-8", "ignore").encode("utf-8")
 
 
 def unframe(data):
@@ -137,11 +153,56 @@ def unframe(data):
 	return out
 
 
-def render(kind, record, fmt, hostname, version=""):
-	"""(syslog message) for an event (`kind` 'event') or a journal entry ('journal')."""
+def render(kind, record, fmt, hostname, version="", header="rfc5424"):
+	"""The message for an event (`kind` 'event') or a journal entry ('journal'): an RFC 5424
+	syslog line, or with `header` "none" the bare CEF or JSON (Wazuh decodes bare JSON lines,
+	not the RFC 5424 header)."""
 	if kind == "journal":
-		body = journal_cef(record, version) if fmt == "cef" else json.dumps(journal_json(record), default=str, sort_keys=True)
-		return syslog(body, hostname, "info", "journal", record.get("at"))
-	body = cef(record, version) if fmt == "cef" else json.dumps(ocsf(record, version), default=str, sort_keys=True)
+		body = journal_cef(record, version, hostname) if fmt == "cef" else json.dumps(journal_json(record), default=str, sort_keys=True)
+		return body if header == "none" else syslog(body, hostname, "info", "journal", record.get("at"))
+	body = cef(record, version, hostname) if fmt == "cef" else json.dumps(ocsf(record, version), default=str, sort_keys=True)
+	if header == "none":
+		return body
 	return syslog(body, hostname, record.get("severity") or "info", record.get("category") or record.get("event_type"),
 	              record.get("timestamp"))  # fmt: skip
+
+
+class Sender:
+	"""One batch per connection: TCP and TLS open, send every frame and close; UDP sends one
+	datagram per message and cannot tell whether the collector got them."""
+
+	def __init__(self, host, port, transport="tcp", verify_tls=True, ca_file=None, framing="octet-counting", timeout=10):
+		self.host, self.port, self.transport = host, int(port), transport or "tcp"
+		self.verify_tls, self.ca_file, self.framing, self.timeout = verify_tls, ca_file or None, framing, timeout
+
+	def context(self):
+		context = ssl.create_default_context(cafile=self.ca_file)
+		if not self.verify_tls:
+			context.check_hostname = False
+			context.verify_mode = ssl.CERT_NONE
+		return context
+
+	def send(self, messages):
+		if not messages:
+			return
+		if self.transport == "udp":
+			family, kind, proto, _, address = socket.getaddrinfo(self.host, self.port, type=socket.SOCK_DGRAM)[0]
+			with socket.socket(family, kind, proto) as s:
+				for m in messages:
+					s.sendto(datagram(m), address)
+			return
+		context = self.context() if self.transport == "tls" else None  # a bad CA file fails before connecting
+		raw = socket.create_connection((self.host, self.port), timeout=self.timeout)
+		conn = raw
+		try:
+			if context:
+				conn = context.wrap_socket(raw, server_hostname=self.host)
+			conn.sendall(b"".join(frame(m, self.framing) for m in messages))
+			if conn is not raw:
+				try:
+					conn = conn.unwrap()  # close_notify: the collector sees a clean end of stream
+				except (OSError, ssl.SSLError):
+					pass
+		finally:
+			conn.close()
+			raw.close()

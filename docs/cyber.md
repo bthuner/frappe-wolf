@@ -412,8 +412,11 @@ result; read-only for everyone) and a comment on the incident.
   and every signed journal entry, go to a syslog collector: RFC 5424 (facility local0)
   carrying **OCSF** JSON (Detection Finding, class 2004, ATT&CK techniques in
   `finding_info.attacks`, Wolf's site / bench / payload under `unmapped`) or **CEF** (ATT&CK
-  in `cs4`, reputation lists in `cs5`), over TCP, TLS (octet-counted frames, RFC 6587) or UDP.
-  UniSOC, Wazuh, Graylog or any SIEM ingests it with no custom connector.
+  in `cs4`, reputation lists in `cs5`), over TCP, TLS (with a private CA file if needed) or
+  UDP. Frames are octet-counted or one message per line (RFC 6587). The syslog header can be
+  dropped for collectors that decode the message itself. Tried against rsyslog, Wazuh (with a
+  rules file shipped in `docs/siem/`) and Graylog: settings per collector in
+  [siem.md](siem.md). UniSOC has not been tried.
   - A cursor moves only after a batch is sent: a collector that is down delays the export,
     nothing is skipped. A failure mid-batch can send a message twice (at least once). Events
     younger than 2 minutes wait for the next run, so a transaction that commits a little after

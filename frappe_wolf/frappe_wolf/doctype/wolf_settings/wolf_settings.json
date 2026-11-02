@@ -61,6 +61,9 @@
   "siem_port",
   "siem_transport",
   "siem_verify_tls",
+  "siem_ca_file",
+  "siem_framing",
+  "siem_header",
   "cb_siem",
   "siem_format",
   "siem_min_severity",
@@ -437,7 +440,7 @@
   {
    "default": "tcp",
    "depends_on": "eval:doc.siem_enabled",
-   "description": "TCP and TLS use octet-counted frames (RFC 6587). UDP may drop or cut messages.",
+   "description": "UDP may drop or cut messages, and Wolf cannot tell: prefer TCP or TLS.",
    "fieldname": "siem_transport",
    "fieldtype": "Select",
    "label": "Transport",
@@ -449,6 +452,31 @@
    "fieldname": "siem_verify_tls",
    "fieldtype": "Check",
    "label": "Verify the collector's certificate"
+  },
+  {
+   "depends_on": "eval:doc.siem_enabled && doc.siem_transport == 'tls' && doc.siem_verify_tls",
+   "description": "PEM file of the CA that signed the collector's certificate, when it is not a public one (an absolute path, or relative to the site, e.g. private/files/collector-ca.pem). Empty: the system's CAs.",
+   "fieldname": "siem_ca_file",
+   "fieldtype": "Data",
+   "label": "Collector CA file"
+  },
+  {
+   "default": "octet-counting",
+   "depends_on": "eval:doc.siem_enabled && doc.siem_transport != 'udp'",
+   "description": "How messages are separated on TCP and TLS (RFC 6587): octet counting (rsyslog, syslog-ng, Graylog), or one message per line (Wazuh, most line-based collectors).",
+   "fieldname": "siem_framing",
+   "fieldtype": "Select",
+   "label": "Framing",
+   "options": "octet-counting\nnewline"
+  },
+  {
+   "default": "rfc5424",
+   "depends_on": "eval:doc.siem_enabled",
+   "description": "rfc5424: a syslog header before each message (rsyslog, syslog-ng, Graylog). none: the bare JSON or CEF, which Wazuh decodes (OCSF, newline framing over TCP; see docs/siem.md).",
+   "fieldname": "siem_header",
+   "fieldtype": "Select",
+   "label": "Message header",
+   "options": "rfc5424\nnone"
   },
   {
    "fieldname": "cb_siem",
@@ -556,7 +584,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 21:00:00.000000",
+ "modified": "2026-11-02 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

@@ -66,3 +66,34 @@ class TestLinks(unittest.TestCase):
 		q = {k: v[0] for k, v in parse_qs(parsed.query).items()}
 		self.assertEqual(q["actor"], "a@b.c")
 		self.assertEqual(links.verify(SECRET, q["incident"], q["action"], q["expires"], q["sig"], q["actor"], now=NOW), (True, None))
+
+
+class TestResponseLinks(unittest.TestCase):
+	SECRET = "s" * 64
+
+	def params(self, **kw):
+		return links.build_response_params(self.SECRET, "WINC-1", "block_ip", "45.33.32.156", 3600, agent="AG-1",
+		                                   hours=24, actor="ops@example.com", now=1000, **kw)  # fmt: skip
+
+	def test_round_trip(self):
+		p = self.params()
+		self.assertEqual(links.verify_response(self.SECRET, p, now=2000), (True, None))
+		self.assertEqual(links.verify_response(self.SECRET, p, now=5000), (False, "expired"))
+
+	def test_every_field_is_signed(self):
+		p = self.params()
+		for field, value in (("target", "1.2.3.4"), ("agent", "AG-2"), ("hours", "168"), ("action", "disable_user"),
+		                     ("incident", "WINC-2"), ("actor", "x@example.com"), ("expires", "999999")):  # fmt: skip
+			with self.subTest(field):
+				self.assertEqual(links.verify_response(self.SECRET, {**p, field: value}, now=2000), (False, "invalid"))
+
+	def test_not_interchangeable_with_ack_links(self):
+		ack = links.build_params(self.SECRET, "WINC-1", "ack", 3600, now=1000)
+		self.assertFalse(links.verify_response(self.SECRET, {**ack, "target": "x"}, now=2000)[0])
+		p = self.params()
+		self.assertFalse(links.verify(self.SECRET, "WINC-1", "ack", p["expires"], p["sig"], now=2000)[0])
+
+	def test_user_action_without_agent_or_hours(self):
+		p = links.build_response_params(self.SECRET, "WINC-1", "disable_user", "a@example.com", 3600, now=1000)
+		self.assertNotIn("agent", p)
+		self.assertEqual(links.verify_response(self.SECRET, p, now=2000), (True, None))

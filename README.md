@@ -72,7 +72,9 @@ A rule reads like the brief: *when X > Y for Z minutes, send alert*.
 
 Alerts for unresolved incidents carry signed **Acknowledge / Resolve** links (valid 24 h, see Wolf
 Settings → Action Link Hours). Opening a link shows a confirmation page; only its button acts, so
-mail scanners cannot acknowledge for you.
+mail scanners cannot acknowledge for you. Security incidents also carry a signed link for each
+response action Wolf proposes (block an IP, disable a user...); those ask for a Wolf Manager's
+login before their button appears.
 
 **Maintenance windows**: a **Wolf Silence** (host, bench, site and/or rule, start and end) keeps
 incidents opening, so the timeline stays complete, but holds back their notifications. Incidents

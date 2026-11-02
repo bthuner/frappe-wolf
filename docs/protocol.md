@@ -287,6 +287,21 @@ Webhook bodies expose the same URLs as `incident.actions = {"ack": "...", "resol
 Slack (Block Kit buttons), Mattermost (attachment links), ntfy (`Actions` header) carry the same
 links. Matrix, Gotify and SMS carry the incident URL only.
 
+Response links, one per action Wolf proposes on the incident (up to 5):
+
+```
+GET /api/method/frappe_wolf.api.actions.response_action
+    ?incident=WINC-00012&action=block_ip|disable_user|logout_sessions|revoke_api_keys&target=<ip or user>
+    [&agent=<Wolf Agent>&hours=<1..168>]&expires=<unix seconds>[&actor=<email>]&sig=<hex>
+```
+
+`sig` is HMAC-SHA256 over `wolf-response-action\n<incident>\n<action>\n<target>\n<agent>\n<hours>\n<expires>\n<actor>`
+with the same key. Only a logged-in Wolf Manager or System Manager can confirm (POST), through
+the Response panel's rules. They appear in the text and HTML of the alert (email, one per
+recipient, Raven, and the bodies of Matrix, Gotify and ntfy), as `incident.responses =
+[{"label", "url"}]` in webhook bodies, as buttons in Slack and as links in Mattermost. SMS
+carries none.
+
 ## 6. Native channels (app → services)
 
 Each native channel is a pure builder in `frappe_wolf/wolf/channels/` that maps a notification to

@@ -14,6 +14,7 @@ TEXT_LIMIT = 7000  # well under the 16383 character post limit
 def build_payload(msg, cfg):
 	text = "\n".join(msg.get("lines") or [])
 	links = [f"[{ACTION_LABEL.get(a, a)}]({u})" for a, u in (msg.get("actions") or {}).items()]
+	links += [f"[{r['label']} (Wolf Manager)]({r['url']})" for r in msg.get("responses") or []]
 	if links:
 		text += "\n\n" + " · ".join(links)
 	attachment = {

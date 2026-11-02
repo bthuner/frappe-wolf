@@ -247,7 +247,7 @@ Wolf Settings → **Threat intelligence and deception** (`frappe_wolf/api/threat
   enabling a list.
 - Not built: **CrowdSec** (sending Wolf's detections and reading its decisions back).
 
-### Step 5: human-validated response (built, except signed links)
+### Step 5: human-validated response (built)
 
 The incident page of the Wolf UI has a **Response** panel (`wolf/response.py`,
 `api/response.py`). Wolf proposes; a Wolf Manager approves each action with a second click;
@@ -268,8 +268,18 @@ result; read-only for everyone) and a comment on the incident.
 - Only what Wolf proposed from the incident's own events can be approved: the API refuses any
   other action, target or agent.
 - Blocks are marked *Expired* once their time is over (hourly).
-- Not built: approving from the signed links in alert messages, fail2ban instead of nftables,
-  and user actions on other sites than the Wolf site.
+- **From the alert** (`api/actions.py`, `response_action`): alerts for unresolved incidents
+  carry a signed link for each action Wolf proposes (up to 5). The link covers the incident,
+  the action, its target, agent and duration, the expiry and the recipient, under another
+  context than acknowledge / resolve.
+  - It only says what to confirm. Opening it shows the proposal; a guest is sent to the login
+    page and back; only a logged-in Wolf Manager or System Manager gets the button; only the
+    POST acts.
+  - The confirmation goes through the same `approve` as the panel, with all its rules, and
+    records the manager as the approver and the recipient in the reason. A forwarded email or
+    a shared channel alone cannot act.
+  - A link opened again after the action says so instead of acting twice.
+- Not built: fail2ban instead of nftables, and user actions on other sites than the Wolf site.
 
 ### Step 6: compliance and evidence
 

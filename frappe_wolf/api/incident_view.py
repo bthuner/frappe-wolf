@@ -125,14 +125,15 @@ def get_incident(incident):
 
 
 def _regulatory(doc, tz):
-	"""NIS2 / GDPR flags and deadlines (wolf/compliance.py); None when no flag is set."""
+	"""NIS2 / DORA / GDPR flags and deadlines (wolf/compliance.py); None when no flag is set."""
 	from frappe_wolf.api.compliance import serialize
 	from frappe_wolf.wolf import compliance
 
-	if not (doc.get("nis2_significant") or doc.get("gdpr_breach")):
+	if not any(doc.get(flag) for flag in compliance.FLAGS):
 		return None
 	return {
 		"nis2": bool(doc.nis2_significant),
+		"dora": bool(doc.get("dora_major")),
 		"gdpr": bool(doc.gdpr_breach),
 		"reference": doc.get("regulatory_reference"),
 		"deadlines": serialize(compliance.deadlines(doc.as_dict(), now_datetime()), tz),

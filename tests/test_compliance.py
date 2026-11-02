@@ -52,6 +52,41 @@ class TestDeadlines(unittest.TestCase):
 		((row, stage),) = compliance.alerts(inc, datetime(2026, 11, 4, 9, 1))
 		self.assertEqual(stage, "overdue")
 
+	def test_nis2_intermediate_on_request(self):
+		inc = {"nis2_significant": 1, "nis2_aware_at": AWARE}
+		self.assertNotIn("nis2_intermediate", by_id(compliance.deadlines(inc, AWARE)))  # only when asked
+		inc["nis2_intermediate_requested_at"] = datetime(2026, 11, 10, 9, 0)
+		row = by_id(compliance.deadlines(inc, datetime(2026, 11, 20)))["nis2_intermediate"]
+		self.assertEqual((row["due_at"], row["status"]), (None, "open"))  # no deadline given: nothing overdue
+		self.assertNotIn("nis2_intermediate", [r["id"] for r, _ in compliance.alerts(inc, datetime(2026, 11, 20))])
+		inc["nis2_intermediate_due_at"] = datetime(2026, 11, 12, 18, 0)
+		row = by_id(compliance.deadlines(inc, datetime(2026, 11, 12, 13, 0)))["nis2_intermediate"]
+		self.assertEqual((row["due_at"], row["status"]), (datetime(2026, 11, 12, 18, 0), "due_soon"))
+		inc["nis2_intermediate_at"] = datetime(2026, 11, 12, 17, 0)
+		self.assertEqual(by_id(compliance.deadlines(inc, datetime(2026, 11, 13)))["nis2_intermediate"]["status"], "done")
+
+	def test_dora_initial_notification(self):
+		aware = AWARE
+		self.assertEqual(compliance.initial_due(aware, aware), datetime(2026, 11, 1, 13, 0))  # 4 h after classification
+		self.assertEqual(compliance.initial_due(aware, datetime(2026, 11, 2, 7, 0)), datetime(2026, 11, 2, 9, 0))  # capped at 24 h
+		self.assertEqual(compliance.initial_due(aware, datetime(2026, 11, 3, 9, 0)), datetime(2026, 11, 3, 13, 0))  # classified late
+		self.assertEqual(compliance.initial_due(aware, datetime(2026, 11, 2, 9, 0)), datetime(2026, 11, 2, 9, 0))
+
+	def test_dora_chain(self):
+		inc = {"dora_major": 1, "dora_aware_at": AWARE, "dora_classified_at": datetime(2026, 11, 1, 10, 0)}
+		rows = by_id(compliance.deadlines(inc, AWARE))
+		self.assertEqual(rows["dora_initial"]["due_at"], datetime(2026, 11, 1, 14, 0))
+		self.assertEqual((rows["dora_intermediate"]["due_at"], rows["dora_intermediate"]["estimated"]), (datetime(2026, 11, 4, 14, 0), True))
+		self.assertEqual((rows["dora_final"]["due_at"], rows["dora_final"]["estimated"]), (datetime(2026, 12, 4, 14, 0), True))
+		inc["dora_initial_at"] = datetime(2026, 11, 1, 12, 30)
+		inc["dora_intermediate_at"] = datetime(2026, 11, 6, 8, 0)  # an updated intermediate report: the latest one counts
+		rows = by_id(compliance.deadlines(inc, datetime(2026, 11, 6, 9, 0)))
+		self.assertEqual(rows["dora_initial"]["status"], "done")
+		self.assertEqual((rows["dora_intermediate"]["due_at"], rows["dora_intermediate"]["status"]), (datetime(2026, 11, 4, 12, 30), "done_late"))
+		self.assertEqual((rows["dora_final"]["due_at"], rows["dora_final"]["estimated"]), (datetime(2026, 12, 6, 8, 0), False))
+		self.assertEqual({r["regime"] for r in rows.values()}, {"DORA"})
+		self.assertEqual(compliance.deadlines({**inc, "dora_classified_at": None}, AWARE), [])  # not classified as major yet
+
 	def test_add_months_clamps(self):
 		self.assertEqual(compliance.add_months(datetime(2027, 1, 31, 8, 0)), datetime(2027, 2, 28, 8, 0))
 		self.assertEqual(compliance.add_months(datetime(2026, 12, 15)), datetime(2027, 1, 15))
@@ -73,6 +108,18 @@ class TestReport(unittest.TestCase):
 		self.assertIn("- Rotate keys (Done, owner ops@x)", text)
 		self.assertIn("- 2026-11-01 09:00 Incident started", text)
 		self.assertIn("Times in Europe/Paris", text)
+
+	def test_markdown_dora_and_ongoing(self):
+		inc = {"name": "WINC-7", "status": "Open", "nis2_significant": 1, "nis2_aware_at": AWARE,
+		       "nis2_intermediate_requested_at": datetime(2026, 11, 3, 9, 0), "dora_major": 1, "dora_aware_at": AWARE,
+		       "dora_classified_at": AWARE}  # fmt: skip
+		text = compliance.report_markdown(inc, compliance.deadlines(inc, AWARE))
+		self.assertIn("- DORA major ICT-related incident, aware since 2026-11-01 09:00, classified as major on 2026-11-01 09:00", text)
+		self.assertIn("- NIS2 intermediate report requested on 2026-11-03 09:00", text)
+		self.assertIn("| Intermediate report requested by the CSIRT / authority | — | — | open |", text)
+		self.assertIn("| Initial notification (4 h after classification, 24 h after awareness) | 2026-11-01 13:00 |", text)
+		self.assertIn("Art. 23(4)(e)", text)  # still ongoing: progress report
+		self.assertNotIn("Art. 23(4)(e)", compliance.report_markdown({**inc, "status": "Resolved"}, compliance.deadlines(inc, AWARE)))
 
 	def test_markdown_without_flags(self):
 		text = compliance.report_markdown({"name": "WINC-1"}, [])

@@ -310,7 +310,15 @@ watch(name, () => {
       <section v-if="incident.regulatory" class="space-y-2 border-t border-outline-gray-1 pt-2" aria-label="Regulatory reporting">
         <h2 class="text-sm font-semibold text-ink-gray-9">
           Regulatory reporting:
-          {{ [incident.regulatory.nis2 && 'NIS2 significant incident', incident.regulatory.gdpr && 'GDPR personal data breach'].filter(Boolean).join(', ') }}
+          {{
+            [
+              incident.regulatory.nis2 && 'NIS2 significant incident',
+              incident.regulatory.dora && 'DORA major ICT-related incident',
+              incident.regulatory.gdpr && 'GDPR personal data breach',
+            ]
+              .filter(Boolean)
+              .join(', ')
+          }}
           <span v-if="incident.regulatory.reference" class="font-normal text-ink-gray-6">· reference {{ incident.regulatory.reference }}</span>
         </h2>
         <table class="w-full text-left text-sm">
@@ -325,7 +333,10 @@ watch(name, () => {
           <tbody>
             <tr v-for="d in incident.regulatory.deadlines" :key="d.id" class="border-t border-outline-gray-1">
               <td class="py-1 pr-3">{{ d.label }}</td>
-              <td class="wolf-data py-1 pr-3">{{ full(d.due_at, tz) }}<span v-if="d.estimated"> (estimated)</span></td>
+              <td class="wolf-data py-1 pr-3">
+                <template v-if="d.due_at">{{ full(d.due_at, tz) }}<span v-if="d.estimated"> (estimated)</span></template>
+                <template v-else>as asked</template>
+              </td>
               <td class="wolf-data py-1 pr-3">{{ d.done_at ? full(d.done_at, tz) : '—' }}</td>
               <td class="py-1" :style="d.status === 'overdue' ? { color: 'var(--wolf-critical)', fontWeight: 600 } : null">
                 {{ REG_STATUS[d.status] }}

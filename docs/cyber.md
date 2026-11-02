@@ -82,7 +82,7 @@ What Wolf takes from UniSOC, adapted to a Frappe app:
 | Cyber score | a security posture score per site, from checks Wolf can prove |
 | Threat intelligence | offline IP reputation lists (FireHOL, abuse.ch, Spamhaus DROP), optional CrowdSec |
 | Human-validated response | signed "Block IP / Disable user / Revoke sessions" actions, applied by the agent or the site after an analyst approves them |
-| NIS2 Art. 23 tracking | NIS2 and GDPR Art. 33 deadlines on incidents (24 h / 72 h / 1 month) and an exportable report |
+| NIS2 Art. 23 tracking | NIS2, DORA and GDPR Art. 33 deadlines on incidents (NIS2 24 h / 72 h / 1 month and intermediate report on request; DORA 4 h / 24 h, 72 h, 1 month) and an exportable report |
 | HMAC-signed audit | a hash-chained, tamper-evident journal of security events and incident actions |
 | 1,500 connectors | standard output instead: syslog/CEF and OCSF export, so any SOC can ingest Wolf |
 
@@ -359,14 +359,35 @@ result; read-only for everyone) and a comment on the incident.
 
 ### Step 6: compliance and evidence
 
-- **NIS2 Article 23 and GDPR Article 33 on Wolf Incident (built)**. The section *Regulatory
-  reporting* on the incident has two flags. **Significant incident (NIS2)** starts three clocks
+- **NIS2 Article 23, DORA Article 19 and GDPR Article 33 on Wolf Incident (built)**. The section
+  *Regulatory reporting* on the incident has three flags. **Significant incident (NIS2)** starts three clocks
   from *Aware since*: early warning within 24 h, incident notification within 72 h, final
   report one month after the notification (counted from the notification's deadline, and
-  marked *estimated*, until it is sent). **Personal data breach (GDPR)** starts one: the
-  notification to the supervisory authority (CNIL) within 72 h. Ticking a flag sets *Aware
-  since* to now; it can be corrected. The sending times and the authority's reference are
-  recorded on the incident (`frappe_wolf/wolf/compliance.py`, `api/compliance.py`).
+  marked *estimated*, until it is sent).
+  - NIS2 intermediate report (Art. 23(4)(c)): only when the CSIRT or the authority asks for
+    one. Record when it was asked and the deadline they gave, if any; without a deadline it is
+    listed "as asked" and never reminded.
+  - NIS2 Art. 23(4)(e): when the incident is still open, the report draft reminds you that an
+    ongoing incident gets a progress report at the final report's date, and the final report
+    one month after it is handled.
+  - **Major ICT-related incident (DORA)**, for financial entities, with the time limits of
+    Delegated Regulation (EU) 2025/301, Art. 5:
+    - initial notification within 4 h of *Classified as major* and no later than 24 h after
+      *Aware since*, or 4 h from a classification made later than that;
+    - intermediate report within 72 h of the initial notification;
+    - final report within one month of the latest intermediate report (record the latest one:
+      an updated report moves the deadline).
+
+    Until a report is sent, the next one counts from its deadline and is marked *estimated*.
+    The weekend and bank holiday extension of Art. 5(4) is not applied, since it depends on the
+    entity and its Member State, and an earlier deadline is always met. Ticking the flag sets
+    both dates to now.
+
+  - **Personal data breach (GDPR)** starts one clock: the notification to the supervisory
+    authority (CNIL) within 72 h.
+  - Ticking a flag sets *Aware since* to now; it can be corrected. The sending times and the
+    authority's reference are recorded on the incident (`frappe_wolf/wolf/compliance.py`,
+    `api/compliance.py`).
   - Every 5 minutes `check_deadlines` records one `regulatory_deadline` event per obligation
     when it is due within 6 h, and again when it is overdue, linked to the incident (so it is
     on its timeline) with a comment. The **Regulatory deadline** preset alerts on them: give it
@@ -374,12 +395,12 @@ result; read-only for everyone) and a comment on the incident.
   - **Regulatory report** (Desk → Actions, or *Report draft* in the Wolf UI) builds a Markdown
     draft: facts, deadlines, timeline (events and comments), postmortem impact, root cause and
     measures. It is a starting point for the authority's form.
-  - Wolf does not decide whether an incident is significant or a breach, and sends nothing to
-    an authority. Not built: the intermediate report an authority may ask for (NIS2
-    Art. 23(4)(c)), DORA's timelines.
+  - Wolf does not decide whether an incident is significant, major or a breach, and sends
+    nothing to an authority. DORA reports go through the authority's own templates (ITS on
+    incident reporting); the draft is a starting point.
 - **Tamper-evident journal (built)** (`wolf/journal.py`, `api/journal.py`, DocType *Wolf
   Journal Entry*). Captured, in the transaction that made the change: security events (their
-  payload by SHA-256), incident decisions (status, owner, merge, NIS2 / GDPR fields, including
+  payload by SHA-256), incident decisions (status, owner, merge, NIS2 / DORA / GDPR fields, including
   auto-resolve and reopen), response actions and their results, comments on incidents, and Wolf
   Settings changes (the names of the fields changed and who changed them, never the values).
   - Every minute `chain_journal` signs the waiting entries in creation order, under a lock:

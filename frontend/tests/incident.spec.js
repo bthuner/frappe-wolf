@@ -234,6 +234,27 @@ describe('IncidentPage regulatory reporting', () => {
     expect(page.find('pre b').exists()).toBe(false)
   })
 
+  it('names DORA and shows a requested report without a deadline as asked', async () => {
+    const regulatory = {
+      nis2: true, dora: true, gdpr: false, reference: null,
+      deadlines: [
+        { id: 'nis2_intermediate', regime: 'NIS2', label: 'Intermediate report requested by the CSIRT / authority',
+          due_at: null, done_at: null, status: 'open', estimated: false },
+        { id: 'dora_initial', regime: 'DORA', label: 'Initial notification (4 h after classification, 24 h after awareness)',
+          due_at: '2026-11-01T13:00:00Z', done_at: null, status: 'due_soon', estimated: false },
+      ],
+    }  // prettier-ignore
+    server({
+      'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory }),
+      'frappe_wolf.api.incident_view.get_timeline': () => ({ rows: [], paging: { has_more: false }, totals: {}, truncated: {} }),
+    })
+    const { page } = await open()
+    const text = page.text()
+    expect(text).toContain('NIS2 significant incident, DORA major ICT-related incident')
+    expect(text).toContain('as asked')
+    expect(text).toContain('Initial notification (4 h after classification')
+  })
+
   it('shows no regulatory section for an incident without a flag', async () => {
     server({
       'frappe_wolf.api.incident_view.get_incident': () => ({ ...INCIDENT, regulatory: null }),

@@ -156,6 +156,8 @@ def parse_anchor(text):
 EVENT_FIELDS = ("event_type", "category", "severity", "title", "source", "timestamp", "host", "bench", "site", "agent")
 INCIDENT_FIELDS = ("status", "severity", "assigned_to", "acknowledged_by", "resolved_by", "merged_into", "nis2_significant",
                    "nis2_aware_at", "nis2_early_warning_at", "nis2_notification_at", "nis2_final_report_at",
+                   "nis2_intermediate_requested_at", "nis2_intermediate_due_at", "nis2_intermediate_at", "dora_major",
+                   "dora_aware_at", "dora_classified_at", "dora_initial_at", "dora_intermediate_at", "dora_final_at",
                    "gdpr_breach", "gdpr_aware_at", "gdpr_notified_at", "regulatory_reference")  # fmt: skip
 RESPONSE_FIELDS = ("action", "target", "status", "incident", "agent", "host", "duration_hours", "approved_by",
                    "approved_at", "applied_at", "expires_at", "result")  # fmt: skip

@@ -1914,7 +1914,30 @@ def main():
 		assert view["nis2"] and view["gdpr"] and len(view["deadlines"]) == 4, view
 		report = compliance_api.get_report(inc.name)["markdown"]
 		assert "| Incident notification (72 h) |" in report and "OVERDUE" in report, report
-		return f"{len(first)} reminders on {inc.name}, report {len(report)} chars"
+
+		# DORA: aware 22 h ago, classified as major 3 h ago: the initial notification is due within the hour
+		dora = frappe.get_doc({"doctype": "Wolf Incident", "title": "smoke DORA", "severity": "critical", "site": "dora.localhost",
+		                       "dora_major": 1, "dora_aware_at": now_datetime() - timedelta(hours=22),
+		                       "dora_classified_at": now_datetime() - timedelta(hours=3)})  # fmt: skip
+		dora.insert(ignore_permissions=True)
+		reminded = compliance_api.check_deadlines()
+		stages = [json.loads(frappe.db.get_value("Wolf Event", n, "payload")) for n in reminded]
+		assert [(p["obligation"], p["regime"], p["stage"]) for p in stages] == [("dora_initial", "DORA", "due")], stages
+		view = incident_view.get_incident(dora.name)["regulatory"]
+		assert view["dora"] and [d["id"] for d in view["deadlines"]] == ["dora_initial", "dora_intermediate", "dora_final"], view
+		dora.reload()
+		dora.dora_initial_at = now_datetime()
+		dora.save(ignore_permissions=True)
+		assert not compliance_api.check_deadlines(), "sent: no more reminders"
+		assert "DORA major ICT-related incident" in compliance_api.get_report(dora.name)["markdown"]
+		# NIS2 intermediate report on request, with the authority's deadline
+		inc.reload()
+		inc.nis2_intermediate_requested_at = now_datetime()
+		inc.nis2_intermediate_due_at = now_datetime() + timedelta(hours=2)
+		inc.save(ignore_permissions=True)
+		reminded = compliance_api.check_deadlines()
+		assert [json.loads(frappe.db.get_value("Wolf Event", n, "payload"))["obligation"] for n in reminded] == ["nis2_intermediate"], reminded
+		return f"{len(first)} reminders on {inc.name}, report {len(report)} chars; DORA initial notification and NIS2 intermediate report reminded"
 
 	def threat_intel():
 		from types import SimpleNamespace

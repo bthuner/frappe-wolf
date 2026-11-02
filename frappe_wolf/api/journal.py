@@ -185,9 +185,17 @@ def _siem_exported():
 	settings = frappe.get_cached_doc("Wolf Settings")
 	if not (cint(settings.get("siem_enabled")) and cint(settings.get("siem_journal"))):
 		return None
+	import json
+
 	from frappe_wolf.api import siem
 
-	return cint(siem._cursor().get("journal_seq"))
+	# read from the table, not get_global: its cache is shared between processes, and a job that
+	# reads it while the cursor's write is not committed yet puts the old value back
+	raw = frappe.db.get_value("DefaultValue", {"parent": "__global", "defkey": siem.CURSOR_KEY}, "defvalue")
+	try:
+		return cint(json.loads(raw or "{}").get("journal_seq"))
+	except ValueError:
+		return 0
 
 
 def purge_journal(now=None):

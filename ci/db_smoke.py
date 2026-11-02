@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -1204,6 +1205,30 @@ def main():
 			read_cache.clear()
 			fresh = dashboard.get_signals()
 			assert late in hosts(fresh), sorted(hosts(fresh))
+
+			# fresh for 1 s here: past it, the value is still served and read again in the background
+			from frappe.utils.background_jobs import get_job, is_job_enqueued
+
+			frappe.local.conf["wolf_read_cache_seconds"] = 1
+			read_cache.clear()
+			first = dashboard.get_signals()
+			time.sleep(1.5)
+			stale = dashboard.get_signals()
+			job_id = "wolf_read_cache|signals|{}"
+			assert stale["as_of"] == first["as_of"], "the request read a stale value again itself"
+			assert is_job_enqueued(job_id), "no background read queued for a stale value"
+			dashboard.get_signals()  # a second page while it is queued: still one job (deduplicated)
+			read_cache.refresh("signals", "{}")  # what the queued job runs
+			get_job(job_id).delete()
+			again = dashboard.get_signals()
+			assert again["as_of"] > first["as_of"], (again["as_of"], first["as_of"])
+			# between visits, the scheduler reads again what was asked for and is no longer fresh
+			time.sleep(1.5)
+			read_cache.refresh_active()
+			warm = dashboard.get_signals()
+			assert warm["as_of"] > again["as_of"], (warm["as_of"], again["as_of"])
+			if job := get_job(job_id):
+				job.delete()
 		finally:
 			frappe.local.conf["wolf_read_cache_seconds"] = 0
 			read_cache.clear()
@@ -1211,7 +1236,9 @@ def main():
 			frappe.db.delete("Wolf Metric Sample", {"host": ("in", (mine, theirs, late))})
 			frappe.db.commit()
 			access.clear_cache()
-		return f"a host-scoped user gets {len(sig['series'])} of {full['total_series']} cached series, its host only; a new series shows once the cache goes"
+		return (f"a host-scoped user gets {len(sig['series'])} of {full['total_series']} cached series, its host only; "
+		        "a new series shows once the cache goes; a stale value is served and read again by one job, "
+		        "and by the scheduler between visits")
 
 	def explorers():
 		"""Event list paging and search, error groups across sites, a scoped user's view of a group."""

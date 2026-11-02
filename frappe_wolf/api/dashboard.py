@@ -65,7 +65,7 @@ def get_signals(site=None, bench=None, host=None):
 	restricted = access.grants() is not None
 	metrics = [m for m in catalog.CATALOG if m not in HTTP_METRICS]
 	# the same series for every caller, cached a few seconds; each caller's grants filter them
-	cached, as_of = read_cache.get("signals", json.dumps(scope, sort_keys=True), lambda: _signal_series(scope, metrics))
+	cached, as_of = read_cache.get("signals", json.dumps(scope, sort_keys=True))
 	grants = access.grants()
 	columns = scopes.COLUMNS["Wolf Metric Rollup"]
 	series = {key: s for key, s in cached if scopes.row_visible(s, grants, columns)}
@@ -110,6 +110,12 @@ def get_signals(site=None, bench=None, host=None):
 		"as_of": window.to_utc(as_of, tz),  # when the series were read (read_cache)
 		"time_zone": tz,
 	}
+
+
+def signal_series_for(key):
+	"""read_cache reader: the signal series of a scope given as sorted JSON (get_signals)."""
+	scope = {k: v for k, v in json.loads(key).items() if k in ("site", "bench", "host")}
+	return _signal_series(scope, [m for m in catalog.CATALOG if m not in HTTP_METRICS])
 
 
 def _signal_series(scope, metrics):

@@ -237,7 +237,14 @@ telemetry triples, `get_signals` its series (newest value and last time seen).
   never carries one user's grants to another.
 - Rules, open incidents and the email queue are read per request: a signal's state follows an
   incident at once.
-- A series that starts, or a value that changes, shows up to `wolf_read_cache_seconds` later;
+- A value is **fresh** for `wolf_read_cache_seconds`. Older, and up to 4 times that (2 min by
+  default), it is still served at once, and one background job (deduplicated, `short` queue)
+  reads it again. Older still, or missing, the request reads.
+- Between visits, the scheduler reads again, every minute, the values asked for in the last 10
+  minutes (10 at most per site) that are no longer fresh (`read_cache.refresh_active`). It needs
+  `scheduler_tick_interval` at 60 (see "Install the app" in the README): at Dodock's default
+  4 min tick, a visit after 2 quiet minutes reads.
+- So a series that starts, or a value that changes, shows up a minute or two later at most;
   `as_of` says when the data was read. A live update (below) refetches, and may get the cached
   value.
 - A change of `wolf_read_cache_seconds` takes effect within a minute: Dodock's web workers keep

@@ -13,12 +13,14 @@ The target is #10's "done when": a synthetic load of 100 hosts for 7 days keeps 
 | `push` p95 under 200 ms | **Met.** 115 ms over HTTP | **Met.** 108 ms over HTTP | **Met.** 20.7 ms server side (HTTP not run again) |
 | Desk overview under 1 s | Met, except its 24 h chart: 2.1 s | Met, except its 24 h chart: 1.8 s | **Met.** 0.56 s at most (24 h) |
 | Wolf UI overview under 1 s | **Not met: 13.8 to 23.8 s** | **Not met: 1.5 s** | **Met per read: 0.73 s for the slowest** |
-| Wolf UI overview page in a browser | | | Without cache: p50 0.82 to 0.97 s, p95 1.00 to 1.26 s. **With the 30 s cache, met: p95 0.61 s** |
+| Wolf UI overview page in a browser | | | Without cache: p50 0.82 to 0.97 s, p95 1.00 to 1.26 s. **With the cache, met: p95 0.61 s; after 45 s or 150 s idle, max 0.65 s** |
 
 The page time is from navigation start until every panel is drawn, in Chromium on the bench
 (see "The page in a browser"). Without the cache its median is under 1 s, its p95 is not. With
-it, a page served from the cache is under 1 s; the first visit after the cached value expires
-(at most one per 30 s, per scope) still reads, and takes the time without cache.
+it, and with it read again in the background (see "The short cache"), visits after 45 s and
+150 s idle were all served from it. A visit that still reads (the first of the day, a scope
+nobody opened for 10 min, or the scheduler at its default 4 min tick) takes the time without
+cache.
 
 All runs used synthetic data and a demo bench, not production observations.
 
@@ -250,6 +252,27 @@ The same page, on one fresh load, in ms:
   `wolf_read_cache_seconds` was set, and Dodock's web workers keep the site config for up to
   60 s. They still read 0.
 
+**Read again in the background.** A cached value is fresh for 30 s. Up to 2 min old, it is still
+served at once while one background job reads it again; and every minute the scheduler reads
+again the values asked for in the last 10 minutes. Timed on another fresh load, with the load
+site's scheduler on and `scheduler_tick_interval` at 60, one cold page every 45 s, then every
+150 s (6 visits each), in ms:
+
+| `/wolf`, page ready | p50 | p95 | max | `get_inventory` / `get_signals`, p50 |
+|---|---|---|---|---|
+| Every 45 s | 548 | 649 | 649 | 36 / 78 |
+| Every 150 s | 563 | 654 | 654 | 49 / 70 |
+
+- Every visit was served from the cache. At 150 s, past the 2 min a value is kept, only the
+  scheduler's read could have kept it: without it, each of those visits would read (0.9 to 1.2 s,
+  as without cache).
+- The data such a page shows is older. `as_of` sampled 8 times, 40 s apart: 11 to 51 s old, 40 s
+  for most. A value read by the scheduler can be up to its minute plus a tick old; at most 2 min,
+  after which a request reads.
+- A first try of the 45 s series had one 3.2 s page. It came right after `bench clear-cache`,
+  run to register the new scheduled job, which empties all of Frappe's cache (its app shell took
+  1.8 s): it is not counted. On a site, `bench migrate` registers the job.
+
 **Other reads:**
 
 | Read | 1 h | 6 h | 24 h | 7 d |
@@ -267,10 +290,8 @@ The same page, on one fresh load, in ms:
 ## What is left
 
 Each read is under 1 s, and so is the overview page when its two slow reads come from the cache.
-- A visit that reads (no cached value, or an expired one) still takes 0.9 to 1.2 s. Filling the
-  cache in the background, before it expires, would spare that visit; Frappe's scheduler ticks
-  once a minute at best (`scheduler_tick_interval`), so it would need a 60 s cache or a worker
-  of its own.
+- A visit that reads still takes 0.9 to 1.2 s: the first after 10 quiet minutes on a scope, or
+  after 2 minutes when the scheduler ticks every 4 min (Dodock's default; the README sets 60 s).
 - Drawing, 0.13 to 0.32 s, for 300 signal rows and 101 hosts. Drawing the first rows, and the
   rest on demand, would cut most of it.
 - The metrics explorer over 24 h, 0.86 s, is the closest other read.

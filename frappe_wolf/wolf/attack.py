@@ -49,6 +49,8 @@ CATEGORIES = {
 	"web_attack_probe": ["T1595.003"],
 	# Suricata (agent, #72): the techniques come from each rule's metadata, sent by the agent
 	"network_ids_alert": [],
+	# Wazuh (agent on the manager's host, #72): the techniques come from the rule's mitre ids
+	"hids_alert": [],
 	"web_sensitive_file_exposed": ["T1552.001"],
 	# Frappe site (local signals)
 	"frappe_failed_login": ["T1110"],

@@ -1787,6 +1787,22 @@ def main():
 		assert (rule.event_category, rule.min_severity, rule.severity) == ("network_ids_alert", "critical", "critical"), rule.as_dict()
 		return f"{ev.name}: ATT&CK {payload['mitre_attack'][0]['id']}, block proposed, preset installed"
 
+	def wazuh_events():
+		"""A Wazuh alert as the agent ships it: host where it happened, ATT&CK from the rule, the preset."""
+		name = events.insert_event(schema.normalize_event({
+			"type": "security", "category": "hids_alert", "severity": "warning", "host": "web01", "source": "wazuh",
+			"title": "Wazuh: Three failed attempts to run sudo on web01",
+			"fingerprint": schema.fingerprint("web01", "wazuh", "5404", "web01"),
+			"payload": {"rule_id": "5404", "level": 10, "user": "deploy", "attack_techniques": ["T1548.003"],
+			            "wazuh_agent": {"id": "000", "name": "wazuh-manager"}, "count": 1},
+		}, tz, now_datetime()))  # fmt: skip
+		ev = frappe.get_doc("Wolf Event", name)
+		payload = json.loads(ev.payload)
+		assert ev.host == "web01" and [t["id"] for t in payload["mitre_attack"]] == ["T1548.003"], (ev.host, payload)
+		rule = frappe.get_doc("Wolf Alert Rule", "Host intrusion alert (critical)")
+		assert (rule.event_category, rule.min_severity) == ("hids_alert", "critical"), rule.as_dict()
+		return f"{ev.name} on {ev.host}: ATT&CK {payload['mitre_attack'][0]['id']}, preset installed"
+
 	def crowdsec_check():
 		"""CrowdSec LAPI (a local stand-in): decisions tag events, detections and approved blocks go out."""
 		from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2461,6 +2477,7 @@ def main():
 	                 ("api key addresses", api_key_ips),
 	                 ("crowdsec", crowdsec_check),
 	                 ("suricata events", suricata_events),
+	                 ("wazuh events", wazuh_events),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

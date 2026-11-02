@@ -111,6 +111,19 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
     server's answer still names the client, and an outbound connection names the remote
     server. The HTTP host or SNI maps the alert to a site.
   - Without Suricata nothing changes: the agent's own web and auth-log detection stays on.
+- **Wazuh** (optional, #72): on the Wazuh manager's host, the agent tails its alerts log
+  (`wazuh.alerts_log`, else `/var/ossec/logs/alerts/alerts.json` if it exists). The agent's
+  user must be able to read it: add it to the `wazuh` group.
+  - Alerts at or above `wazuh.min_level` (7) become `hids_alert` events, one per rule and
+    subject (source IP, else host) per push interval, with a count. Level 12 and above is
+    critical, 7 to 11 warning.
+  - The `sca` group (configuration assessment) is excluded by default (`exclude_groups`). The
+    `frappe_wolf` group, Wazuh's alerts on Wolf's own SIEM export, is always excluded, so
+    nothing loops back.
+  - The event's host is the Wazuh agent's name. For logs the manager received by syslog
+    (agent `000`), it is the host name in the log line, where it happened.
+  - The payload keeps the rule (id, level, description, groups, `rule.mitre.id` as ATT&CK), the
+    Wazuh agent, the source IP and user, and the first log line (scrubbed like every event).
 - **App versions** (every `versions.interval`, 1 h): `app_version` per bench and app, from the
   `__version__` in `apps/<app>/<app>/__init__.py`, which the Wolf site compares with the GitHub
   Security Advisories of Frappe and ERPNext. Development versions are not sent.
@@ -189,6 +202,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
   "versions": {"enabled": true, "interval": 3600},
   "site_settings": {"enabled": true, "interval": 3600},
   "suricata": {"enabled": true, "eve_log": null, "max_priority": 3},
+  "wazuh": {"enabled": true, "alerts_log": null, "min_level": 7, "exclude_groups": ["sca"]},
   "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
@@ -204,7 +218,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
-`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`, `site_settings`, `suricata`: every key is optional (defaults above), and
+`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`, `site_settings`, `suricata`, `wazuh`: every key is optional (defaults above), and
 `"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
 `supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
 

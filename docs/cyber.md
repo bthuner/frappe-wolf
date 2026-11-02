@@ -102,7 +102,7 @@ Wolf alone is covered.
 |---|---|---|---|
 | Web attacks | nginx access logs: probes, injections, secret files served | signatures on the HTTP traffic (after TLS termination), with packet context | — |
 | Network | exposed bench services; outbound connections of bench processes (planned, #72) | **read by the agent** (`network_ids_alert`, #72 step 1): C2, scans, exploits, DNS, TLS, with the rules' ATT&CK techniques | — |
-| Host | `auth.log`/journal: SSH brute force then login, sudo, new accounts, admin groups; file integrity on the bench (planned) | — | full HIDS: more log sources, rootkits, configuration assessment, package vulnerabilities, Windows/macOS endpoints |
+| Host | `auth.log`/journal: SSH brute force then login, sudo, new accounts, admin groups; file integrity on the bench (planned) | — | **read by the agent on the manager's host** (`hids_alert`, #72 step 2): full HIDS, more log sources, rootkits, integrity, Windows/macOS endpoints |
 | Frappe application | permissions, scripts, settings, API keys, exfiltration, honeytokens | — (HTTPS, and no notion of DocTypes or users) | — (log lines, no Frappe semantics) |
 | Posture | Frappe settings per site, versions vs advisories, bench exposure, TLS/HSTS, SPF/DMARC | — | OS configuration assessment |
 | Health | 5xx, crons, workers, backups, certificates, database | — | — |
@@ -482,7 +482,13 @@ preset alerts on priority 1 rules. Tried against Suricata 7 with ET Open on the 
 sqlmap, Zmap and path traversal probes against nginx came out as events with the client
 address, the site and the rule's ATT&CK technique.
 
-Planned: Wazuh alerts as an optional source, one entity model (IP, host, site,
+Built: Wazuh as an optional source. The Wolf agent on the manager's host reads `alerts.json`
+into `hids_alert` events, from level 7, without configuration assessment and without Wazuh's
+alerts on Wolf's own export, and the "Host intrusion alert (critical)" preset alerts from
+level 12. Tried against a Wazuh 4.9.2 manager: sshd and sudo lines it received by syslog came
+out under the host that logged them, with Wazuh's ATT&CK techniques.
+
+Planned: one entity model (IP, host, site,
 user) for every source, incidents grouped by entity across sources, sequence rules ("scan, then
 a login from the same IP, then a large export"), and standalone parity for benches without
 them: file integrity and outbound connections of bench processes. Wolf alone stays fully

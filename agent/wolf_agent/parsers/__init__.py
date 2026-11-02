@@ -8,6 +8,7 @@ from .auth import AuthParser
 from .nginx import NginxParser
 from .scheduler import SchedulerParser
 from .suricata import SuricataParser
+from .wazuh import WazuhParser
 from .traceback import TracebackParser
 from .worker import WorkerParser
 
@@ -18,6 +19,8 @@ PARSERS = {
 	"worker": WorkerParser,
 	"auth": AuthParser,
 	"suricata": SuricataParser,
+	"wazuh": WazuhParser,
 }
 
-__all__ = ["PARSERS", "AuthParser", "NginxParser", "SchedulerParser", "SuricataParser", "TracebackParser", "WorkerParser"]
+__all__ = ["PARSERS", "AuthParser", "NginxParser", "SchedulerParser", "SuricataParser", "TracebackParser", "WazuhParser",
+           "WorkerParser"]

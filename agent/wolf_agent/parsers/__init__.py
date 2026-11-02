@@ -7,6 +7,7 @@ Each parser is fed raw lines with `feed(line)` and, once per push interval,
 from .auth import AuthParser
 from .nginx import NginxParser
 from .scheduler import SchedulerParser
+from .suricata import SuricataParser
 from .traceback import TracebackParser
 from .worker import WorkerParser
 
@@ -16,6 +17,7 @@ PARSERS = {
 	"scheduler": SchedulerParser,
 	"worker": WorkerParser,
 	"auth": AuthParser,
+	"suricata": SuricataParser,
 }
 
-__all__ = ["PARSERS", "AuthParser", "NginxParser", "SchedulerParser", "TracebackParser", "WorkerParser"]
+__all__ = ["PARSERS", "AuthParser", "NginxParser", "SchedulerParser", "SuricataParser", "TracebackParser", "WorkerParser"]

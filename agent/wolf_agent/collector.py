@@ -19,6 +19,7 @@ from .scrub import Scrubber
 from .tailer import FileTailer, JournalTailer, TailState
 
 log = logging.getLogger(__name__)
+DEFAULT_EVE_LOG = "/var/log/suricata/eve.json"
 
 # bench logs/ file → parsers applied to it
 BENCH_LOGS = {
@@ -194,6 +195,18 @@ class Collector:
 			if parser_name == "nginx":
 				ctx = {"default_site": extra.get("site"), "default_bench": extra.get("bench")}
 			self._file_source(extra["path"], [parser_name], **ctx)
+
+		suricata = section(self.cfg, "suricata")
+		eve = suricata.get("eve_log") or (DEFAULT_EVE_LOG if os.path.exists(DEFAULT_EVE_LOG) else None)
+		if suricata.get("enabled", True) and eve:
+			sites, aliases = {}, {}
+			for bench in benches:
+				for site in bench.get("sites") or []:
+					sites[site] = bench["name"]
+				aliases.update(bench.get("site_domains") or {})
+			parser = PARSERS["suricata"](self.host, log_file=eve, max_priority=suricata.get("max_priority"),
+			                             site_benches=sites, site_aliases=aliases)  # fmt: skip
+			self.sources.append(Source(FileTailer(eve, self.state.data, from_start=self.from_start), [parser]))
 
 		auth = resolve_auth_log(self.cfg.get("auth_log"), JournalTailer.available())
 		if auth == "journal":

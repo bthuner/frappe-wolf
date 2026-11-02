@@ -101,7 +101,7 @@ Wolf alone is covered.
 | | Wolf alone | + Suricata | + Wazuh |
 |---|---|---|---|
 | Web attacks | nginx access logs: probes, injections, secret files served | signatures on the HTTP traffic (after TLS termination), with packet context | — |
-| Network | exposed bench services; outbound connections of bench processes (planned, #72) | C2, scans, DNS, TLS fingerprints, file transfers, protocol anomalies | — |
+| Network | exposed bench services; outbound connections of bench processes (planned, #72) | **read by the agent** (`network_ids_alert`, #72 step 1): C2, scans, exploits, DNS, TLS, with the rules' ATT&CK techniques | — |
 | Host | `auth.log`/journal: SSH brute force then login, sudo, new accounts, admin groups; file integrity on the bench (planned) | — | full HIDS: more log sources, rootkits, configuration assessment, package vulnerabilities, Windows/macOS endpoints |
 | Frappe application | permissions, scripts, settings, API keys, exfiltration, honeytokens | — (HTTPS, and no notion of DocTypes or users) | — (log lines, no Frappe semantics) |
 | Posture | Frappe settings per site, versions vs advisories, bench exposure, TLS/HSTS, SPF/DMARC | — | OS configuration assessment |
@@ -474,9 +474,15 @@ result; read-only for everyone) and a comment on the incident.
   - Payloads go out as they are stored (already scrubbed by the agent), cut at 4 KB. The OCSF
     mapping is Wolf's reading of the schema, not a certified profile.
 
-### Next: the correlation console (planned, #72)
+### Next: the correlation console (#72)
 
-Suricata `eve.json` and Wazuh alerts as optional sources, one entity model (IP, host, site,
+Built: Suricata as an optional source. The agent reads its `eve.json` alerts into
+`network_ids_alert` events (see agent/README.md), and the "Network IDS alert (critical)"
+preset alerts on priority 1 rules. Tried against Suricata 7 with ET Open on the demo bench:
+sqlmap, Zmap and path traversal probes against nginx came out as events with the client
+address, the site and the rule's ATT&CK technique.
+
+Planned: Wazuh alerts as an optional source, one entity model (IP, host, site,
 user) for every source, incidents grouped by entity across sources, sequence rules ("scan, then
 a login from the same IP, then a large export"), and standalone parity for benches without
 them: file integrity and outbound connections of bench processes. Wolf alone stays fully

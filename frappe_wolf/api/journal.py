@@ -9,6 +9,9 @@
   means two concurrent requests can never fork the chain. An entry waits a minute at most.
 - Verify (`bench --site <site> wolf-verify-journal [--anchor seq:mac]`, or `verify_journal`):
   recomputes every digest and mac; see wolf/journal.py for what it proves and what it cannot.
+- Retention (`purge_journal`, daily, off unless Wolf Settings → Journal Retention Days is set):
+  removes the oldest signed entries after a signed purge record that says where it stopped,
+  never the newest entry, never one the SIEM export has not sent yet.
 
 The HMAC key is `wolf_journal_key` in the site config, created on first use. Losing it makes
 the existing chain unverifiable, so back it up with the site config.
@@ -17,7 +20,7 @@ the existing chain unverifiable, so back it up with the site config.
 import secrets
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import add_days, cint, now_datetime
 
 from frappe_wolf.wolf import journal
 from frappe_wolf.wolf.spa import MANAGER_ROLES
@@ -156,19 +159,69 @@ def chain_journal():
 	if not frappe.db.exists(DOCTYPE, {"seq": 0}):
 		return 0
 	with _lock():
-		pending = _pending()  # read again inside the lock: another run may have signed them
-		if not pending:
-			return 0
-		key = journal_key()
-		last_seq, last_mac = _last()
-		for entry, seq, mac in journal.chain(key, pending, last_seq, last_mac):
-			frappe.db.sql(
-				f"update `tab{DOCTYPE}` set seq = %s, prev_mac = %s, mac = %s where name = %s and coalesce(seq, 0) = 0",
-				(seq, last_mac, mac, entry["name"]),
-			)
-			last_mac = mac
+		signed = _sign_pending()
 		frappe.db.commit()
+	return signed
+
+
+def _sign_pending():
+	"""Sign the waiting entries. Call under the lock."""
+	pending = _pending()  # read again inside the lock: another run may have signed them
+	if not pending:
+		return 0
+	key = journal_key()
+	last_seq, last_mac = _last()
+	for entry, seq, mac in journal.chain(key, pending, last_seq, last_mac):
+		frappe.db.sql(
+			f"update `tab{DOCTYPE}` set seq = %s, prev_mac = %s, mac = %s where name = %s and coalesce(seq, 0) = 0",
+			(seq, last_mac, mac, entry["name"]),
+		)
+		last_mac = mac
 	return len(pending)
+
+
+def _siem_exported():
+	"""The last journal seq the SIEM export sent, when it sends the journal; else None."""
+	settings = frappe.get_cached_doc("Wolf Settings")
+	if not (cint(settings.get("siem_enabled")) and cint(settings.get("siem_journal"))):
+		return None
+	from frappe_wolf.api import siem
+
+	return cint(siem._cursor().get("journal_seq"))
+
+
+def purge_journal(now=None):
+	"""Scheduler (daily): remove signed entries older than the retention, after a purge record.
+
+	Returns the number of entries removed. The purge record is signed before anything is
+	deleted, in the same lock as chain_journal, so the journal is never left without it.
+	"""
+	days = cint(frappe.get_cached_doc("Wolf Settings").get("journal_retention_days"))
+	if days <= 0:
+		return 0
+	now = now or now_datetime()
+	cutoff = add_days(now, -days)
+	with _lock():
+		_sign_pending()
+		span = frappe.db.sql(f"select min(seq), max(seq) from `tab{DOCTYPE}` where seq > 0")[0]
+		oldest, newest = span[0], span[1]
+		after = frappe.db.sql(f"select min(seq) from `tab{DOCTYPE}` where seq > 0 and `at` >= %s", (cutoff,))[0][0]
+		through = journal.purge_point(oldest, newest, after, _siem_exported())
+		if through is None:
+			frappe.db.commit()
+			return 0
+		through_mac = frappe.db.get_value(DOCTYPE, {"seq": through}, "mac")
+		count = through - oldest + 1
+		content = {"purged_from_seq": oldest, "through_seq": through, "through_mac": through_mac, "count": count,
+		           "before": str(cutoff), "retention_days": days}  # fmt: skip
+		if not capture(journal.PURGE_KIND, DOCTYPE, f"{oldest}-{through}", content,
+		               f"{count} entries older than {days} days purged (1 to {through} gone)"):  # fmt: skip
+			frappe.db.rollback()
+			return 0
+		_sign_pending()
+		frappe.db.sql(f"delete from `tab{DOCTYPE}` where seq > 0 and seq <= %s", (through,))
+		frappe.db.commit()
+	return count
 
 
 def _entries(batch=5000):
@@ -197,15 +250,27 @@ def verify_journal(anchor=None):
 	return result
 
 
+def _last_purge():
+	rows = frappe.get_all(DOCTYPE, filters={"kind": journal.PURGE_KIND, "seq": (">", 0)}, fields=["content", "at"],
+	                      order_by="seq desc", limit=1)  # fmt: skip
+	record = journal.purge_record(rows[0].content) if rows else None
+	return {**record, "at": rows[0].at} if record else None
+
+
 @frappe.whitelist()
 def get_status():
 	frappe.only_for(MANAGER_ROLES)
 	last_seq, last_mac = _last()
+	purge = _last_purge()
 	return {
-		"entries": last_seq,
+		"entries": frappe.db.count(DOCTYPE, {"seq": (">", 0)}),
+		"last_seq": last_seq,
 		"anchor": f"{last_seq}:{last_mac}" if last_seq else None,
 		"pending": frappe.db.count(DOCTYPE, {"seq": 0}),
 		"key": bool(journal_key(create=False)),
+		"retention_days": cint(frappe.get_cached_doc("Wolf Settings").get("journal_retention_days")),
+		"purged_through": purge["through_seq"] if purge else None,
+		"purged_at": purge["at"] if purge else None,
 	}
 
 

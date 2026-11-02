@@ -71,6 +71,7 @@
   "cb_retention",
   "hour_retention_days",
   "event_retention_days",
+  "journal_retention_days",
   "links_section",
   "public_url",
   "action_link_hours"
@@ -517,6 +518,14 @@
    "label": "Event Retention Days"
   },
   {
+   "default": "0",
+   "description": "Tamper-evident journal entries older than this are removed every night, after a signed purge record that verification checks. 0 keeps them forever. Entries the SIEM export has not sent yet are kept.",
+   "fieldname": "journal_retention_days",
+   "fieldtype": "Int",
+   "label": "Journal Retention Days",
+   "non_negative": 1
+  },
+  {
    "fieldname": "links_section",
    "fieldtype": "Section Break",
    "label": "Notifications"
@@ -539,7 +548,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 18:00:00.000000",
+ "modified": "2026-11-02 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Settings",

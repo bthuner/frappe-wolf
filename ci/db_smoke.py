@@ -1958,6 +1958,79 @@ def main():
 			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
 		return f"{sent} messages (OCSF findings and journal entries); collector down: cursor kept, error recorded"
 
+	def journal_retention():
+		"""Purge after a signed record; verification checks the journal starts where it stopped."""
+		from frappe.utils import add_days
+
+		from frappe_wolf.api import journal as journal_api
+		from frappe_wolf.api import siem as siem_api
+
+		DT = "Wolf Journal Entry"
+		for i in range(4):  # a few more entries to purge
+			events.insert_event(schema.normalize_event(
+				{"type": "security", "category": "ssh_failed_login", "host": HOST, "title": f"retention smoke {i}"},
+				tz, now_datetime()))  # fmt: skip
+		while journal_api.chain_journal():
+			pass
+
+		def set_days(days):
+			frappe.db.set_single_value("Wolf Settings", "journal_retention_days", days)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+
+		def seqs():
+			return frappe.db.sql(f"select min(seq), max(seq) from `tab{DT}` where seq > 0")[0]
+
+		far = add_days(now_datetime(), 400)
+		set_days(0)
+		assert journal_api.purge_journal(now=far) == 0  # 0 keeps everything
+		try:
+			# the SIEM export has sent up to oldest + 1: nothing after it goes
+			oldest, newest = seqs()
+			frappe.db.set_single_value("Wolf Settings", {"siem_enabled": 1, "siem_journal": 1})
+			frappe.db.set_global(siem_api.CURSOR_KEY, json.dumps({"journal_seq": oldest + 1}))
+			set_days(30)
+			assert journal_api.purge_journal(now=far) == 2
+			assert seqs()[0] == oldest + 2
+			r = journal_api.verify_journal()
+			assert r["ok"] and r["purged_through"] == oldest + 1, r
+			frappe.db.set_single_value("Wolf Settings", {"siem_enabled": 0, "siem_journal": 0})
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+
+			# a cut inside the journal: entries before the 3rd kept one are older than the retention
+			kept = frappe.db.sql(f"select seq, `at` from `tab{DT}` where seq > 0 order by seq asc limit 3", as_dict=True)
+			third = kept[2]
+			removed = journal_api.purge_journal(now=add_days(third.at, 30))
+			first, newest = seqs()
+			assert removed >= 2 and first <= third.seq, (removed, first, third.seq)
+			r = journal_api.verify_journal()
+			assert r["ok"] and r["first_seq"] == first and r["purged_through"] == first - 1, r
+			status = journal_api.get_status()
+			assert status["purged_through"] == first - 1 and status["retention_days"] == 30, status
+			anchor = status["anchor"]
+			assert journal_api.verify_journal(anchor)["ok"]
+			purge = frappe.get_all(DT, filters={"kind": "journal_purge"}, fields=["summary", "seq"], order_by="seq desc", limit=1)[0]
+			assert purge.seq == newest, purge  # the record chained last, signed before the delete
+
+			# everything old: the newest entry stays, the purge record chains after it
+			journal_api.purge_journal(now=far)
+			first, newest = seqs()
+			assert first == newest - 1, (first, newest)
+			assert journal_api.verify_journal()["ok"]
+
+			# an attacker deleting the oldest kept entry: caught
+			row = frappe.db.sql(f"select * from `tab{DT}` where seq = %s", (first,), as_dict=True)[0]
+			frappe.db.delete(DT, {"name": row.name})
+			broken = journal_api.verify_journal()
+			assert not broken["ok"] and "where the last purge stopped" in broken["problem"]["why"], broken
+			frappe.get_doc({"doctype": DT, **row}).db_insert()
+			assert journal_api.verify_journal()["ok"]
+		finally:
+			set_days(0)
+			frappe.db.set_single_value("Wolf Settings", {"siem_enabled": 0, "siem_journal": 0})
+			frappe.db.set_global(siem_api.CURSOR_KEY, None)
+			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
+		return f"purged up to the SIEM cursor, then to the cut, then all but the newest; journal from {first}, deletion caught"
+
 	for name, fn in [("ingest", ingest), ("evaluate", evaluate), ("correlate", correlate), ("timeline", timeline),
 	                 ("deployment link", deployment_link),
 	                 ("reopen after resolve", reopen_after_resolve), ("skew", skew),
@@ -1977,7 +2050,7 @@ def main():
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("journal", journal_chain),
-	                 ("siem export", siem_export)]:
+	                 ("siem export", siem_export), ("journal retention", journal_retention)]:
 		check(name, fn)
 
 	for name in ("smoke disk", "smoke 502", "smoke last", "smoke cron"):

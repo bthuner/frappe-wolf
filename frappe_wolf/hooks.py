@@ -123,7 +123,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.check_email_queue",
 			"frappe_wolf.api.compliance.check_deadlines",
 		],
-		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data"],
+		"17 3 * * *": ["frappe_wolf.tasks.purge_old_data", "frappe_wolf.api.journal.purge_journal"],
 		"41 4 * * *": ["frappe_wolf.api.threat.refresh_reputation"],
 	},
 }

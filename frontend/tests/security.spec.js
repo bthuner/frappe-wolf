@@ -86,5 +86,27 @@ describe('SecurityPage', () => {
     await page.findAll('button').find((b) => b.text() === 'Verify').trigger('click')
     await flushPromises()
     expect(page.get('[role=status]').text()).toBe('Broken at entry 10: content does not match its digest')
+    expect(page.text()).toContain('Kept forever')
+  })
+
+  it('says what the retention purged, and that verification checks it', async () => {
+    server({
+      'frappe_wolf.api.security.list_sites': () => [],
+      'frappe_wolf.api.security.get_posture': () => POSTURE,
+      'frappe_wolf.api.journal.get_status': () => ({ entries: 30, last_seq: 42, pending: 0, anchor: `42:${'a'.repeat(64)}`, key: true,
+        retention_days: 365, purged_through: 12, purged_at: '2026-11-02 03:17:00' }),
+      'frappe_wolf.api.journal.verify': () => ({ ok: true, checked: 30, first_seq: 13, purged_through: 12, problem: null }),
+    })
+    const router = makeRouter(createMemoryHistory('/wolf'), BOOT)
+    await router.push('/security')
+    await router.isReady()
+    const page = mount(SecurityPage, { global: { plugins: [router], provide: { boot: { ...BOOT, can: { configure: true } } } } })
+    await flushPromises()
+    expect(page.text()).toContain('Entries older than 365 days are purged every night.')
+    expect(page.text()).toContain('Entries 1 to 12 were purged')
+    await page.findAll('button').find((b) => b.text() === 'Verify').trigger('click')
+    await flushPromises()
+    expect(page.get('[role=status]').text().replace(/\s+/g, ' ')).toBe(
+      'Verified: 30 entries, every digest and MAC matches, no gap, and the journal starts where the last purge stopped (entry 13).')
   })
 })

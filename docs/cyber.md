@@ -307,8 +307,20 @@ result; read-only for everyone) and a comment on the incident.
     Deleting the newest entries leaves a valid shorter chain: copy the **anchor** (newest
     `seq:mac`, shown on the Security page) somewhere Wolf cannot write, and check it with
     `--anchor`. The SIEM export below sends every entry out, which is the best anchor.
-  - Entries are read-only through Frappe (edits and deletions are refused) and kept forever:
-    there is no purge yet.
+  - Entries are read-only through Frappe (edits and deletions are refused).
+  - **Retention** (Wolf Settings → Journal Retention Days, 0 by default: kept forever). Every
+    night, `purge_journal` removes the signed entries older than the retention, as the oldest
+    part of the chain:
+    - first it writes and signs a `journal_purge` entry with where the purge stopped
+      (`through_seq` and its mac), then it deletes, all under the signing lock;
+    - it always keeps the newest entry, and never one the SIEM export has not sent yet (when it
+      sends the journal);
+    - verification then requires a journal that does not start at entry 1 to start right after
+      the newest purge record's cut, chained from its mac. Deleting more of the oldest entries,
+      or any of them without a purge, breaks it. Before retention existed, a journal missing its
+      oldest entries still verified;
+    - an anchor in the purged part is reported as purged (copy a newer one), except the cut
+      itself, whose mac the purge record keeps.
 - **SOC export (built)** (`wolf/siem.py`, `api/siem.py`, Wolf Settings → SIEM export).
   Every minute, the security events (or the types you list) at or above a minimum severity,
   and every signed journal entry, go to a syslog collector: RFC 5424 (facility local0)

@@ -62,8 +62,10 @@ class TestJournal(unittest.TestCase):
 	def test_wrong_key(self):
 		self.assertIn("key", journal.verify("other", build())["problem"]["why"])
 
-	def test_purged_head_starts_from_its_prev_mac(self):
-		self.assertTrue(journal.verify(KEY, build()[2:])["ok"])
+	def test_oldest_entries_removed_without_a_purge_record(self):
+		r = journal.verify(KEY, build()[2:])
+		self.assertEqual(r["problem"], {"seq": 3, "why": "entries 1 to 2 were removed without a purge record"})
+
 
 	def test_first_entry_must_start_from_genesis(self):
 		entries = build()
@@ -89,6 +91,50 @@ class TestJournal(unittest.TestCase):
 
 	def test_canonical_is_stable(self):
 		self.assertEqual(journal.canonical({"b": 1, "a": "é"}), '{"a":"é","b":1}')
+
+
+def with_purge(n=6, through=2):
+	"""A journal of n entries plus a purge record (through `through`), its head purged."""
+	entries = build(n)
+	cut = entries[through - 1]
+	content = journal.canonical({"kind": journal.PURGE_KIND, "through_seq": through, "through_mac": cut["mac"], "count": through})
+	record = {"at": "2026-11-01 11:00:00", "kind": journal.PURGE_KIND, "ref_doctype": "Wolf Journal Entry",
+	          "ref_name": f"1-{through}", "content": content, "digest": journal.digest(content)}  # fmt: skip
+	[(entry, seq, mac)] = journal.chain(KEY, [record], n, entries[-1]["mac"])
+	entries.append({**entry, "seq": seq, "prev_mac": entries[-1]["mac"], "mac": mac})
+	return entries[through:], cut
+
+
+class TestRetention(unittest.TestCase):
+	def test_purged_head_with_its_record(self):
+		kept, _ = with_purge()
+		r = journal.verify(KEY, kept)
+		self.assertTrue(r["ok"], r)
+		self.assertEqual((r["first_seq"], r["purged_through"], r["checked"]), (3, 2, 5))
+
+	def test_more_removed_after_the_purge(self):
+		kept, _ = with_purge()
+		r = journal.verify(KEY, kept[1:])  # entry 3 deleted too: looks like a purge, is not one
+		self.assertIn("should start at entry 3", r["problem"]["why"])
+
+	def test_purge_record_with_another_cut(self):
+		kept, _ = with_purge(through=2)
+		kept[0]["prev_mac"] = "e" * 64  # the first kept entry does not chain from the recorded cut
+		self.assertFalse(journal.verify(KEY, kept)["ok"])
+
+	def test_anchor_in_the_purged_part(self):
+		kept, cut = with_purge(through=2)
+		self.assertTrue(journal.verify(KEY, kept, anchor=(2, cut["mac"]))["ok"])  # the record kept its mac
+		r = journal.verify(KEY, kept, anchor=(1, "a" * 64))
+		self.assertIn("was purged by the retention", r["problem"]["why"])
+
+	def test_purge_point(self):
+		self.assertEqual(journal.purge_point(1, 10, 6), 5)
+		self.assertEqual(journal.purge_point(1, 10, None), 9)  # all old: the newest is kept
+		self.assertEqual(journal.purge_point(1, 10, 6, exported=3), 3)  # not before the SIEM has it
+		self.assertIsNone(journal.purge_point(4, 10, 4))  # nothing older than the cut
+		self.assertIsNone(journal.purge_point(None, None, None))  # empty journal
+		self.assertIsNone(journal.purge_point(5, 5, None))  # one entry: kept
 
 
 if __name__ == "__main__":

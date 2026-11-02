@@ -238,7 +238,8 @@ severity step. See [`docs/cyber.md`](docs/cyber.md#step-4-deception-and-threat-i
 Wolf Settings changes are recorded in **Wolf Journal Entry** and chained with an HMAC whose key
 stays in the site config. `bench --site <site> wolf-verify-journal [--anchor seq:mac]` proves
 nothing was edited, removed or reordered; copy the anchor shown on **Wolf → Security**
-somewhere Wolf cannot write. See [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
+somewhere Wolf cannot write. Kept forever by default; with **Journal Retention Days** set, the
+oldest entries are purged every night after a signed purge record that verification checks. See [`docs/cyber.md`](docs/cyber.md#step-6-compliance-and-evidence).
 
 **SIEM export** (Wolf Settings → SIEM export, off by default): security events and the journal
 go every minute to a syslog collector (UniSOC, Wazuh, Graylog...) as RFC 5424 carrying OCSF JSON

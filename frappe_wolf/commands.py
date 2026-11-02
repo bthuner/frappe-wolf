@@ -21,7 +21,8 @@ def verify_journal(context, anchor=None):
 	finally:
 		frappe.destroy()
 	if result["ok"]:
-		click.echo(f"journal OK: {result['checked']} entries, seq {result.get('first_seq')} to {result.get('last_seq')}, "
+		purged = f" (1 to {result['purged_through']} purged by the retention, as recorded)" if result.get("purged_through") else ""
+		click.echo(f"journal OK: {result['checked']} entries, seq {result.get('first_seq')} to {result.get('last_seq')}{purged}, "
 		           f"{result.get('pending', 0)} waiting to be signed; anchor {result.get('last_seq')}:{result.get('last_mac')}")
 	else:
 		problem = result["problem"] or {}

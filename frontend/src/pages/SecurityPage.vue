@@ -160,12 +160,22 @@ watch(site, load, { immediate: true })
         {{ journal.entries }} signed entries, {{ journal.pending }} waiting to be signed (within a minute).
         <template v-if="!journal.key">No key yet: it is created with the first signature.</template>
       </p>
+      <p class="text-sm text-ink-gray-7">
+        <template v-if="journal.retention_days">Entries older than {{ journal.retention_days }} days are purged every night.</template>
+        <template v-else>Kept forever (Wolf Settings → Journal Retention Days).</template>
+        <template v-if="journal.purged_through">
+          Entries 1 to {{ journal.purged_through }} were purged; a signed purge record says where, and verification checks it.
+        </template>
+      </p>
       <p v-if="journal.anchor" class="text-sm text-ink-gray-7">
         Anchor, to copy somewhere Wolf cannot write (a ticket, a password manager):
         <code class="wolf-data break-all">{{ journal.anchor }}</code>
       </p>
       <p v-if="verdict" role="status" class="text-sm" :style="{ color: verdict.ok ? 'var(--wolf-ok)' : 'var(--wolf-critical)' }">
-        <template v-if="verdict.ok">Verified: {{ verdict.checked }} entries, every digest and MAC matches, no gap.</template>
+        <template v-if="verdict.ok">
+          Verified: {{ verdict.checked }} entries, every digest and MAC matches, no gap<template v-if="verdict.purged_through">,
+          and the journal starts where the last purge stopped (entry {{ verdict.purged_through + 1 }})</template>.
+        </template>
         <template v-else>Broken<template v-if="verdict.problem?.seq"> at entry {{ verdict.problem.seq }}</template>: {{ verdict.problem?.why }}</template>
       </p>
     </section>

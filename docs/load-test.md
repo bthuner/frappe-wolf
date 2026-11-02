@@ -273,6 +273,25 @@ site's scheduler on and `scheduler_tick_interval` at 60, one cold page every 45 
   run to register the new scheduled job, which empties all of Frappe's cache (its app shell took
   1.8 s): it is not counted. On a site, `bench migrate` registers the job.
 
+**Drawing the first rows.** The signals panel draws the first 10 series of each group, the
+inventory its first 20 hosts; a button under each shows the rest, and how many of the hidden
+series fire or have no new data. The server sorts problems first, so those are the rows drawn;
+the counts per group stay exact. Timed without a bench by
+[`frontend/scripts/draw-time.mjs`](../frontend/scripts/draw-time.mjs): the production build,
+the API mocked in Chromium with 300 series over 8 groups and 101 hosts of one bench and two
+sites each, a new browser context each run, from the last answer to the next frame. 20 runs, on
+a laptop, not the bench, in ms:
+
+| Drawing | p50 | p95 / max | List items drawn |
+|---|---|---|---|
+| Every row (before) | 193 | 208 | 503 |
+| **First rows** (two series) | **131 to 134** | **148 to 150** | 121 |
+| One series, one host (`--empty`) | 97 to 112 | 126 to 128 | 4 |
+
+The rows cost 80 to 100 ms; 60 ms of it is gone. The rest of the drawing is the page's own,
+rows or not. The page was not timed again on the load bench: by the same share, its drawing
+(0.19 s at the median there) would lose about 0.06 s.
+
 **Other reads:**
 
 | Read | 1 h | 6 h | 24 h | 7 d |
@@ -292,8 +311,9 @@ site's scheduler on and `scheduler_tick_interval` at 60, one cold page every 45 
 Each read is under 1 s, and so is the overview page when its two slow reads come from the cache.
 - A visit that reads still takes 0.9 to 1.2 s: the first after 10 quiet minutes on a scope, or
   after 2 minutes when the scheduler ticks every 4 min (Dodock's default; the README sets 60 s).
-- Drawing, 0.13 to 0.32 s, for 300 signal rows and 101 hosts. Drawing the first rows, and the
-  rest on demand, would cut most of it.
+- Drawing, 0.13 to 0.32 s on the bench with every row. Drawing the first rows only cut it by a
+  third in a mocked browser (0.19 to 0.13 s); the rest is the page's own. Not timed again on
+  the bench.
 - The metrics explorer over 24 h, 0.86 s, is the closest other read.
 
 These margins are for 100 hosts on this bench. At several times that, the inventory and the 24 h

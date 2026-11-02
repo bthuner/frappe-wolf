@@ -54,6 +54,9 @@ DEFAULTS = {
 		"enabled": True, "cli": None, "host": None, "port": None,
 		"user": None, "password": None, "defaults_file": None,
 	},
+	# System Settings of each site (2FA, password policy, lockout, guest uploads), read from its
+	# database with the site's credentials, for the posture score of sites other than the Wolf site
+	"site_settings": {"enabled": True, "interval": 3600},
 	# version of each app in each bench (apps/<app>/<app>/__init__.py), for the advisory check
 	"versions": {"enabled": True, "interval": 3600},
 	# bench process states: "auto" (supervisor, else systemd), "supervisor" or "systemd"

@@ -20,6 +20,7 @@ from frappe_wolf.wolf import access, dns_txt, events, posture
 RECENT = timedelta(hours=3)  # agent samples older than this make a check unknown
 SETTINGS_FIELDS = ("enable_two_factor_auth", "enable_password_policy", "minimum_password_score",
                    "allow_consecutive_login_attempts", "allow_guests_to_upload_files")  # fmt: skip
+ROLE_2FA = "system_manager_2fa"  # the agent's name for Role "System Manager".two_factor_auth
 
 
 def _latest(metric, since, **scope):
@@ -104,6 +105,8 @@ def facts_for(site, now=None):
 	facts = {"settings": None}
 	if site == frappe.local.site:
 		facts.update(_local_facts())
+	else:
+		facts.update(remote_settings(site, since))
 	risks = _latest("site_config_risks", since, site=site)
 	if risks:
 		facts["site_config_risks"] = max(r.value for r in risks)
@@ -144,9 +147,24 @@ def app_versions(site, site_rows, since):
 	return versions
 
 
+def remote_settings(site, since):
+	"""System Settings of another site, from the agent's `site_setting` samples (read from that
+	site's database); {} when there are none, so the settings checks stay unknown."""
+	values = {}
+	for r in _latest("site_setting", since, site=site):
+		name = (r.label_key or "").partition("setting=")[2]
+		if name:
+			values[name] = r.value
+	if not values:
+		return {}
+	sm_2fa = values.pop(ROLE_2FA, None)
+	return {"settings": {f: values.get(f) for f in SETTINGS_FIELDS}, "system_manager_2fa": bool(sm_2fa),
+	        "settings_source": "agent"}  # fmt: skip
+
+
 def known_sites(now=None):
 	since = (now or now_datetime()) - RECENT
-	sites = {r.site for metric in ("site_config_risks", "backup_age_hours") for r in _latest(metric, since) if r.site}
+	sites = {r.site for metric in ("site_config_risks", "backup_age_hours", "site_setting") for r in _latest(metric, since) if r.site}
 	if not satellite.is_satellite():
 		sites.add(frappe.local.site)
 	return sorted(sites)

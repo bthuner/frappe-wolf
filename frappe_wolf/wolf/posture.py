@@ -8,6 +8,8 @@ much of the weight Wolf could read at all.
 
 Facts come from two places (api/security.py gathers them):
 - the site Wolf runs on: its System Settings, roles and site config;
+- for other sites, the agent's `site_setting` samples: the same System Settings and the
+  System Manager role's two-factor flag, read from each site's database;
 - the agent's latest samples for any site: `site_config_risks`, `exposed_services` on the
   hosts serving it, `backup_age_hours`, `tls_days_left` and `hsts_max_age_days`.
 
@@ -71,7 +73,7 @@ def _num(value):
 def check_settings(settings, system_manager_2fa):
 	"""The four System Settings checks. `settings` is None for a site Wolf cannot read."""
 	if settings is None:
-		why = "settings of this site are only readable on the site itself (install Wolf there as a satellite)"
+		why = "no recent site_setting sample: the agent reads them from the site's database (MariaDB or Postgres client on its host)"
 		return [_row(c, UNKNOWN, why) for c in ("two_factor", "password_policy", "login_lockout", "guest_uploads")]
 	rows = []
 	on = bool(_num(settings.get("enable_two_factor_auth")))

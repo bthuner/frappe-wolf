@@ -52,6 +52,7 @@ _SPEC = [
 	("exposed_services", "security", "Bench services listening beyond loopback", "gauge", "services", "host", 600),
 	("site_config_risks", "security", "Risky site_config settings", "gauge", "settings", "site", 600),
 	("security_score", "security", "Security score", "gauge", "/ 100", "site", 3600),
+	("site_setting", "security", "System Settings value", "gauge", "", "site", 3600),
 	# major * 1e6 + minor * 1e3 + patch: a step on the chart is an upgrade
 	("app_version", "security", "App version", "gauge", "version", "bench", 3600),
 ]
@@ -67,6 +68,7 @@ CAVEATS = {
 	"tls_days_left": "Days until the certificate served on port 443 expires; not a full validity check.",
 	"app_version": "Version of each app in the bench (apps/<app>/<app>/__init__.py) as major * 1e6 + minor * 1e3 + patch: 15100000 is 15.100.0; development versions are not sent.",
 	"hsts_max_age_days": "Strict-Transport-Security max-age of the first response to HEAD / (0: no header); redirects are not followed.",
+	"site_setting": "A System Settings value as stored in the site's database (unset: 0); system_manager_2fa is the System Manager role's two-factor flag.",
 	"exposed_services": "A listening socket, not proof of reachability: a firewall may still block it.",
 	"security_score": "Share of the checks Wolf could prove passed; a check it cannot read counts as not passed.",
 }
@@ -131,7 +133,7 @@ LABELS = {
 	"rq_failed_jobs_added": "queue", "rq_long_running_jobs": "queue", "tls_days_left": "domain", "hsts_max_age_days": "domain",
 	"bench_processes_down": "manager", "redis_used_memory_percent": "of",
 	"db_connections_used_percent": "db", "db_threads_connected": "db", "db_slow_queries": "db", "db_replication_running": "db",
-	"db_replication_lag_seconds": "db", "app_version": "app",
+	"db_replication_lag_seconds": "db", "app_version": "app", "site_setting": "setting",
 }  # fmt: skip
 
 # what a bucket may say about each kind. A gauge is a level: its average, extremes or last value

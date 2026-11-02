@@ -119,7 +119,9 @@ watch(site, load, { immediate: true })
         <p class="w-full text-sm text-ink-gray-6">
           The score is the weight of the checks that passed out of all of them: a check Wolf cannot read counts as not
           passed. Agent samples older than {{ posture.recent_hours }} h are not used.
-          <template v-if="!posture.local">System Settings checks are only readable on the site itself.</template>
+          <template v-if="!posture.local">
+            System Settings of this site are read by the agent from its database, hourly.
+          </template>
         </p>
       </section>
 

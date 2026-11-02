@@ -99,6 +99,12 @@ from `pilot.jwt_secret` / `bench.toml` `[admin] jwt_secret`. See
 - **App versions** (every `versions.interval`, 1 h): `app_version` per bench and app, from the
   `__version__` in `apps/<app>/<app>/__init__.py`, which the Wolf site compares with the GitHub
   Security Advisories of Frappe and ERPNext. Development versions are not sent.
+- **Site settings** (every `site_settings.interval`, 1 h): `site_setting` per site and setting,
+  read from the site's database with its own credentials: five System Settings rows (two-factor
+  authentication, password policy and minimum score, lockout, guest uploads) and the System
+  Manager role's two-factor flag, for the posture score of sites other than the Wolf site.
+  MariaDB through the client of `mariadb.cli` (else `mariadb` / `mysql`), Postgres through
+  `psql`; the password goes through a private file, never the command line.
 - **Exposure** (every `exposure.interval`, 10 min): `exposed_services` per host counts bench
   ports listening on all interfaces or a public address in `/proc/net/tcp{,6}` (MariaDB 3306,
   Postgres 5432, Redis 6379/11000/12000/13000 or the bench's own `redis_*` ports, socket.io 9000,
@@ -166,6 +172,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
               "password": null, "defaults_file": null},
   "processes": {"enabled": true, "manager": "auto"},
   "versions": {"enabled": true, "interval": 3600},
+  "site_settings": {"enabled": true, "interval": 3600},
   "scrub": {"enabled": true, "ips": false, "extra_patterns": [], "keep": []},
   "watchdog": {
     "enabled": true,
@@ -181,7 +188,7 @@ credentials (401/403) the agent exits with status 2 and systemd stops restarting
 `auth_log`: `null` auto-detects, a path forces a file, `"journal"` forces journalctl,
 `false` disables. `nginx_access_log` may be a list. Parsers for `extra_logs`:
 `traceback`, `scheduler`, `worker`, `nginx`, `auth`.
-`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`: every key is optional (defaults above), and
+`rq`, `backups`, `tls`, `mariadb`, `processes`, `versions`, `site_settings`: every key is optional (defaults above), and
 `"tls": false` (same for the others) turns a check off. `processes.manager` is `auto`,
 `supervisor` or `systemd`. `wolf-agent check` runs every check once, inline, TLS included.
 

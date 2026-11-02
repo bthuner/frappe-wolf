@@ -13,7 +13,7 @@ const POSTURE = {
   checks: [
     { id: 'tls', label: 'TLS certificates valid for 14 days or more', weight: 2, status: 'pass', evidence: '60 days left', fix: null },
     { id: 'two_factor', label: 'Two-factor authentication for System Managers', weight: 3, status: 'unknown',
-      evidence: 'settings of this site are only readable on the site itself', fix: null },
+      evidence: 'no recent site_setting sample: the agent reads them from the site\'s database', fix: null },
     { id: 'exposure', label: 'Bench services not listening beyond loopback', weight: 3, status: 'fail',
       evidence: 'bench-01: 1 service(s)', fix: 'Bind MariaDB, Redis, socket.io and gunicorn to 127.0.0.1' },
   ],
@@ -51,7 +51,7 @@ describe('SecurityPage', () => {
     expect(text).toContain('41 / 100')
     expect(text).toContain('2 passed, 2 failed, 4 unknown')
     expect(text).toContain('Wolf could read 59% of the weight')
-    expect(text).toContain('System Settings checks are only readable on the site itself')
+    expect(text).toContain('System Settings of this site are read by the agent from its database')
     const rows = page.findAll('tbody tr').map((r) => r.text())
     expect(rows[0]).toContain('Failed') // failures first
     expect(rows[0]).toContain('Fix: Bind MariaDB')

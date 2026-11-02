@@ -18,6 +18,11 @@ exit 0
 """
 
 
+def read(path):
+	with open(path) as f:
+		return f.read()
+
+
 @unittest.skipUnless(shutil.which("sh"), "needs a POSIX shell")
 class TestFail2banHelper(unittest.TestCase):
 	def setUp(self):
@@ -46,7 +51,7 @@ class TestFail2banHelper(unittest.TestCase):
 	def run_script(self, *args):
 		env = {"PATH": f"{self.bin}:/usr/bin:/bin"}
 		done = subprocess.run([self.script, *args], capture_output=True, text=True, env=env, timeout=20)
-		calls = open(self.log).read().splitlines() if os.path.exists(self.log) else []
+		calls = read(self.log).splitlines() if os.path.exists(self.log) else []
 		return done, calls
 
 	def test_ban_records_and_schedules_the_unban(self):
@@ -58,7 +63,7 @@ class TestFail2banHelper(unittest.TestCase):
 		timer = next(c for c in calls if c.startswith("--quiet"))
 		self.assertIn("--on-active=3600s", timer)
 		self.assertTrue(timer.endswith("set wolf unbanip 45.33.32.156"), timer)
-		addr, until = open(self.state).read().split()
+		addr, until = read(self.state).split()
 		self.assertEqual(addr, "45.33.32.156")
 		self.assertAlmostEqual(int(until), time.time() + 3600, delta=30)
 
@@ -72,13 +77,13 @@ class TestFail2banHelper(unittest.TestCase):
 		done, calls = self.run_script("--sweep")
 		self.assertEqual(done.stdout.strip(), "unbanned 203.0.113.9")
 		self.assertIn("set wolf unbanip 203.0.113.9", calls)
-		self.assertEqual(open(self.state).read().split()[0], "2001:db8::7")  # the other one is kept
+		self.assertEqual(read(self.state).split()[0], "2001:db8::7")  # the other one is kept
 
 	def test_a_ban_again_replaces_its_expiry(self):
 		self.stub("fail2ban-client")
 		self.run_script("45.33.32.156", "60")
 		self.run_script("45.33.32.156", "7200")
-		lines = open(self.state).read().splitlines()
+		lines = read(self.state).splitlines()
 		self.assertEqual(len(lines), 1)
 		self.assertAlmostEqual(int(lines[0].split()[1]), time.time() + 7200, delta=30)
 

@@ -1699,6 +1699,72 @@ def main():
 			frappe.clear_document_cache("Wolf Settings", "Wolf Settings")
 		return seen
 
+	def api_key_ips():
+		"""An API key used from an address outside the networks it was used from (api_key_new_ip)."""
+		import base64
+		from types import SimpleNamespace
+
+		from frappe_wolf.api import api_keys
+
+		since = now_datetime() - timedelta(seconds=1)
+		frappe.cache.delete_keys(api_keys.CACHE_PREFIX)
+		plain = "wolf-keyip@example.com"
+		if not frappe.db.exists("User", plain):
+			frappe.get_doc({"doctype": "User", "email": plain, "first_name": "KeyIP", "send_welcome_email": 0}).insert(ignore_permissions=True)
+
+		def call(user, key, ip, status=200, scheme="token"):
+			header = f"token {key}:secret" if scheme == "token" else "Basic " + base64.b64encode(f"{key}:secret".encode()).decode()
+			frappe.set_user(user)
+			previous_ip, frappe.local.request_ip = getattr(frappe.local, "request_ip", None), ip
+			try:
+				api_keys.after_request(response=SimpleNamespace(status_code=status),
+				                       request=SimpleNamespace(path="/api/resource/ToDo", headers={"Authorization": header, "User-Agent": "smoke"}))  # fmt: skip
+			finally:
+				frappe.set_user("Administrator")
+				frappe.local.request_ip = previous_ip  # later checks rely on it (rate limiter)
+
+		def found():
+			return frappe.get_all("Wolf Event", filters={"category": "api_key_new_ip", "creation": (">=", since)},
+			                      fields=["title", "severity", "payload"], order_by="creation")  # fmt: skip
+
+		def age(key, days):
+			frappe.db.sql("update `tabWolf API Key IP` set first_seen = %s where api_key = %s", (now_datetime() - timedelta(days=days), key))
+			frappe.cache.delete_keys(api_keys.CACHE_PREFIX)
+
+		keys = ("smokekeyplain01", "smokekeyadmin01")
+		try:
+			call(plain, keys[0], "203.0.113.7")  # first address: the baseline
+			call(plain, keys[0], "198.51.100.20", scheme="basic")  # within the key's first day: learnt
+			call(plain, keys[0], "192.0.2.1", status=401)  # a refused request teaches nothing
+			assert frappe.db.count("Wolf API Key IP", {"api_key": keys[0]}) == 2
+			assert not found()
+			age(keys[0], 3)
+			call(plain, keys[0], "203.0.113.99")  # same /24 as a known address
+			assert not found()
+			call(plain, keys[0], "192.0.2.50")
+			call(plain, keys[0], "192.0.2.50")  # once per key and address
+			e = found()
+			assert [r.severity for r in e] == ["warning"] and "192.0.2.50" in e[0].title, e
+			payload = json.loads(e[0].payload)
+			assert payload["known_count"] == 3 and payload["api_key"] == keys[0] and payload["user"] == plain, payload
+			# a privileged user's key: critical
+			call("Administrator", keys[1], "203.0.113.7")
+			age(keys[1], 3)
+			call("Administrator", keys[1], "2001:db8::1")
+			e = found()
+			assert [r.severity for r in e] == ["warning", "critical"], e
+			# known addresses only touch last_seen, at most once a day
+			call(plain, keys[0], "203.0.113.7")
+			assert frappe.db.get_value("Wolf API Key IP", api_keys.row_name(keys[0], "203.0.113.7"), "last_seen") >= since
+			before = frappe.db.count("Wolf API Key IP")
+			frappe.db.sql("update `tabWolf API Key IP` set last_seen = %s where api_key = %s", (now_datetime() - timedelta(days=400), keys[1]))
+			api_keys.purge()
+			assert frappe.db.count("Wolf API Key IP") == before - 2
+		finally:
+			frappe.db.delete("Wolf API Key IP", {"api_key": ("in", keys)})
+			frappe.cache.delete_keys(api_keys.CACHE_PREFIX)
+		return f"{len(found())} events: " + "; ".join(r.title for r in found())
+
 	def posture_score():
 		from frappe_wolf.api import security
 
@@ -2214,6 +2280,7 @@ def main():
 	                 ("live updates", live_updates),
 	                 ("app security", app_security), ("permission drift", permission_drift),
 	                 ("exfiltration", exfiltration_check),
+	                 ("api key addresses", api_key_ips),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

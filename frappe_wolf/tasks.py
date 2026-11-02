@@ -124,4 +124,7 @@ def purge_old_data():
 	)
 	frappe.db.delete("Wolf Silence", {"ends_at": ("<", add_days(now, -event_days))})
 	frappe.db.delete("Wolf Delivery", {"at": ("<", add_days(now, -event_days))})
+	from frappe_wolf.api import api_keys
+
+	api_keys.purge()  # API key addresses unused for a year count as new again
 	frappe.db.commit()

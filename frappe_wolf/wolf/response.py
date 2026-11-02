@@ -24,7 +24,8 @@ DEFAULT_HOURS = 24
 MAX_HOURS = 168
 PROTECTED_USERS = {"administrator", "guest"}
 # categories whose payload `user` is the account at risk or misused (not the one who acted)
-USER_CATEGORIES = {"frappe_failed_login", "new_admin_ip", "admin_login_new_country", "privileged_user", "api_key_generated"}
+USER_CATEGORIES = {"frappe_failed_login", "new_admin_ip", "admin_login_new_country", "privileged_user", "api_key_generated",
+                   "api_key_new_ip"}
 MAX_PROPOSALS = 20
 
 

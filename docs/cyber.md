@@ -157,6 +157,15 @@ risky application changes** (on by default):
   sessions or let guests upload files (`security_settings_weakened`).
 - **API keys** (T1098.001): a new API secret written for a user (`api_key_generated`), critical
   for privileged users.
+- **API key used from a new IP** (T1078, T1552, `api_key_new_ip`): every successful request
+  authenticated by an API key (`Authorization: token key:secret` or `Basic`) records the key's
+  address in Wolf API Key IP (`api/api_keys.py`, `wolf/api_keys.py`). The key's first address,
+  and any address in its first 24 h, are its baseline: integrations often call from a few
+  servers. After that, an address outside every known /24 (IPv4) or /64 (IPv6) raises the
+  event, critical for privileged users; a new address inside a known network is recorded
+  silently. One Redis read per request; the table is touched at most once a day per key and
+  address. Addresses unused for a year are forgotten. Deleting a row forgets an address; the
+  proposed responses are revoking the user's API keys and blocking the address.
 - **Outbound webhooks** (T1567): a Webhook created, enabled or pointed at another host
   (`webhook_external`).
 - **Unusual data exports** (T1567 / T1030, `data_exfiltration`), behind its own setting,
@@ -178,10 +187,7 @@ risky application changes** (on by default):
     followed by a critical. The payload has the hour's bytes, requests and rows (for list
     reads), the baseline, the ratio, the last request (what, which DocType or report) and the
     IP.
-- Eight presets, one per signal.
-
-Not built yet: API key *use* from an IP never seen for it needs request logs Wolf does not keep
-yet.
+- Nine presets, one per signal.
 
 Limits: changes made with raw SQL (a patch, `bench mariadb`) fire no document event and are not
 seen; patches and migrations are skipped on purpose. A User Permission restricted to one DocType
@@ -409,5 +415,6 @@ result; read-only for everyone) and a comment on the incident.
 | `permission_change` | site | T1098 Account Manipulation |
 | `security_settings_weakened` | site | T1562.001 Disable or Modify Tools |
 | `api_key_generated` | site | T1098.001 Additional Cloud Credentials |
+| `api_key_new_ip` | site | T1078 Valid Accounts, T1552 Unsecured Credentials |
 | `webhook_external` | site | T1567 Exfiltration Over Web Service |
 | `data_exfiltration` | site | T1567 Exfiltration Over Web Service, T1030 Data Transfer Size Limits |

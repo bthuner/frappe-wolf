@@ -349,6 +349,14 @@ PRESETS = [
 		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
 	},
 	{
+		"rule_name": "API key used from a new IP",
+		"description": "An API key was used from an address outside every network it was used from "
+		"before (after its first 24 h): a leaked key (MITRE T1078, T1552). Critical for privileged users.",
+		"signal_type": "event", "event_type": "security", "event_category": "api_key_new_ip",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
+		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 0,
+	},
+	{
 		"rule_name": "Webhook to a new host",
 		"description": "A Webhook was created, enabled or pointed at another host: it sends documents "
 		"out of the site (MITRE T1567).",

@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import app_versions, database, pilot, press, tls_expiry
+from . import app_versions, database, pilot, press, site_settings, tls_expiry
 from .backups import backup_metrics
 from .config import pilot_settings, press_settings, resolve_auth_log, section
 from .discovery import discover_benches, read_bench_toml, resolve_platform
@@ -253,7 +253,7 @@ class Collector:
 
 
 class InfraChecks:
-	"""Redis/RQ, backups, TLS expiry, MariaDB, process states, exposure and app versions, each on its own interval.
+	"""Redis/RQ, backups, TLS expiry, MariaDB, process states, exposure, app versions and site settings, each on its own interval.
 
 	Redis, MariaDB and process states run every cycle. Backups run every
 	`backups.interval` seconds. TLS handshakes can take seconds per domain, so they run
@@ -272,6 +272,8 @@ class InfraChecks:
 		self.processes = section(cfg, "processes")
 		self.exposure = section(cfg, "exposure")
 		self.versions = section(cfg, "versions")
+		self.site_settings = section(cfg, "site_settings")
+		self.settings_reader = None
 		self.exposure_watcher = (
 			ExposureWatcher(host, self.exposure.get("ports")) if self.exposure.get("enabled", True) else None
 		)
@@ -296,7 +298,7 @@ class InfraChecks:
 		for name, fn in (
 			("redis", self._redis), ("backups", self._backups), ("tls", self._tls),
 			("mariadb", self._mariadb), ("processes", self._processes), ("exposure", self._exposure),
-			("versions", self._versions),
+			("versions", self._versions), ("site_settings", self._site_settings),
 		):
 			try:
 				m, e = fn(benches, now)
@@ -389,6 +391,13 @@ class InfraChecks:
 		if not self.versions.get("enabled", True) or not self._due("versions", self.versions.get("interval")):
 			return [], []
 		return app_versions.version_metrics(benches, self.host, now), []
+
+	def _site_settings(self, benches, now):
+		if not self.site_settings.get("enabled", True) or not self._due("site_settings", self.site_settings.get("interval")):
+			return [], []
+		if self.settings_reader is None:
+			self.settings_reader = site_settings.SiteSettingsReader(self.host, self.mariadb)
+		return self.settings_reader.collect(benches, now), []
 
 
 def _signature(benches):

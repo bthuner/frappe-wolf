@@ -204,10 +204,10 @@ what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
 
 | Check | Weight | Read from |
 |---|---|---|
-| Two-factor authentication for System Managers (global switch and the role) | 3 | System Settings, Role (Wolf site only) |
-| Password policy, minimum score 3 | 2 | System Settings (Wolf site only) |
-| Lockout after 1–10 failed logins | 1 | System Settings (Wolf site only) |
-| Guests cannot upload files | 1 | System Settings (Wolf site only) |
+| Two-factor authentication for System Managers (global switch and the role) | 3 | System Settings, Role: on the Wolf site itself, else the agent's `site_setting` |
+| Password policy, minimum score 3 | 2 | System Settings (as above) |
+| Lockout after 1–10 failed logins | 1 | System Settings (as above) |
+| Guests cannot upload files | 1 | System Settings (as above) |
 | No development settings in site_config.json | 3 | the site config on the Wolf site, else the agent's `site_config_risks` |
 | Bench services not listening beyond loopback | 3 | the agent's `exposed_services` on the site's hosts |
 | A backup newer than 26 h | 2 | `backup_age_hours` |
@@ -248,12 +248,19 @@ what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
     the version that fixes them all on that line. A major line that no advisory of the last
     year names (Dodock, numbered differently, or a line out of support such as 13.x) is
     unknown, never safe.
+- **System Settings of other sites**: the agent reads them from each site's database, hourly
+  (`agent/wolf_agent/site_settings.py`), with the site's own credentials from
+  `site_config.json`: the five System Settings rows of `tabSingles` and
+  `tabRole.two_factor_auth` of System Manager, nothing else. MariaDB through the `mariadb` /
+  `mysql` client, Postgres through `psql`; the password goes through a private option or
+  pgpass file. A setting never saved is sent as 0, as Frappe reads it. Without a client on the
+  host, or a database that does not answer, those checks stay unknown. The Wolf site always
+  reads its own settings, never the agent's copy.
 - The score is stored hourly as `security_score`. Three presets: Security score low (< 60),
   Bench service exposed, Development settings in production.
 
-Not built yet: advisories of other apps (HRMS, Dokos' own), SPF/DMARC of other
-sites' mail domains, and the System Settings checks of sites other than the Wolf site (they
-need Wolf installed there; satellites forward events, not settings). A listening socket is not
+Not built yet: advisories of other apps (HRMS, Dokos' own) and SPF/DMARC of other sites' mail
+domains. A listening socket is not
 proof of reachability: a firewall may block it.
 
 ### Step 4: deception and threat intelligence (built, except CrowdSec)

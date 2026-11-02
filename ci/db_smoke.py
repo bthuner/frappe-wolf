@@ -1768,6 +1768,28 @@ def main():
 		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 2
 		assert SITE in security.list_sites()
 
+		# another site: its System Settings come from the agent, read from that site's database
+		remote = "remote.smoke.localhost"
+		settings = {"enable_two_factor_auth": 1, "enable_password_policy": 1, "minimum_password_score": 2,
+		            "allow_consecutive_login_attempts": 0, "allow_guests_to_upload_files": 0, "system_manager_2fa": 1}  # fmt: skip
+		events.insert_metrics([schema.normalize_metric({"metric_name": "site_setting", "value": v, "host": host, "bench": "smoke-bench",
+		                                                "site": remote, "labels": {"setting": k}}, tz, now)
+		                       for k, v in settings.items()])  # fmt: skip
+		assert remote in security.list_sites()
+		remote_posture = security.get_posture(remote)
+		checks = {c["id"]: c for c in remote_posture["checks"]}
+		assert not remote_posture["local"]
+		assert checks["two_factor"]["status"] == "pass", checks["two_factor"]
+		assert checks["password_policy"]["status"] == "fail" and checks["password_policy"]["evidence"] == "minimum score 2", checks["password_policy"]
+		assert checks["login_lockout"]["status"] == "fail" and checks["guest_uploads"]["status"] == "pass", checks
+		# the Wolf site reads its own settings, never the agent's copy
+		events.insert_metrics([schema.normalize_metric({"metric_name": "site_setting", "value": 1, "host": host, "site": SITE,
+		                                                "labels": {"setting": "allow_guests_to_upload_files"}}, tz, now)])  # fmt: skip
+		local_uploads = next(c for c in security.get_posture(SITE)["checks"] if c["id"] == "guest_uploads")
+		assert local_uploads["evidence"] == "guests may not upload", local_uploads
+		frappe.db.delete("Wolf Metric Sample", {"metric_name": "site_setting"})
+		assert next(c for c in security.get_posture(remote)["checks"] if c["id"] == "two_factor")["status"] == "unknown"
+
 		# HSTS from the agent's samples, per domain; SPF / DMARC from DNS for the outgoing mail domains
 		from frappe_wolf.wolf import dns_txt
 
@@ -1802,7 +1824,7 @@ def main():
 			dns_txt.lookup = original
 			frappe.cache.delete_keys("wolf_mail_auth|")
 			frappe.db.delete("Email Account", {"name": account.name})
-		return f"score {result['score']} (coverage {result['coverage']}%), {status}; hsts, spf, dmarc, advisories read"
+		return f"score {result['score']} (coverage {result['coverage']}%), {status}; hsts, spf, dmarc, advisories, another site's settings read"
 
 	def regulatory_deadlines():
 		from frappe_wolf.api import compliance as compliance_api

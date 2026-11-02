@@ -11,6 +11,11 @@ the chain after it. Deleting the newest entries leaves a valid shorter chain, wh
 anchor (the newest `seq` and `mac`) is worth copying somewhere Wolf cannot write: the SIEM
 export sends every entry out, and `verify(anchor=...)` checks a copied anchor is still there.
 
+Retention removes the oldest entries, and only through a purge record: a signed
+`journal_purge` entry saying where the purge stopped (`through_seq`, `through_mac`). A journal
+that does not start at entry 1 must start right after the newest purge record's cut, from that
+entry's mac: deleting more of its oldest entries, or any of them without a purge, is caught.
+
 The key lives in the site config (`wolf_journal_key`), not in the database: someone who can
 only write the database cannot forge a chain.
 """
@@ -20,6 +25,7 @@ import hmac
 import json
 
 GENESIS = "0" * 64
+PURGE_KIND = "journal_purge"
 
 
 def canonical(content):
@@ -52,22 +58,26 @@ def chain(key, pending, last_seq=0, last_mac=GENESIS):
 def verify(key, entries, anchor=None):
 	"""Check chained entries (ordered by seq). Returns {ok, checked, first_seq, last_seq, last_mac, problem}.
 
-	`entries` must start at the first entry kept; a journal whose oldest entries were purged
-	starts from that entry's own `prev_mac`. `anchor` is a (seq, mac) copied earlier.
+	`entries` must start at the first entry kept. A journal whose oldest entries were purged
+	must start where its newest purge record says the purge stopped (`purged_through` in the
+	result). `anchor` is a (seq, mac) copied earlier.
 	"""
-	result = {"ok": True, "checked": 0, "first_seq": None, "last_seq": None, "last_mac": None, "problem": None}
+	result = {"ok": True, "checked": 0, "first_seq": None, "last_seq": None, "last_mac": None, "problem": None,
+	          "purged_through": None}  # fmt: skip
 
 	def fail(seq, why):
 		result.update(ok=False, problem={"seq": seq, "why": why})
 		return result
 
 	prev_seq, prev_mac = None, None
+	first_prev_mac = None
+	purge = None  # the newest purge record's content
 	seen = {}
 	for e in entries:
 		seq = e["seq"]
 		if prev_seq is None:
 			result["first_seq"] = seq
-			prev_mac = e["prev_mac"]
+			prev_mac = first_prev_mac = e["prev_mac"]
 			if seq == 1 and prev_mac != GENESIS:
 				return fail(seq, "the first entry does not start from the genesis value")
 		elif seq != prev_seq + 1:
@@ -79,17 +89,59 @@ def verify(key, entries, anchor=None):
 		expected = mac(key, seq, e["at"], e["kind"], e.get("ref_doctype"), e.get("ref_name"), e["digest"], prev_mac)
 		if not hmac.compare_digest(expected, e["mac"] or ""):
 			return fail(seq, "mac does not match: the entry was edited or the key is not the one that signed it")
+		if e["kind"] == PURGE_KIND:
+			purge = purge_record(e["content"])
 		seen[seq] = e["mac"]
 		prev_seq, prev_mac = seq, e["mac"]
 		result["checked"] += 1
 	result["last_seq"], result["last_mac"] = prev_seq, prev_mac
+	first = result["first_seq"]
+	if purge:
+		result["purged_through"] = purge["through_seq"]
+	if first and first > 1:
+		if not purge:
+			return fail(first, f"entries 1 to {first - 1} were removed without a purge record")
+		if first != purge["through_seq"] + 1 or first_prev_mac != purge["through_mac"]:
+			return fail(first, f"the journal should start at entry {purge['through_seq'] + 1}, where the last purge "
+			                   f"stopped: entries were removed after it")  # fmt: skip
 	if anchor:
 		a_seq, a_mac = int(anchor[0]), anchor[1]
+		if purge and a_seq <= purge["through_seq"]:
+			if a_seq == purge["through_seq"] and hmac.compare_digest(purge["through_mac"], a_mac):
+				return result  # the purge record kept its mac
+			return fail(a_seq, f"anchored entry {a_seq} was purged by the retention (entries up to "
+			                   f"{purge['through_seq']}): copy a newer anchor")  # fmt: skip
 		if a_seq not in seen:
 			return fail(a_seq, f"anchored entry {a_seq} is not in the journal any more (newest is {prev_seq})")
 		if not hmac.compare_digest(seen[a_seq], a_mac):
 			return fail(a_seq, "anchored entry has another mac than the one copied")
 	return result
+
+
+def purge_record(content):
+	"""{"through_seq", "through_mac"} of a purge entry's content, or None if it has none."""
+	try:
+		data = json.loads(content)
+		return {"through_seq": int(data["through_seq"]), "through_mac": str(data["through_mac"])}
+	except (TypeError, ValueError, KeyError):
+		return None
+
+
+def purge_point(oldest, newest, first_after_cutoff, exported=None):
+	"""The last seq a purge may remove, or None when there is nothing to purge.
+
+	oldest / newest: the signed entries' seq range; first_after_cutoff: the first seq at or after
+	the retention cut (None if every entry is older); exported: the SIEM export's seq, when it
+	sends the journal (nothing is purged before it went out). The newest entry is always kept:
+	the purge record chains after it.
+	"""
+	if not oldest or not newest:
+		return None
+	through = (first_after_cutoff - 1) if first_after_cutoff else newest
+	through = min(through, newest - 1)
+	if exported is not None:
+		through = min(through, exported)
+	return through if through >= oldest else None
 
 
 def parse_anchor(text):

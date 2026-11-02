@@ -61,9 +61,14 @@ roles and DocPerms, API keys, Server Scripts and the System Console, `site_confi
 bench Redis, Frappe's scheduler, or who exported 40,000 customers from a report. That is Wolf's
 ground, and nobody else covers it well. The goal is:
 
-> Wolf is the security layer of Frappe/ERPNext/Dokos: it detects attacks on the app and its
-> bench, scores how exposed each site is, helps meet NIS2/GDPR reporting duties, and forwards
-> everything to the organisation's SOC (UniSOC, Wazuh, any SIEM) in a standard form.
+> Wolf is the security and operations console of the Frappe/ERPNext/Dokos platform. On its own,
+> it detects attacks on the app, its bench and its hosts, scores how exposed each site is,
+> answers with human-approved actions, and helps meet NIS2/GDPR reporting duties. When Suricata
+> or Wazuh are there, it reads them too, and it correlates network, host, application and
+> health signals (5xx, failed crons, deployments) into one incident. It still forwards
+> everything to the organisation's SOC or SIEM in a standard form.
+
+Wolf alone is the baseline: no feature may require Wazuh or Suricata (see below).
 
 What Wolf takes from UniSOC, adapted to a Frappe app:
 
@@ -84,6 +89,30 @@ What Wolf takes from UniSOC, adapted to a Frappe app:
 What Wolf does not build: DPI, Windows/mobile EDR, phishing campaigns, an AI pentester, or a 24/7
 human SOC. Wolf ingests or forwards to them instead (Suricata `eve.json`, Wazuh, CrowdSec, UniSOC
 through syslog).
+
+### Alone, or with Suricata and Wazuh
+
+Wazuh (host intrusion detection) and Suricata (network IDS) do some of what the Wolf agent does,
+and do it better: more rules, more platforms, packets rather than log lines. Wolf reads them when
+they are there (roadmap: #72) but never depends on them. The Wolf agent keeps its own host and
+web detection and keeps improving it, even if it stays lighter than theirs, so that a bench with
+Wolf alone is covered.
+
+| | Wolf alone | + Suricata | + Wazuh |
+|---|---|---|---|
+| Web attacks | nginx access logs: probes, injections, secret files served | signatures on the HTTP traffic (after TLS termination), with packet context | — |
+| Network | exposed bench services; outbound connections of bench processes (planned, #72) | C2, scans, DNS, TLS fingerprints, file transfers, protocol anomalies | — |
+| Host | `auth.log`/journal: SSH brute force then login, sudo, new accounts, admin groups; file integrity on the bench (planned) | — | full HIDS: more log sources, rootkits, configuration assessment, package vulnerabilities, Windows/macOS endpoints |
+| Frappe application | permissions, scripts, settings, API keys, exfiltration, honeytokens | — (HTTPS, and no notion of DocTypes or users) | — (log lines, no Frappe semantics) |
+| Posture | Frappe settings per site, versions vs advisories, bench exposure, TLS/HSTS, SPF/DMARC | — | OS configuration assessment |
+| Health | 5xx, crons, workers, backups, certificates, database | — | — |
+| Response | block IP (nftables, fail2ban), disable user, revoke sessions and API keys, human-approved | — | active response, as an option for approved blocks (#72) |
+| Correlation, incidents, NIS2/GDPR, signed journal | Wolf | feeds Wolf's incidents | feeds Wolf's incidents |
+
+Where Wolf's own detector and an external one overlap (web probes and Suricata's HTTP rules,
+`auth.log` signals and Wazuh, nftables blocks and Wazuh active response), the operator picks
+per detector: Wolf's own (the default), both (one finding with two sources, not two), or the
+external one only (#72, step 4).
 
 ## 3. What is built
 
@@ -394,6 +423,14 @@ result; read-only for everyone) and a comment on the incident.
     the anchor Wolf cannot rewrite.
   - Payloads go out as they are stored (already scrubbed by the agent), cut at 4 KB. The OCSF
     mapping is Wolf's reading of the schema, not a certified profile.
+
+### Next: the correlation console (planned, #72)
+
+Suricata `eve.json` and Wazuh alerts as optional sources, one entity model (IP, host, site,
+user) for every source, incidents grouped by entity across sources, sequence rules ("scan, then
+a login from the same IP, then a large export"), and standalone parity for benches without
+them: file integrity and outbound connections of bench processes. Wolf alone stays fully
+supported.
 
 ## 5. Mapping reference
 

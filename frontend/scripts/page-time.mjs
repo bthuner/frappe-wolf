@@ -5,6 +5,8 @@
 //     --password admin [--path /wolf] [--runs 10] [--reads 6]
 //
 // --reads: how many Wolf reads the page sends (the overview: six). Ready waits for all of them.
+// --pause: seconds between two visits, to time pages opened after a quiet spell (a cache that
+//   expires, a value read again in the background). --series cold or warm runs one series only.
 //
 // Two series:
 // - cold: a new browser context for each run, so the app's scripts and styles are fetched again
@@ -14,11 +16,11 @@
 // per host, the network and the server together. Measures a bench, not a user's network.
 import { chromium } from '@playwright/test'
 
-const opts = { url: 'http://127.0.0.1:8099', site: 'localhost', user: 'Administrator', password: 'admin', path: '/wolf', runs: 10, reads: 6 }
+const opts = { url: 'http://127.0.0.1:8099', site: 'localhost', user: 'Administrator', password: 'admin', path: '/wolf', runs: 10, reads: 6, pause: 0, series: 'cold,warm' }
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i].replace(/^--/, '')
   if (!(key in opts)) throw new Error(`unknown option --${key}`)
-  opts[key] = ['runs', 'reads'].includes(key) ? Number(process.argv[i + 1]) : process.argv[i + 1]
+  opts[key] = ['runs', 'reads', 'pause'].includes(key) ? Number(process.argv[i + 1]) : process.argv[i + 1]
 }
 
 const target = new URL(opts.url)
@@ -114,34 +116,41 @@ function report(label, runs) {
 }
 
 const state = await login()
+const wanted = new Set(opts.series.split(','))
 const series = { cold: [], warm: [] }
+const pause = () => new Promise((resolve) => setTimeout(resolve, opts.pause * 1000))
 // one throwaway visit: the first request after a restart pays for imports, not for the page
 {
   const context = await browser.newContext({ baseURL: base, storageState: state })
   await measure(await context.newPage())
   await context.close()
 }
-for (let i = 0; i < opts.runs; i++) {
-  const context = await browser.newContext({ baseURL: base, storageState: state })
-  series.cold.push(await measure(await context.newPage()))
-  await context.close()
+if (wanted.has('cold')) {
+  for (let i = 0; i < opts.runs; i++) {
+    await pause()
+    const context = await browser.newContext({ baseURL: base, storageState: state })
+    series.cold.push(await measure(await context.newPage()))
+    await context.close()
+  }
 }
-{
+if (wanted.has('warm')) {
   const context = await browser.newContext({ baseURL: base, storageState: state })
   const page = await context.newPage()
   await measure(page)
-  for (let i = 0; i < opts.runs; i++) series.warm.push(await measure(page))
+  for (let i = 0; i < opts.runs; i++) {
+    await pause()
+    series.warm.push(await measure(page))
+  }
   await context.close()
 }
 const version = browser.version()
 await browser.close()
 
 const failures = [...series.cold, ...series.warm].flatMap((r) => r.failures)
-console.log(`${opts.path} on ${opts.site}, Chromium ${version}, ${opts.runs} runs per series, in ms`)
+console.log(`${opts.path} on ${opts.site}, Chromium ${version}, ${opts.runs} runs per series, ${opts.pause} s between visits, in ms`)
 console.log('| series | measure | n | p50 | p95 | max |')
 console.log('|---|---|---|---|---|---|')
-report('cold', series.cold)
-report('warm', series.warm)
+for (const name of ['cold', 'warm']) if (series[name].length) report(name, series[name])
 if (failures.length) {
   console.log(`\n${failures.length} failed read(s): ${[...new Set(failures)].join('; ')}`)
   process.exitCode = 1

@@ -156,7 +156,7 @@ def get_inventory(days=INVENTORY_DAYS):
 	days = min(max(cint(days) or INVENTORY_DAYS, 1), 90)
 	tz = events.system_tz()
 	# the same triples for every caller, cached a few seconds; each caller's grants filter them
-	triples, as_of = read_cache.get("inventory", days, lambda: _inventory_triples(days))
+	triples, as_of = read_cache.get("inventory", days)
 	tree = inventory.build(inventory.visible(triples, access.grants()))
 
 	def utc(node):
@@ -169,6 +169,11 @@ def get_inventory(days=INVENTORY_DAYS):
 	tree["hosts"] = [utc(h) for h in tree["hosts"]]
 	tree["unplaced_sites"] = [utc(s) for s in tree["unplaced_sites"]]
 	return {**tree, "days": days, "restricted": access.grants() is not None, "as_of": window.to_utc(as_of, tz)}
+
+
+def inventory_triples_for(key):
+	"""read_cache reader: the inventory's triples for `days` given as text."""
+	return _inventory_triples(cint(key))
 
 
 def _inventory_triples(days):

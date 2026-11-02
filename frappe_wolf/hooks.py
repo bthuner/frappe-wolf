@@ -99,6 +99,7 @@ scheduler_events = {
 			"frappe_wolf.tasks.flush_live_updates",
 			"frappe_wolf.api.journal.chain_journal",
 			"frappe_wolf.api.siem.export_siem",
+			"frappe_wolf.wolf.read_cache.refresh_active",
 		],
 		"0 * * * *": [
 			"frappe_wolf.tasks.send_digests",

@@ -229,8 +229,40 @@ adds the address to an nftables set (`inet wolf`, `blocked4` / `blocked6`) whose
 themselves; `nft list table inet wolf` shows them. The agent refuses private, loopback and
 reserved addresses and durations over a week whatever the site sends, and runs the command as a
 list of arguments, never through a shell. `response.command` replaces the command (`{ip}` and
-`{seconds}` are filled in), e.g. for fail2ban. Without `response.enabled` each action comes back
-*Failed* with the reason, so the manager knows it was not applied.
+`{seconds}` are filled in). Without `response.enabled` each action comes back *Failed* with the
+reason, so the manager knows it was not applied.
+
+### With fail2ban instead of nftables
+
+Where fail2ban already manages the firewall, `wolf-block-fail2ban` bans in a jail of its own
+(`wolf`), with your usual ban action:
+
+```bash
+cp agent/fail2ban/wolf.local /etc/fail2ban/jail.d/wolf.local && fail2ban-client reload
+install -m 0755 -o root -g root agent/wolf-block-fail2ban.sh /usr/local/sbin/wolf-block-fail2ban
+echo 'wolf-agent ALL=(root) NOPASSWD: /usr/local/sbin/wolf-block-fail2ban' > /etc/sudoers.d/wolf-block
+chmod 0440 /etc/sudoers.d/wolf-block
+# reboots lose the scheduled unbans: sweep the expired ones every 5 minutes
+echo '*/5 * * * * root /usr/local/sbin/wolf-block-fail2ban --sweep >/dev/null' > /etc/cron.d/wolf-block-fail2ban
+```
+
+and in the agent config:
+
+```json
+"response": {"enabled": true, "command": ["sudo", "-n", "/usr/local/sbin/wolf-block-fail2ban", "{ip}", "{seconds}"]}
+```
+
+fail2ban has no per-ban duration: every ban gets the jail's `bantime`. The jail's is the longest
+block Wolf asks for (7 days), and the helper unbans each address when its own duration is over:
+- a transient systemd timer (`wolf-unban-<ip>-<time>`) runs `fail2ban-client set wolf unbanip`;
+- each expiry is also written to `/var/lib/wolf-block/fail2ban.state`, and `--sweep` unbans
+  those that are over. Timers do not survive a reboot, and fail2ban restores its bans after one,
+  so without the cron line a block could last up to the jail's 7 days. The helper sweeps on each
+  ban too.
+
+`fail2ban-client get wolf banip` lists the addresses; `fail2ban-client set wolf unbanip IP`
+lifts one early. Without the jail, the helper refuses and says so, and the action comes back
+*Failed*.
 
 ## Watchdog
 

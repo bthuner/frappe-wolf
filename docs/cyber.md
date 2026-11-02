@@ -279,7 +279,11 @@ result; read-only for everyone) and a comment on the incident.
     records the manager as the approver and the recipient in the reason. A forwarded email or
     a shared channel alone cannot act.
   - A link opened again after the action says so instead of acting twice.
-- Not built: fail2ban instead of nftables, and user actions on other sites than the Wolf site.
+- **fail2ban instead of nftables**: `agent/wolf-block-fail2ban.sh` with the jail
+  `agent/fail2ban/wolf.local`, set as the agent's `response.command`. fail2ban has no per-ban
+  duration, so the jail bans for 7 days at most and the helper unbans each address on time: a
+  transient systemd timer, and `--sweep` from cron for what a reboot loses. See agent/README.md.
+- Not built: user actions on other sites than the Wolf site.
 
 ### Step 6: compliance and evidence
 

@@ -1,0 +1,16 @@
+# fail2ban jail for Wolf's "Block IP" response actions (agent/wolf-block-fail2ban.sh).
+# Copy to /etc/fail2ban/jail.d/wolf.local, then `fail2ban-client reload`.
+#
+# The jail watches no log: only Wolf bans in it, through `fail2ban-client set wolf banip`.
+# fail2ban gives every ban the jail's bantime (it has no per-ban duration), so bantime is the
+# longest block Wolf asks for (7 days) and wolf-block-fail2ban unbans each address when its
+# own duration is over.
+[wolf]
+enabled  = true
+filter   =
+backend  = polling
+logpath  = /dev/null
+maxretry = 1
+bantime  = 604800
+# your usual ban action (nftables, iptables, firewalld...), or the [DEFAULT] one when unset
+# banaction = nftables-allports

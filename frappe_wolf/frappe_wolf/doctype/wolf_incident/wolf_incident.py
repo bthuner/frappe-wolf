@@ -42,6 +42,9 @@ class WolfIncident(Document):
 			self.nis2_aware_at = now_datetime()
 		if self.gdpr_breach and not self.gdpr_aware_at:
 			self.gdpr_aware_at = now_datetime()
+		if self.dora_major:
+			self.dora_aware_at = self.dora_aware_at or now_datetime()
+			self.dora_classified_at = self.dora_classified_at or now_datetime()
 
 	def on_update(self):
 		before = self.get_doc_before_save()

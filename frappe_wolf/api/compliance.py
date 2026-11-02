@@ -1,4 +1,4 @@
-"""NIS2 / GDPR deadlines on Wolf Incidents (wolf/compliance.py): reminders and a report draft.
+"""NIS2 / DORA / GDPR deadlines on Wolf Incidents (wolf/compliance.py): reminders and a report draft.
 
 - `check_deadlines` (scheduler, every 5 minutes, central site only): for every flagged incident
   whose deadline is within 6 h (`due`) or passed (`overdue`), records one `regulatory_deadline`
@@ -31,7 +31,7 @@ def _flagged():
 	return frappe.get_all(
 		"Wolf Incident",
 		filters={"merged_into": ("is", "not set")},
-		or_filters={"nis2_significant": 1, "gdpr_breach": 1},
+		or_filters={flag: 1 for flag in compliance.FLAGS},
 		fields=["name", "title", "host", "bench", "site", *compliance.FIELDS],
 	)
 

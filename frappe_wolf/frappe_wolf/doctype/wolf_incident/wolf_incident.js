@@ -43,7 +43,7 @@ frappe.ui.form.on("Wolf Incident", {
 			frappe.route_options = {};
 			frappe.set_route("wolf-overview");
 		});
-		if (frm.doc.nis2_significant || frm.doc.gdpr_breach) {
+		if (frm.doc.nis2_significant || frm.doc.dora_major || frm.doc.gdpr_breach) {
 			frm.add_custom_button(__("Regulatory report"), () => frm.trigger("regulatory_report"), __("Actions"));
 			frm.trigger("render_regulatory");
 		}
@@ -56,6 +56,10 @@ frappe.ui.form.on("Wolf Incident", {
 	},
 
 	gdpr_breach(frm) {
+		frm.trigger("render_regulatory");
+	},
+
+	dora_major(frm) {
 		frm.trigger("render_regulatory");
 	},
 
@@ -74,7 +78,9 @@ frappe.ui.form.on("Wolf Incident", {
 			}
 			const rows = message
 				.map((r) => {
-					const due = frappe.datetime.str_to_user(r.due_at) + (r.estimated ? ` (${__("estimated")})` : "");
+					const due = r.due_at
+						? frappe.datetime.str_to_user(r.due_at) + (r.estimated ? ` (${__("estimated")})` : "")
+						: __("as asked");
 					const sent = r.done_at ? frappe.datetime.str_to_user(r.done_at) : "—";
 					const strong = r.status === "overdue" ? "font-weight:600;color:var(--red-600)" : "";
 					return `<tr><td>${esc(r.label)}</td><td>${esc(due)}</td><td>${esc(sent)}</td><td style="${strong}">${esc(STATUS[r.status])}</td></tr>`;

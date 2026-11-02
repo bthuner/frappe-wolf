@@ -48,7 +48,16 @@
   "nis2_early_warning_at",
   "nis2_notification_at",
   "nis2_final_report_at",
+  "nis2_intermediate_requested_at",
+  "nis2_intermediate_due_at",
+  "nis2_intermediate_at",
   "cb_regulatory",
+  "dora_major",
+  "dora_aware_at",
+  "dora_classified_at",
+  "dora_initial_at",
+  "dora_intermediate_at",
+  "dora_final_at",
   "gdpr_breach",
   "gdpr_aware_at",
   "gdpr_notified_at",
@@ -294,7 +303,7 @@
    "collapsible_depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
    "fieldname": "regulatory_section",
    "fieldtype": "Section Break",
-   "label": "Regulatory reporting (NIS2 / GDPR)",
+   "label": "Regulatory reporting (NIS2 / DORA / GDPR)",
    "description": "Wolf tracks the deadlines; it does not decide whether the incident is reportable and sends nothing to an authority."
   },
   {
@@ -329,8 +338,67 @@
    "label": "Final report sent at"
   },
   {
+   "depends_on": "eval:doc.nis2_significant",
+   "description": "Only when the CSIRT or the authority asks for one (Art. 23(4)(c)).",
+   "fieldname": "nis2_intermediate_requested_at",
+   "fieldtype": "Datetime",
+   "label": "Intermediate report requested at"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant && doc.nis2_intermediate_requested_at",
+   "description": "The deadline the CSIRT or the authority gave, if any.",
+   "fieldname": "nis2_intermediate_due_at",
+   "fieldtype": "Datetime",
+   "label": "Intermediate report due by"
+  },
+  {
+   "depends_on": "eval:doc.nis2_significant && doc.nis2_intermediate_requested_at",
+   "fieldname": "nis2_intermediate_at",
+   "fieldtype": "Datetime",
+   "label": "Intermediate report sent at"
+  },
+  {
    "fieldname": "cb_regulatory",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "dora_major",
+   "fieldtype": "Check",
+   "label": "Major ICT-related incident (DORA Art. 19)",
+   "description": "Financial entities under DORA. Deadlines from Delegated Regulation (EU) 2025/301 Art. 5, without the weekend and bank holiday extension."
+  },
+  {
+   "depends_on": "eval:doc.dora_major",
+   "description": "Set to now when the flag is ticked. The initial notification is due 24 h after this at the latest.",
+   "fieldname": "dora_aware_at",
+   "fieldtype": "Datetime",
+   "label": "Aware since (DORA)"
+  },
+  {
+   "depends_on": "eval:doc.dora_major",
+   "description": "Set to now when the flag is ticked. The initial notification is due 4 h after the classification (and within 24 h of awareness).",
+   "fieldname": "dora_classified_at",
+   "fieldtype": "Datetime",
+   "label": "Classified as major at"
+  },
+  {
+   "depends_on": "eval:doc.dora_major",
+   "fieldname": "dora_initial_at",
+   "fieldtype": "Datetime",
+   "label": "Initial notification sent at"
+  },
+  {
+   "depends_on": "eval:doc.dora_major",
+   "description": "The latest one: an updated intermediate report moves the final report's deadline.",
+   "fieldname": "dora_intermediate_at",
+   "fieldtype": "Datetime",
+   "label": "Intermediate report sent at"
+  },
+  {
+   "depends_on": "eval:doc.dora_major",
+   "fieldname": "dora_final_at",
+   "fieldtype": "Datetime",
+   "label": "Final report sent at"
   },
   {
    "default": "0",
@@ -352,13 +420,13 @@
    "label": "Authority notified at"
   },
   {
-   "depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
+   "depends_on": "eval:doc.nis2_significant || doc.dora_major || doc.gdpr_breach",
    "fieldname": "regulatory_reference",
    "fieldtype": "Data",
    "label": "Authority reference"
   },
   {
-   "depends_on": "eval:doc.nis2_significant || doc.gdpr_breach",
+   "depends_on": "eval:doc.nis2_significant || doc.dora_major || doc.gdpr_breach",
    "fieldname": "regulatory_html",
    "fieldtype": "HTML",
    "label": "Deadlines"
@@ -411,7 +479,7 @@
    "link_fieldname": "incident"
   }
  ],
- "modified": "2026-11-01 11:00:00.000000",
+ "modified": "2026-11-02 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Incident",

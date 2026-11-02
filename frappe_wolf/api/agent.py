@@ -10,7 +10,7 @@ from frappe.utils.password import get_decrypted_password
 from frappe_wolf import __version__, satellite
 from frappe_wolf.wolf import agent_secrets
 
-KINDS = ("agent", "satellite")
+KINDS = ("agent", "satellite", "integration")  # integration: pushes only when it has something (Wazuh)
 
 
 def _request_json():
@@ -35,7 +35,7 @@ def register():
 		frappe.throw(_("hostname is required"))
 	kind = data.get("kind") or "agent"
 	if kind not in KINDS:
-		frappe.throw(_("kind must be agent or satellite"))
+		frappe.throw(_("kind must be agent, satellite or integration"))
 
 	secret = agent_secrets.new_secret()
 	name = frappe.db.get_value("Wolf Agent", {"hostname": hostname})

@@ -41,13 +41,13 @@
   },
   {
    "default": "agent",
-   "description": "agent: a host daemon. satellite: another Frappe site forwarding its local signals (Hostname is its site name).",
+   "description": "agent: a host daemon. satellite: another Frappe site forwarding its local signals (Hostname is its site name). integration: a source that pushes only when it has something to report (the Wazuh integration), never reported silent.",
    "fieldname": "kind",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Kind",
-   "options": "agent\nsatellite",
+   "options": "agent\nsatellite\nintegration",
    "read_only": 1
   },
   {
@@ -126,7 +126,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-30 12:00:00.000000",
+ "modified": "2026-11-03 00:30:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Wolf",
  "name": "Wolf Agent",

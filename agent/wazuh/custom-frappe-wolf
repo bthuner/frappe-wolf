@@ -1,0 +1,8 @@
+#!/bin/sh
+# Wazuh integration launcher: runs custom-frappe-wolf.py with Wazuh's own Python, as the
+# integrations Wazuh ships do. Install both files in /var/ossec/integrations/ (root:wazuh, 750).
+DIR="$(cd "$(dirname "$0")" && pwd -P)"
+WAZUH="$(cd "$DIR/.." && pwd -P)"
+PYTHON="$WAZUH/framework/python/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+exec "$PYTHON" "$DIR/custom-frappe-wolf.py" "$@"

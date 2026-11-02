@@ -485,8 +485,12 @@ address, the site and the rule's ATT&CK technique.
 Built: Wazuh as an optional source. The Wolf agent on the manager's host reads `alerts.json`
 into `hids_alert` events, from level 7, without configuration assessment and without Wazuh's
 alerts on Wolf's own export, and the "Host intrusion alert (critical)" preset alerts from
-level 12. Tried against a Wazuh 4.9.2 manager: sshd and sudo lines it received by syslog came
-out under the host that logged them, with Wazuh's ATT&CK techniques.
+level 12. Without a Wolf agent on the manager's host, a Wazuh custom integration
+(`agent/wazuh/custom-frappe-wolf`) posts each alert to `frappe_wolf.api.wazuh.alert` with the
+credentials of a Wolf Agent of kind `integration`. Tried against a Wazuh 4.9.2 manager, both
+ways: sshd and sudo lines it received by syslog came out under the host that logged them, with
+Wazuh's ATT&CK techniques, and three alerts sent by its integration daemon became one event
+with a count of 3.
 
 Planned: one entity model (IP, host, site,
 user) for every source, incidents grouped by entity across sources, sequence rules ("scan, then

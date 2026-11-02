@@ -12,6 +12,7 @@ Content-Type: application/json
 {
   "registration_token": "<Wolf Settings → Registration Token>",
   "hostname": "bench-01",
+  "kind": "agent",
   "agent_version": "0.1.0",
   "os": "Debian GNU/Linux 12",
   "benches": [{"name": "main", "path": "/home/frappe/frappe-bench", "sites": ["a.example.com"]}]
@@ -267,6 +268,27 @@ While rules are stale, each push also records a `host_metric_alert` / `scheduler
 the site (bumped, not duplicated, for 15 minutes). The **Scheduler stalled** preset turns it into
 an incident once the scheduler runs again. A stalled site cannot alert about itself, so the live
 alert is raised by the agent watchdog through its own fallback channel (see `agent/README.md`).
+
+## 4b. Wazuh integration (Wazuh → app)
+
+```
+POST /api/method/frappe_wolf.api.wazuh.alert
+X-Wolf-Agent-Id: WAG-0005
+X-Wolf-Agent-Secret: <secret>
+Content-Type: application/json
+
+<one Wazuh alert, as Wazuh writes it in alerts.json>
+```
+
+- **Credentials:** a Wolf Agent registered with `"kind": "integration"` (same registration as
+  §1). It is never reported silent, since it only pushes when Wazuh has an alert.
+- **What Wolf keeps:** the alert becomes a `hids_alert` event, mapped like the agent's
+  `alerts.json` reader. The `frappe_wolf` group (Wazuh's alerts on Wolf's own export) and the
+  `sca` group are not stored, and the answer says why: `{"stored": false, "reason": ...}`.
+- **Repeats:** the same rule and subject within 10 minutes bump the event's count.
+- **Rate limit:** up to 600 calls a minute per integration.
+- **Sender:** `agent/wazuh/custom-frappe-wolf` is the script Wazuh's integration daemon runs
+  (agent/README.md).
 
 ## 5. Incident action links (alerts → app)
 

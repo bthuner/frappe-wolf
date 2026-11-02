@@ -40,6 +40,7 @@ _SPEC = [
 	("db_replication_lag_seconds", "database", "Replication lag", "gauge", "s", "bench", PUSH_SECONDS),
 	("backup_age_hours", "backups", "Newest backup age", "gauge", "h", "site", 600),
 	("tls_days_left", "tls", "Certificate expires in", "gauge", "days", "site", 3600),
+	("hsts_max_age_days", "tls", "HSTS max-age", "gauge", "days", "site", 3600),
 	("cpu_usage", "host", "CPU", "gauge", "%", "host", PUSH_SECONDS),
 	("memory_used_percent", "host", "Memory used", "gauge", "%", "host", PUSH_SECONDS),
 	("disk_used_percent", "host", "Disk used", "gauge", "%", "host", PUSH_SECONDS),
@@ -62,6 +63,7 @@ GROUPS = ("workers", "processes", "redis", "database", "backups", "tls", "securi
 CAVEATS = {
 	"backup_age_hours": "Age of the newest backup file; it does not prove the backup restores.",
 	"tls_days_left": "Days until the certificate served on port 443 expires; not a full validity check.",
+	"hsts_max_age_days": "Strict-Transport-Security max-age of the first response to HEAD / (0: no header); redirects are not followed.",
 	"exposed_services": "A listening socket, not proof of reachability: a firewall may still block it.",
 	"security_score": "Share of the checks Wolf could prove passed; a check it cannot read counts as not passed.",
 }
@@ -123,7 +125,7 @@ def state(series, now, rules=(), incidents=()):
 # the label each metric carries (one per series), for filtering and grouping
 LABELS = {
 	"disk_used_percent": "mount", "queue_length": "queue", "rq_failed_jobs": "queue",
-	"rq_failed_jobs_added": "queue", "rq_long_running_jobs": "queue", "tls_days_left": "domain",
+	"rq_failed_jobs_added": "queue", "rq_long_running_jobs": "queue", "tls_days_left": "domain", "hsts_max_age_days": "domain",
 	"bench_processes_down": "manager", "redis_used_memory_percent": "of",
 	"db_connections_used_percent": "db", "db_threads_connected": "db", "db_slow_queries": "db", "db_replication_running": "db",
 	"db_replication_lag_seconds": "db",

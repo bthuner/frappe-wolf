@@ -1720,7 +1720,42 @@ def main():
 		security.record_security_scores()
 		assert frappe.db.count("Wolf Metric Sample", {"metric_name": "security_score", "site": SITE}) == before + 1
 		assert SITE in security.list_sites()
-		return f"score {result['score']} (coverage {result['coverage']}%), {status}"
+
+		# HSTS from the agent's samples, per domain; SPF / DMARC from DNS for the outgoing mail domains
+		from frappe_wolf.wolf import dns_txt
+
+		for domain, days in (("erp.smoke.example.org", 365), ("shop.smoke.example.org", 0)):
+			events.insert_metrics([schema.normalize_metric({"metric_name": "hsts_max_age_days", "value": days, "host": host,
+			                                                "site": SITE, "labels": {"domain": domain}}, tz, now)])  # fmt: skip
+		account = frappe.get_doc({"doctype": "Email Account", "email_account_name": "Wolf smoke outgoing",
+		                          "email_id": "alerts@mail.smoke-wolf.dev", "enable_outgoing": 1, "service": ""})  # fmt: skip
+		account.db_insert()  # no SMTP check: only its address matters here
+		zone = {"mail.smoke-wolf.dev": ["v=spf1 include:_spf.smoke-wolf.dev -all"],
+		        "_dmarc.smoke-wolf.dev": ["v=DMARC1; p=reject; sp=none"]}  # fmt: skip
+		asked = []
+		original = dns_txt.lookup
+
+		def fake_lookup(name, **kw):
+			asked.append(name)
+			return zone.get(name, [])
+
+		dns_txt.lookup = fake_lookup
+		frappe.cache.delete_keys("wolf_mail_auth|")
+		try:
+			assert security.mail_domains() == ["mail.smoke-wolf.dev"], security.mail_domains()
+			checks = {c["id"]: c for c in security.get_posture(SITE)["checks"]}
+			assert checks["hsts"]["status"] == "fail" and checks["hsts"]["evidence"] == "shop.smoke.example.org: no header", checks["hsts"]
+			assert checks["spf"]["status"] == "pass", checks["spf"]
+			# no record on the subdomain: the organisational domain's sp=none applies, as receivers do
+			assert checks["dmarc"]["status"] == "fail" and "p=none" in checks["dmarc"]["evidence"], checks["dmarc"]
+			assert asked == ["mail.smoke-wolf.dev", "_dmarc.mail.smoke-wolf.dev", "_dmarc.smoke-wolf.dev"], asked
+			security.get_posture(SITE)
+			assert len(asked) == 3, asked  # cached: DNS asked once per name and hour
+		finally:
+			dns_txt.lookup = original
+			frappe.cache.delete_keys("wolf_mail_auth|")
+			frappe.db.delete("Email Account", {"name": account.name})
+		return f"score {result['score']} (coverage {result['coverage']}%), {status}; hsts, spf, dmarc read"
 
 	def regulatory_deadlines():
 		from frappe_wolf.api import compliance as compliance_api

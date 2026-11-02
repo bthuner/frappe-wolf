@@ -10,6 +10,9 @@ GOOD = {
 	"exposed_services": {"bench-01": 0},
 	"backup_age_hours": 3.5,
 	"tls_days_left": 60,
+	"hsts_max_age_days": {"erp.example.org": 365},
+	"spf": {"example.org": (True, "ends in -all")},
+	"dmarc": {"example.org": (True, "p=reject")},
 }  # fmt: skip
 
 
@@ -33,7 +36,7 @@ class TestPosture(unittest.TestCase):
 		two_fa = next(c for c in r["checks"] if c["id"] == "two_factor")
 		self.assertEqual(two_fa["evidence"], "disabled in System Settings")
 		self.assertIn("System Manager role", two_fa["fix"])
-		self.assertEqual(r["score"], round(100 * (2 + 1 + 2) / 17))
+		self.assertEqual(r["score"], round(100 * (2 + 1 + 2 + 3) / 20))
 
 	def test_2fa_needs_the_role_too(self):
 		r = posture.evaluate({**GOOD, "system_manager_2fa": False})
@@ -52,9 +55,10 @@ class TestPosture(unittest.TestCase):
 		self.assertEqual(s["two_factor"], "unknown")
 		self.assertEqual(s["site_config"], "pass")  # from the agent's count
 		self.assertEqual(s["exposure"], "unknown")
-		self.assertEqual(r["score"], round(100 * 3 / 17))
-		self.assertEqual(r["coverage"], round(100 * 3 / 17))
-		self.assertEqual(r["unknown"], 7)
+		self.assertEqual((s["hsts"], s["spf"], s["dmarc"]), ("unknown", "unknown", "unknown"))
+		self.assertEqual(r["score"], round(100 * 3 / 20))
+		self.assertEqual(r["coverage"], round(100 * 3 / 20))
+		self.assertEqual(r["unknown"], 10)
 
 	def test_site_findings_win_over_the_agent_count(self):
 		r = posture.evaluate({**GOOD, "site_config_findings": None, "site_config_risks": 2})
@@ -67,7 +71,47 @@ class TestPosture(unittest.TestCase):
 		self.assertEqual(status(r)["exposure"], "pass")
 
 	def test_weights_sum(self):
-		self.assertEqual(sum(c[2] for c in posture.CHECKS), 17)
+		self.assertEqual(sum(c[2] for c in posture.CHECKS), 20)
+
+	def test_hsts(self):
+		r = posture.evaluate({**GOOD, "hsts_max_age_days": {"erp.example.org": 365, "shop.example.org": 0, "old.example.org": 30}})
+		hsts = next(c for c in r["checks"] if c["id"] == "hsts")
+		self.assertEqual(hsts["status"], "fail")
+		self.assertEqual(hsts["evidence"], "old.example.org: 30 days; shop.example.org: no header")
+		self.assertIn("Strict-Transport-Security", hsts["fix"])
+
+	def test_mail_unknown_when_dns_did_not_answer(self):
+		r = posture.evaluate({**GOOD, "spf": {"example.org": None}, "dmarc": {}})
+		self.assertEqual((status(r)["spf"], status(r)["dmarc"]), ("unknown", "unknown"))
+
+
+class TestSPF(unittest.TestCase):
+	def test_verdicts(self):
+		cases = [
+			(["v=spf1 include:_spf.google.com -all"], (True, "ends in -all")),
+			(["v=spf1 mx ~all", "google-site-verification=x"], (True, "ends in ~all")),
+			(["v=spf1 redirect=_spf.example.net"], (True, "delegated with redirect=_spf.example.net (not followed)")),
+			(["v=spf1 +all"], (False, "ends in +all: any sender is accepted")),
+			(["v=spf1 a ?all"], (False, "ends in ?all: neutral")),
+			(["v=spf1 a mx"], (False, "no all term: any other sender passes as neutral")),
+			(["v=spf1 -all", "v=spf1 mx -all"], (False, "2 SPF records: receivers treat that as an error")),
+			([], (False, "no SPF record")),
+		]
+		for records, expected in cases:
+			with self.subTest(records):
+				self.assertEqual(posture.spf_verdict(records), expected)
+
+
+class TestDMARC(unittest.TestCase):
+	def test_verdicts(self):
+		self.assertEqual(posture.dmarc_verdict(["v=DMARC1; p=reject; rua=mailto:d@example.org"]), (True, "p=reject"))
+		self.assertEqual(posture.dmarc_verdict(["v=DMARC1;p=quarantine;pct=25"]), (True, "p=quarantine, applied to 25% of messages"))
+		self.assertEqual(posture.dmarc_verdict(["v=DMARC1; p=none"]),
+		                 (False, "p=none: reports only, spoofed mail is still delivered"))  # fmt: skip
+		self.assertEqual(posture.dmarc_verdict([]), (False, "no DMARC record"))
+		# a subdomain follows sp= of its organisational domain when there is one
+		self.assertEqual(posture.dmarc_verdict(["v=DMARC1; p=reject; sp=none"], subdomain=True)[0], False)
+		self.assertEqual(posture.dmarc_verdict(["v=DMARC1; p=reject"], subdomain=True), (True, "p=reject"))
 
 
 if __name__ == "__main__":

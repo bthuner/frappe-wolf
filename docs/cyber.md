@@ -212,17 +212,31 @@ what Wolf read and the fix (`frappe_wolf/wolf/posture.py`, `api/security.py`):
 | Bench services not listening beyond loopback | 3 | the agent's `exposed_services` on the site's hosts |
 | A backup newer than 26 h | 2 | `backup_age_hours` |
 | TLS certificates valid for 14 days or more | 2 | `tls_days_left` |
+| HSTS for 180 days or more, on every domain | 1 | the agent's `hsts_max_age_days` |
+| SPF for the mail domain, ending in `-all` or `~all` | 1 | DNS, for the domains of the outgoing Email Accounts (Wolf site only) |
+| DMARC policy `quarantine` or `reject` | 1 | DNS, `_dmarc.<domain>`, then its parents' `sp=` / `p=` (Wolf site only) |
 
 - A check Wolf cannot read is **unknown** and counts as not passed; `coverage` says how much of
   the weight Wolf could read. Agent samples older than 3 h are not used.
 - The agent's exposure collector (`agent/wolf_agent/exposure.py`, every 10 min) reads
   `/proc/net/tcp{,6}` and each site's config. It sends `service_exposed` and
   `insecure_site_config` events when what it finds changes.
+- **HSTS**: with the hourly TLS check, on the same connection, the agent sends `HEAD /` and reads
+  `Strict-Transport-Security` from the first response (redirects are not followed). The header
+  absent counts as 0 days; no HTTP answer sends no sample, so the check stays unknown.
+- **SPF and DMARC** are read by the Wolf site, from DNS (the resolvers of `/etc/resolv.conf`,
+  `wolf/dns_txt.py`, standard library only), for the domains of its enabled outgoing Email
+  Accounts, cached 1 h (10 min after a DNS failure, which makes the check unknown).
+  - SPF: one `v=spf1` record ending in `-all` or `~all`. `redirect=` passes without being
+    followed; `include:` is not followed either.
+  - DMARC: `p=quarantine` or `p=reject`. A subdomain without a record follows its parent's
+    `sp=` (else `p=`), as receivers do. `p=none` fails: it only collects reports. The parents
+    are tried label by label, without the public suffix list.
 - The score is stored hourly as `security_score`. Three presets: Security score low (< 60),
   Bench service exposed, Development settings in production.
 
-Not built yet: HSTS, SPF/DMARC of the mail domain, Frappe/ERPNext versions against GitHub
-Security Advisories, and the System Settings checks of sites other than the Wolf site (they
+Not built yet: Frappe/ERPNext versions against GitHub Security Advisories, SPF/DMARC of other
+sites' mail domains, and the System Settings checks of sites other than the Wolf site (they
 need Wolf installed there; satellites forward events, not settings). A listening socket is not
 proof of reachability: a firewall may block it.
 

@@ -80,7 +80,8 @@ def openssl_cert(tmp, days):
 class FakeTLSServer:
 	"""Accepts TLS handshakes on 127.0.0.1 with the given certificate and records the SNI name."""
 
-	def __init__(self, cert, key):
+	def __init__(self, cert, key, answer=None):
+		self.answer = answer  # bytes sent back to a HEAD request, None to answer nothing
 		self.ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 		self.ctx.load_cert_chain(cert, key)
 		self.ctx.sni_callback = lambda sock, name, ctx: self.sni.append(name)
@@ -100,7 +101,9 @@ class FakeTLSServer:
 				return
 			try:
 				with self.ctx.wrap_socket(conn, server_side=True) as tls:
-					tls.recv(1)
+					request = tls.recv(4096)
+					if self.answer is not None and request.startswith(b"HEAD "):
+						tls.sendall(self.answer)
 			except (OSError, ssl.SSLError):
 				pass
 
@@ -152,6 +155,56 @@ class TestTLS(unittest.TestCase):
 		self.assertEqual(got[0]["metric_name"], "tls_days_left")
 		self.assertEqual(got[0]["value"], 2.5)
 		self.assertEqual((got[0]["site"], got[0]["bench"], got[0]["labels"]), ("shop.wolf-test.dev", "main", {"domain": "shop.wolf-test.dev"}))
+
+
+@unittest.skipIf(shutil.which("openssl") is None, "openssl CLI not available to generate a test certificate")
+class TestHSTS(unittest.TestCase):
+	@classmethod
+	def setUpClass(cls):
+		cls.tmp = tempfile.TemporaryDirectory()
+		cls.cert, cls.key, cls.expiry = openssl_cert(cls.tmp.name, 30)
+
+	@classmethod
+	def tearDownClass(cls):
+		cls.tmp.cleanup()
+
+	def metrics(self, answer):
+		server = FakeTLSServer(self.cert, self.key, answer=answer)
+		self.addCleanup(server.close)
+
+		def fetch(domain, **kw):
+			return tls_expiry.fetch_tls(domain, port=server.port, timeout=3, connect_host="127.0.0.1")
+
+		got = tls_expiry.tls_metrics({"shop.wolf-test.dev": ("main", "shop.wolf-test.dev")}, "h1", fetch=fetch)
+		return {m["metric_name"]: m["value"] for m in got}
+
+	def test_max_age_read_on_the_same_connection(self):
+		got = self.metrics(b"HTTP/1.1 301 Moved Permanently\r\nLocation: /login\r\n"
+		                   b"Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n\r\n")  # fmt: skip
+		self.assertEqual(got["hsts_max_age_days"], 365)
+		self.assertIn("tls_days_left", got)
+
+	def test_no_header_is_zero(self):
+		self.assertEqual(self.metrics(b"HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n")["hsts_max_age_days"], 0)
+
+	def test_no_http_answer_sends_no_sample(self):
+		got = self.metrics(None)
+		self.assertNotIn("hsts_max_age_days", got)  # unknown on the site, not failed
+		self.assertIn("tls_days_left", got)
+
+	def test_parse_hsts(self):
+		self.assertEqual(tls_expiry.parse_hsts("max-age=63072000; includeSubDomains; preload"), 63072000)
+		self.assertEqual(tls_expiry.parse_hsts('includeSubDomains; Max-Age="600"'), 600)
+		self.assertEqual(tls_expiry.parse_hsts("max-age=0"), 0)
+		self.assertIsNone(tls_expiry.parse_hsts("includeSubDomains"))
+		self.assertIsNone(tls_expiry.parse_hsts(None))
+
+	def test_response_header(self):
+		raw = b"HTTP/1.1 200 OK\r\nstrict-transport-security: max-age=5\r\n\r\nbody: x"
+		self.assertEqual(tls_expiry.response_header(raw, "Strict-Transport-Security"), "max-age=5")
+		self.assertIsNone(tls_expiry.response_header(b"HTTP/1.1 200 OK\r\n\r\n", "Strict-Transport-Security"))
+		with self.assertRaises(ValueError):
+			tls_expiry.response_header(b"", "x")
 
 
 class TestTLSDomains(unittest.TestCase):

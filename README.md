@@ -295,8 +295,9 @@ down to 1.5 s, then 0.73 s for its slowest read, under #10's 1 s. In Chromium, t
 drawn in 0.9 to 1.0 s at the median and 1.0 to 1.3 s at p95
 ([`frontend/scripts/page-time.mjs`](frontend/scripts/page-time.mjs)), and in 0.53 s (p95 0.61 s)
 when the inventory and signals come from their 30 s cache (`wolf_read_cache_seconds`, shared by
-every caller and filtered per caller). `--reads-only` times the reads again on data already
-loaded.
+every caller and filtered per caller). The cache is read again in the background, so pages
+opened 45 s or 150 s apart all came from it (max 0.65 s), showing data 11 to 51 s old.
+`--reads-only` times the reads again on data already loaded.
 
 **Optional time-series backend (design, not built).** The read path goes through two functions,
 `rollups.aggregate()` (rules) and `rollups.series_rows()` (charts), and writes through

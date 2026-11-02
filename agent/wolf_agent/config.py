@@ -60,6 +60,9 @@ DEFAULTS = {
 	# Suricata's EVE log (optional, #72): alerts → network_ids_alert events. `eve_log` null finds
 	# /var/log/suricata/eve.json when it exists; rule priorities above `max_priority` are skipped
 	"suricata": {"enabled": True, "eve_log": None, "max_priority": 3},
+	# Wazuh manager alerts (optional, #72): alerts.json → hids_alert events. `alerts_log` null
+	# finds /var/ossec/logs/alerts/alerts.json when it exists; levels under `min_level` are skipped
+	"wazuh": {"enabled": True, "alerts_log": None, "min_level": 7, "exclude_groups": ["sca"]},
 	# version of each app in each bench (apps/<app>/<app>/__init__.py), for the advisory check
 	"versions": {"enabled": True, "interval": 3600},
 	# bench process states: "auto" (supervisor, else systemd), "supervisor" or "systemd"

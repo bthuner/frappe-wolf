@@ -20,6 +20,7 @@ from .tailer import FileTailer, JournalTailer, TailState
 
 log = logging.getLogger(__name__)
 DEFAULT_EVE_LOG = "/var/log/suricata/eve.json"
+DEFAULT_WAZUH_ALERTS = "/var/ossec/logs/alerts/alerts.json"
 
 # bench logs/ file → parsers applied to it
 BENCH_LOGS = {
@@ -207,6 +208,13 @@ class Collector:
 			parser = PARSERS["suricata"](self.host, log_file=eve, max_priority=suricata.get("max_priority"),
 			                             site_benches=sites, site_aliases=aliases)  # fmt: skip
 			self.sources.append(Source(FileTailer(eve, self.state.data, from_start=self.from_start), [parser]))
+
+		wazuh = section(self.cfg, "wazuh")
+		alerts = wazuh.get("alerts_log") or (DEFAULT_WAZUH_ALERTS if os.path.exists(DEFAULT_WAZUH_ALERTS) else None)
+		if wazuh.get("enabled", True) and alerts:
+			parser = PARSERS["wazuh"](self.host, log_file=alerts, min_level=wazuh.get("min_level"),
+			                          exclude_groups=wazuh.get("exclude_groups"))  # fmt: skip
+			self.sources.append(Source(FileTailer(alerts, self.state.data, from_start=self.from_start), [parser]))
 
 		auth = resolve_auth_log(self.cfg.get("auth_log"), JournalTailer.available())
 		if auth == "journal":

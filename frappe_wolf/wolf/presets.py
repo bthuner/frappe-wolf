@@ -301,6 +301,15 @@ PRESETS = [
 		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 30,
 	},
 	{
+		"rule_name": "Host intrusion alert (critical)",
+		"description": "Wazuh raised a level 12+ alert (the Wolf agent on the manager's host reads its "
+		"alerts.json when there is one, #72): rootkit, integrity change on a critical file, attack "
+		"that worked. The rule's ATT&CK techniques are in the event.",
+		"signal_type": "event", "event_type": "security", "event_category": "hids_alert", "min_severity": "critical",
+		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "host",
+		"severity": "critical", "auto_resolve": 0, "cooldown_minutes": 30,
+	},
+	{
 		"rule_name": "Sensitive file served",
 		"description": "nginx answered 2xx to a request for .env, .git/, site_config.json, a private "
 		"key or a database dump: the file was probably leaked. Rotate the secrets (MITRE T1552.001).",

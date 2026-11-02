@@ -163,4 +163,4 @@ Append new entries at the bottom. Mirror them in `index.html` (`#build-log`).
 
 - **Log search:** waits for raw-line storage, which Wolf deliberately doesn't have yet.
 - **A real Press server and Pilot host:** the integrations still need to run on one.
-- **The overview's first visit at 100 hosts:** a visit the background reads do not cover (the first in 10 quiet minutes on a scope) still takes 0.9 to 1.2 s ([`docs/load-test.md`](../load-test.md)). Drawing the first signal rows and hosts only cut drawing from 0.19 to 0.13 s in a mocked browser; not timed again on the bench.
+- **The overview's first visit at 100 hosts:** a visit the background reads do not cover (the first in 10 quiet minutes on a scope) still takes 0.9 to 1.2 s ([`docs/load-test.md`](../load-test.md)). Drawing the first signal rows and hosts only halves the drawing on a load bench (0.10 to 0.05 s cold).

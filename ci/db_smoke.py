@@ -1856,6 +1856,52 @@ def main():
 		frappe.delete_doc("Wolf Agent", creds["agent_id"], ignore_permissions=True, force=True)
 		return f"3 alerts → {ev.name} (count {ev.count}) on {ev.host}; loop guard and wrong secret refused; never silent"
 
+	def entities_check():
+		"""One IP and one host across Wolf, Suricata and Wazuh events (#72 step 3)."""
+		from frappe_wolf.api import entities as entities_api
+		from frappe_wolf.api import explore
+
+		ip = "45.33.32.201"
+		alias = frappe.get_doc({"doctype": "Wolf Entity Alias", "kind": "host", "alias": "WAZUH-ERP02", "canonical": "erp-web02"})
+		alias.insert(ignore_permissions=True)
+		entities_api.learn("host", "10.9.0.7", "erp-web02", "smoke")
+		entities_api.learn("host", "WAZUH-ERP02", "someone-else", "smoke")  # a Manual alias is never overwritten
+		assert frappe.db.get_value("Wolf Entity Alias", alias.name, "canonical") == "erp-web02"
+		entities_api.learn_from_registration("bench-entities", "10.9.0.8", [{"name": "b", "site_domains": {"www.smoke.example.com": SITE}}])
+		sources = [
+			{"type": "security", "category": "web_attack_probe", "source": "nginx", "host": "erp-web02", "site": SITE,
+			 "title": "entities smoke: wolf", "payload": {"ip": ip, "users": ["Smoke@Example.com"]}},
+			{"type": "security", "category": "network_ids_alert", "source": "suricata", "host": "bench-entities",
+			 "title": "entities smoke: suricata", "payload": {"ip": ip, "src_ip": ip, "dest_ip": "10.9.0.8",
+			                                                  "http_hostname": "www.smoke.example.com"}},
+			{"type": "security", "category": "hids_alert", "source": "wazuh", "host": "wazuh-erp02",
+			 "title": "entities smoke: wazuh", "payload": {"ip": ip, "user": "deploy",
+			                                               "wazuh_agent": {"id": "004", "name": "wazuh-erp02", "ip": "10.9.0.7"}}},
+		]  # fmt: skip
+		names = [events.insert_event(schema.normalize_event(raw, tz, now_datetime())) for raw in sources]
+		found = json.loads(frappe.db.get_value("Wolf Event", names[1], "payload"))["entities"]
+		assert found == {"ip": [ip], "host": ["bench-entities"], "site": [SITE]}, found  # dest_ip is the host, HTTP host the site
+		def sources_of(result):  # the events of this check only (earlier checks used erp-web02 too)
+			return sorted(e["source"] for e in result["events"] if e["name"] in names)
+
+		by_ip = explore.list_events(range="1h", entity=f"ip:{ip}")
+		assert sources_of(by_ip) == ["nginx", "suricata", "wazuh"], by_ip["events"]
+		by_host = explore.list_events(range="1h", entity="host:ERP-WEB02")
+		assert sources_of(by_host) == ["nginx", "wazuh"], by_host["events"]  # wazuh-erp02 is erp-web02
+		assert sources_of(entities_api.find("site:" + SITE, range="1h")) == ["nginx", "suricata"]
+		assert sources_of(entities_api.find("user:smoke@example.com", range="1h")) == ["nginx"]
+		try:
+			explore.list_events(range="1h", entity="ip:not-an-ip")
+			raise AssertionError("bad entity accepted")
+		except frappe.ValidationError:
+			frappe.clear_messages()
+		frappe.db.delete("Wolf Event", {"name": names[0]})
+		entities_api.purge(now_datetime() + timedelta(minutes=1))
+		assert not frappe.db.exists("Wolf Event Entity", {"event": names[0]}) and frappe.db.exists("Wolf Event Entity", {"event": names[1]})
+		frappe.db.delete("Wolf Entity Alias", {"seen_from": ("in", ("smoke", "agent bench-entities", "agent bench-entities, bench b"))})
+		alias.delete(ignore_permissions=True)
+		return f"{sources_of(by_ip)} by IP, {sources_of(by_host)} by host under 3 names, site by domain, purge"
+
 	def crowdsec_check():
 		"""CrowdSec LAPI (a local stand-in): decisions tag events, detections and approved blocks go out."""
 		from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -2400,7 +2446,10 @@ def main():
 				 "title": "SIEM smoke while down"}, tz, now_datetime()))  # fmt: skip
 			assert siem_api.export_siem(lag_seconds=0) == 0
 			down = siem_api.get_status()
-			assert down["last_error"] and down["event_name"] == cursor["event_name"], down  # nothing skipped
+			# (intermittent before: say what the export read, to tell a stale settings cache from the rest)
+			seen = {k: siem_api._settings().get(k) for k in ("siem_enabled", "siem_host", "siem_port")}
+			stored = {k: frappe.db.get_single_value("Wolf Settings", k) for k in ("siem_enabled", "siem_port")}
+			assert down["last_error"] and down["event_name"] == cursor["event_name"], (down, cursor, seen, stored)  # nothing skipped
 
 			# Wazuh's recipe: bare OCSF JSON, one per line over TCP (the event kept while down goes now)
 			lines = []
@@ -2532,6 +2581,7 @@ def main():
 	                 ("suricata events", suricata_events),
 	                 ("wazuh events", wazuh_events),
 	                 ("wazuh integration", wazuh_integration),
+	                 ("entities", entities_check),
 	                 ("posture score", posture_score),
 	                 ("regulatory deadlines", regulatory_deadlines), ("threat intel", threat_intel),
 	                 ("response actions", response_actions), ("response links", response_links), ("journal", journal_chain),

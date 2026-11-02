@@ -492,8 +492,21 @@ ways: sshd and sudo lines it received by syslog came out under the host that log
 Wazuh's ATT&CK techniques, and three alerts sent by its integration daemon became one event
 with a count of 3.
 
-Planned: one entity model (IP, host, site,
-user) for every source, incidents grouped by entity across sources, sequence rules ("scan, then
+Built: entities shared by every source (`wolf/entities.py`, `api/entities.py`).
+- **Extraction:** at ingest, each security event's IP, hosts, sites and users are normalised and
+  resolved through aliases, then written in `payload.entities` and in *Wolf Event Entity*.
+  - An IP is the other party. An address belonging to a known host becomes that host, so a
+    Suricata `dest_ip` on the server is the host.
+  - A Wazuh agent name or an FQDN resolves to the host it is an alias of.
+  - An HTTP host or SNI resolves to its site.
+- **Aliases** (*Wolf Entity Alias*): Wolf learns them by itself (source Auto) from agent
+  registrations (address, bench site domains), from pushes from a new address, and from Wazuh
+  alerts about other Wazuh agents. Add one by hand when two tools name a host differently;
+  Wolf never overwrites a manual alias.
+- **Search:** the event list's `entity=` filter (`ip:…`, `host:…`, `site:…`, `user:…`) finds
+  Wolf's, Suricata's and Wazuh's events together.
+
+Planned: incidents grouped by entity across sources, sequence rules ("scan, then
 a login from the same IP, then a large export"), and standalone parity for benches without
 them: file integrity and outbound connections of bench processes. Wolf alone stays fully
 supported.

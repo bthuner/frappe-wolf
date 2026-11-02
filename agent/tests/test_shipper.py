@@ -250,7 +250,8 @@ class TestShipper(unittest.TestCase):
 		self.assertEqual(req["path"], "/api/method/frappe_wolf.api.agent.register")
 		self.assertNotIn("X-Wolf-Agent-Id", req["headers"])
 		self.assertEqual(req["body"]["registration_token"], "tok")
-		self.assertEqual(req["body"]["benches"], [{"name": "main", "path": "/b", "sites": ["a"]}])
+		# site domains let the Wolf site map a domain to its site (entities, #72)
+		self.assertEqual(req["body"]["benches"], [{"name": "main", "path": "/b", "sites": ["a"], "site_domains": {}}])
 		self.assertEqual(req["body"]["os"], "Debian 12")
 
 

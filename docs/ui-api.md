@@ -283,8 +283,14 @@ regex.
 
 Event records active in the window (first seen before its end, last seen after its start),
 newest first, paged by `(first seen, name)`. Arguments: the common window and scope arguments,
-`event_type`, `severity`, `category`, `q`, `limit` (at most 200) and `cursor`. Payloads are not
-in the list; `get_event(name)` returns one record with its payload.
+`event_type`, `severity`, `category`, `q`, `limit` (at most 200), `cursor` and `entity`.
+Payloads are not in the list; `get_event(name)` returns one record with its payload.
+
+`entity` keeps the security events of every source (Wolf, Suricata, Wazuh) that name it:
+`ip:203.0.113.5`, `host:erp-01`, `site:erp.example.com` or `user:jane@example.com`. Values are
+normalised and resolved through the aliases (#72 step 3). For example, `host:erp-01` also finds
+the Wazuh alerts of the agent named `wazuh-erp01` when an alias says they are the same host.
+`frappe_wolf.api.entities.find(entity, ...)` is the same list. The response echoes `entity`.
 
 ### `frappe_wolf.api.explore.list_error_groups`
 

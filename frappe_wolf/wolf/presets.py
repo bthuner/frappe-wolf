@@ -333,7 +333,9 @@ PRESETS = [
 	},
 	{
 		"rule_name": "Permission rules changed",
-		"description": "Role Permission Manager rules or a Role Profile changed (MITRE T1098).",
+		"description": "Permission rules changed (Role Permission Manager, Data Import, REST or code), a "
+		"Role Profile granting more, a User Permission letting a user see more, or a Website user "
+		"given desk access (MITRE T1098).",
 		"signal_type": "event", "event_type": "security", "event_category": "permission_change",
 		"operator": ">=", "threshold": 1, "window_minutes": 10, "group_by": "site",
 		"severity": "warning", "auto_resolve": 0, "cooldown_minutes": 60,

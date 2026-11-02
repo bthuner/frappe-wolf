@@ -7,6 +7,10 @@ The handlers in local_signals.py feed documents in; this module decides what is 
 - `script_change(before, after, fields)`: whether a Server/Client Script change can run new code
   (created, enabled, or its code, type or trigger changed); a description edit is not one.
 - `url_domain(url)`: the host a Webhook sends documents to.
+- `docperm_change(before, after)`: the rights a Custom DocPerm save granted and revoked.
+- `user_permission_widens(before, after, others)`: whether a User Permission change lets its user
+  see more documents. User Permissions are allow lists: the first one for a DocType restricts the
+  user to it, each further one adds documents, and removing the last lifts the restriction.
 - `new_api_secret(value)`: a User save that writes a new API secret (Desk shows saved Password
   fields as asterisks, so an unchanged one never looks new). Read it in before_save: Frappe
   masks Password fields right after, so on_update only ever sees asterisks.
@@ -31,6 +35,17 @@ SETTINGS_RULES = [
 SERVER_SCRIPT_FIELDS = ("script", "script_type", "reference_doctype", "doctype_event", "api_method",
                         "allow_guest", "event_frequency", "cron_format")  # fmt: skip
 CLIENT_SCRIPT_FIELDS = ("script", "dt", "view")
+
+# Custom DocPerm rights, in the Role Permission Manager's order; `if_owner` narrows them
+DOCPERM_RIGHTS = ("read", "write", "create", "delete", "submit", "cancel", "amend", "report", "export",
+                  "import", "share", "print", "email", "select", "mask")  # fmt: skip
+# roles every visitor or every logged-in user has: a right given to them is given to everyone
+EVERYONE_ROLES = ("Guest", "All")
+# what a User Permission allows, and whom: changing one moves access (is_default only
+# preselects a value in forms)
+USER_PERMISSION_TARGET = ("user", "allow", "for_value", "applicable_for")
+# switches that narrow it when on: turning one off widens it
+USER_PERMISSION_NARROWING = ("apply_to_all_doctypes", "hide_descendants")
 
 
 def _number(value):
@@ -108,6 +123,48 @@ def url_domain(url):
 	except ValueError:
 		return None
 	return host.lower() if host else None
+
+
+def docperm_change(before, after):
+	"""{"granted": [...], "revoked": [...]} for a Custom DocPerm save, or None when no right moved.
+
+	A new rule grants every right it has. Clearing "only if creator" (if_owner) grants the rule's
+	rights on every document, not only the user's own: it shows as "all documents" granted.
+	"""
+	before = before or {}
+	granted = [r for r in DOCPERM_RIGHTS if _truthy(after.get(r)) and not _truthy(before.get(r))]
+	revoked = [r for r in DOCPERM_RIGHTS if _truthy(before.get(r)) and not _truthy(after.get(r))]
+	if before:
+		owner_before, owner_after = _truthy(before.get("if_owner")), _truthy(after.get("if_owner"))
+		if owner_before and not owner_after:
+			granted.append("all documents")
+		elif owner_after and not owner_before:
+			revoked.append("all documents")
+	if before and (before.get("role"), before.get("parent")) != (after.get("role"), after.get("parent")):
+		# the rule moved to another role or DocType: everything it has is granted there
+		granted = [r for r in DOCPERM_RIGHTS if _truthy(after.get(r))]
+	if not granted and not revoked:
+		return None
+	return {"granted": granted, "revoked": revoked}
+
+
+def user_permission_widens(before, after, others):
+	"""True when a User Permission change lets its user see more documents.
+
+	`others`: how many other User Permissions the user has for the same allowed DocType.
+	- created: widens when the user already had some (one more allowed value); the first one
+	  only restricts (ERPNext creates those for employees, for instance);
+	- removed (`after` None): widens when it was the last one, which lifts the restriction;
+	- edited: widens when it allows another value, user or DocType, or stops applying to every
+	  DocType, or stops hiding descendants.
+	"""
+	if after is None:
+		return others == 0
+	if not before:
+		return others > 0
+	if any((before.get(f) or "") != (after.get(f) or "") for f in USER_PERMISSION_TARGET):
+		return True
+	return any(_truthy(before.get(f)) and not _truthy(after.get(f)) for f in USER_PERMISSION_NARROWING)
 
 
 def new_api_secret(value):

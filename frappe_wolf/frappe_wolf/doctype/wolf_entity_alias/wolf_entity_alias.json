@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-03 09:00:00.000000",
+ "description": "Another name for a host or a site: a host's address or Wazuh agent name, a site's domain. Wolf adds them from its agents and from Wazuh alerts (source Auto); add one by hand when a name differs between tools (source Manual).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kind",
+  "alias",
+  "canonical",
+  "source",
+  "seen_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "options": "host\nsite",
+   "label": "Kind",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "alias",
+   "fieldtype": "Data",
+   "label": "Alias",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The other name: an IP address, a Wazuh agent name, a domain."
+  },
+  {
+   "fieldname": "canonical",
+   "fieldtype": "Data",
+   "label": "Is",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The host or site name Wolf uses."
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "options": "Manual\nAuto",
+   "default": "Manual",
+   "label": "Source",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "seen_from",
+   "fieldtype": "Data",
+   "label": "Learnt from",
+   "read_only": 1
+  }
+ ],
+ "in_create": 0,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-03 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Wolf",
+ "name": "Wolf Entity Alias",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "write": 1,
+   "role": "Wolf Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Wolf User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

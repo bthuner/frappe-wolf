@@ -83,6 +83,10 @@ def accept(agent, data, now=None):
 		response_api.record_results(agent, data["action_results"][:100])
 	actions = response_api.pending_for_agent(agent, now)
 
+	if frappe.local.request_ip and frappe.local.request_ip != frappe.db.get_value("Wolf Agent", agent, "last_ip"):
+		from frappe_wolf.api import entities
+
+		entities.learn("host", frappe.local.request_ip, frappe.db.get_value("Wolf Agent", agent, "hostname"), f"agent {agent}")
 	frappe.db.set_value(
 		"Wolf Agent",
 		agent,

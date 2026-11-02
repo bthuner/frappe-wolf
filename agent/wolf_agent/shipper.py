@@ -248,6 +248,7 @@ def register(url, token, hostname, benches, os_name=None, verify_tls=True):
 		"hostname": hostname,
 		"agent_version": __version__,
 		"os": os_name,
-		"benches": [{"name": b["name"], "path": b["path"], "sites": b["sites"]} for b in benches],
+		"benches": [{"name": b["name"], "path": b["path"], "sites": b["sites"], "site_domains": b.get("site_domains") or {}}
+		            for b in benches],  # fmt: skip
 	}
 	return post_json(url.rstrip("/") + REGISTER_METHOD, body, verify_tls=verify_tls)

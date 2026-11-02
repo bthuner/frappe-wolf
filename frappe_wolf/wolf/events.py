@@ -86,12 +86,37 @@ def insert_event(data, agent=None, dedupe_minutes=None):
 		from frappe_wolf.api import crowdsec
 
 		data = crowdsec.enrich(data)  # CrowdSec decisions (off unless enabled)
+	found = None
+	if data.get("event_type") == "security":
+		data, found = _with_entities(data)
 	data.setdefault("last_seen", data.get("timestamp"))  # window queries filter on it
 	doc = frappe.get_doc({"doctype": "Wolf Event", "agent": agent, **data})
 	doc.flags.ignore_permissions = True
 	doc.flags.ignore_links = True
 	doc.insert()
+	if found:
+		from frappe_wolf.api import entities
+
+		entities.index(doc.name, found, data.get("timestamp"))
 	return doc.name
+
+
+def _with_entities(data):
+	"""(data, entities): the security event's entities in its payload (wolf/entities.py, #72)."""
+	import json
+
+	from frappe_wolf.api import entities
+
+	try:
+		payload = json.loads(data["payload"]) if data.get("payload") else {}
+		entities.learn_from_event(data, payload)
+		found, payload = entities.prepare(data, payload)
+		if found:
+			data = {**data, "payload": schema.dump_payload(payload)}
+		return data, found
+	except Exception:
+		frappe.logger("frappe_wolf").exception("could not read the entities of an event")
+		return data, None
 
 
 def emit(event_type, title, severity="warning", category=None, source="frappe", payload=None, dedupe_minutes=None, **scope):

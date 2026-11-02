@@ -161,6 +161,10 @@ Categories added with the infrastructure signals:
 | `webhook_external` | site (Webhook) | a Webhook created, enabled or pointed at another host | `webhook`, `doctype`, `event`, `domain`, `previous_domain` |
 | `admin_login_new_country` | site (Activity Log hook) | a privileged login from a new IP whose country (offline **GeoIP Database**) differs from the countries of all the user's earlier logins; `critical` | `user`, `ip`, `country`, `known_countries` |
 
+Every `security` event also gets `payload.entities` at ingest, whatever its source. It is
+`{"ip": [...], "host": [...], "site": [...], "user": [...]}`, normalised and resolved through
+the Wolf Entity Alias rows (#72 step 3). Agents do not send it: the site computes it.
+
 ### Metric names emitted by the agent
 
 | metric_name          | unit     | scope / labels                    |

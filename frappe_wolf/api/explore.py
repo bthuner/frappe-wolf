@@ -56,8 +56,11 @@ def _event_row(r, tz):
 
 @frappe.whitelist()
 def list_events(range=None, since=None, until=None, site=None, bench=None, host=None,
-				event_type=None, severity=None, category=None, q=None, cursor=None, limit=50):  # fmt: skip
-	"""Event records active in the window, newest first, paged by (first seen, name)."""
+				event_type=None, severity=None, category=None, q=None, cursor=None, limit=50, entity=None):  # fmt: skip
+	"""Event records active in the window, newest first, paged by (first seen, name).
+
+	`entity` (`ip:…`, `host:…`, `site:…`, `user:…`) keeps the security events of any source that
+	name it (api/entities.py)."""
 	frappe.only_for(READ_ROLES)
 	win, scope = _window(range, since, until), _scope(site, bench, host)
 	tz = events.system_tz()
@@ -71,6 +74,12 @@ def list_events(range=None, since=None, until=None, site=None, bench=None, host=
 			frappe.throw(str(e), frappe.ValidationError)
 		extra.append("(`timestamp` < %(c_at)s or (`timestamp` = %(c_at)s and name < %(c_name)s))")
 		cursor_params = {"c_at": at, "c_name": name}
+	if entity:
+		from frappe_wolf.api import entities
+
+		clause, entity_params = entities.filter_clause(entity)
+		extra.append(clause)
+		cursor_params.update(entity_params)
 	where, params = _filters(win, scope, event_type, severity, category, q, extra)
 	rows = frappe.db.sql(
 		f"select {EVENT_FIELDS} from `tabWolf Event` where {where} order by `timestamp` desc, name desc limit %(limit)s",
@@ -87,6 +96,7 @@ def list_events(range=None, since=None, until=None, site=None, bench=None, host=
 		},
 		"window": window.describe(win),
 		"scope": scope,
+		"entity": entity or None,
 		"basis": "event records active in the window (first seen before its end, last seen after its start); "
 		"count is every repeat a record absorbed, inside the window or not",
 		"time_zone": tz,

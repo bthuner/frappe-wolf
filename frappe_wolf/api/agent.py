@@ -59,6 +59,9 @@ def register():
 	)
 	doc.flags.ignore_permissions = True
 	doc.save()
+	from frappe_wolf.api import entities
+
+	entities.learn_from_registration(hostname, frappe.local.request_ip, data.get("benches"))
 	frappe.db.commit()
 
 	return {

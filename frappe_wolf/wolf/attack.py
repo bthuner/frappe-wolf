@@ -60,6 +60,7 @@ CATEGORIES = {
 	"permission_change": ["T1098"],
 	"security_settings_weakened": ["T1562.001"],
 	"api_key_generated": ["T1098.001"],
+	"api_key_new_ip": ["T1078", "T1552"],
 	"webhook_external": ["T1567"],
 	"data_exfiltration": ["T1567", "T1030"],
 	# exposure (agent): weaknesses, mapped to what they open the door to
